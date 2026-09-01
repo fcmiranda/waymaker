@@ -7,6 +7,16 @@ max = 120
 [ui]
 border = { type = "Rounded" }
 # sort_menu = { columns = 4, show_title = true }
+# default_sort = "Natural"
+
+# Folder-specific sort rules (evaluated top-to-bottom on startup and directory changes)
+# [[folder_rules]]
+# path = "~/Downloads"
+# sort = "ModifiedReverse"
+#
+# [[folder_rules]]
+# path = "*/screenshots"
+# sort = "CreatedReverse"
 
 [query]
 prompt_style.fg = "Gray"

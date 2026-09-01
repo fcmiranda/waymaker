@@ -9,7 +9,7 @@ pub use crate::config_types::*;
 pub use crate::utils::{Percentage, serde::StringOrVec};
 
 use crate::{
-    action::{Action, Actions, NullActionExt},
+    action::{Action, Actions, NullActionExt, SortOrder},
     tui::IoStream,
     utils::serde::{escaped_opt_char, escaped_opt_string},
 };
@@ -353,6 +353,28 @@ pub struct UiConfig {
     #[partial(recurse)]
     #[serde(default)]
     pub sort_menu: SortMenuConfig,
+
+    /// Folder-specific rules for automatic sorting by directory.
+    #[serde(default)]
+    #[serde(alias = "sort_rules")]
+    #[partial(no_recurse, unwrap)]
+    pub folder_rules: Vec<FolderRule>,
+
+    /// Global default sort order.
+    #[serde(default)]
+    pub default_sort: Option<SortOrder>,
+}
+
+impl UiConfig {
+    /// Resolve the sort order for a given directory based on folder_rules or default_sort.
+    pub fn resolve_sort_for_dir(&self, dir: &std::path::Path) -> Option<SortOrder> {
+        for rule in &self.folder_rules {
+            if rule.matches(dir) {
+                return Some(rule.sort);
+            }
+        }
+        self.default_sort
+    }
 }
 
 impl Default for UiConfig {
@@ -404,6 +426,8 @@ impl Default for UiConfig {
             nav_hints: true,
             parent_peek: ParentPeekConfig::default(),
             sort_menu: SortMenuConfig::default(),
+            folder_rules: Vec::new(),
+            default_sort: None,
         }
     }
 }
@@ -693,6 +717,93 @@ impl SortMenuConfig {
             let rows = (item_count + self.columns - 1) / self.columns;
             rows.max(1) as u16
         }
+    }
+}
+
+/// Rule for automatically applying a sort order to matching folders.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct FolderRule {
+    /// Directory path or glob pattern (supports `~`, absolute paths, and globs like `*/screenshots`).
+    pub path: String,
+    /// Sort order to apply when entering this directory.
+    pub sort: crate::action::SortOrder,
+}
+
+impl Default for FolderRule {
+    fn default() -> Self {
+        Self {
+            path: "".to_string(),
+            sort: crate::action::SortOrder::Natural,
+        }
+    }
+}
+
+impl FolderRule {
+    pub fn new(path: impl Into<String>, sort: crate::action::SortOrder) -> Self {
+        Self {
+            path: path.into(),
+            sort,
+        }
+    }
+
+    /// Check if the rule matches the given directory path.
+    pub fn matches(&self, dir: &std::path::Path) -> bool {
+        if self.path.is_empty() {
+            return false;
+        }
+
+        let expanded_pattern = if self.path.starts_with("~/") || self.path == "~" {
+            if let Some(home) = dirs::home_dir() {
+                if self.path == "~" {
+                    home.to_string_lossy().to_string()
+                } else {
+                    format!("{}{}", home.to_string_lossy(), &self.path[1..])
+                }
+            } else {
+                self.path.clone()
+            }
+        } else {
+            self.path.clone()
+        };
+
+        let rule_path_str = expanded_pattern.trim_end_matches('/');
+        let dir_str = dir.to_string_lossy();
+        let dir_path_str = dir_str.trim_end_matches('/');
+
+        // 1. Direct path equality
+        if rule_path_str == dir_path_str {
+            return true;
+        }
+
+        // 2. Canonicalized path equality
+        if let (Ok(c_rule), Ok(c_dir)) = (
+            std::fs::canonicalize(&expanded_pattern),
+            std::fs::canonicalize(dir),
+        ) {
+            if c_rule == c_dir {
+                return true;
+            }
+        }
+
+        // 3. Glob matching against full expanded path
+        if let Ok(pattern) = glob::Pattern::new(rule_path_str) {
+            if pattern.matches(dir_path_str) {
+                return true;
+            }
+        }
+
+        // 4. Glob matching against folder name (basename)
+        if let Ok(pattern) = glob::Pattern::new(&self.path) {
+            if let Some(file_name) = dir.file_name().and_then(|f| f.to_str()) {
+                if pattern.matches(file_name) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 }
 
@@ -1735,6 +1846,7 @@ impl<'de> Deserialize<'de> for NucleoMatcherConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_preview_config_trim_commands() {
@@ -1783,5 +1895,49 @@ mod tests {
         "#;
         let config_bottom: ResultsConfig = toml::from_str(toml_bottom).unwrap();
         assert_eq!(config_bottom.tier_separator, HorizontalSeparator::Bottom);
+    }
+
+    #[test]
+    fn test_folder_rule_matching() {
+        let rule_downloads = FolderRule::new("~/Downloads", SortOrder::ModifiedReverse);
+        if let Some(home) = dirs::home_dir() {
+            let downloads = home.join("Downloads");
+            assert!(rule_downloads.matches(&downloads));
+            let other = home.join("Documents");
+            assert!(!rule_downloads.matches(&other));
+        }
+
+        let rule_glob = FolderRule::new("*/screenshots", SortOrder::CreatedReverse);
+        assert!(rule_glob.matches(Path::new("/home/user/pictures/screenshots")));
+        assert!(rule_glob.matches(Path::new("/var/data/screenshots")));
+        assert!(!rule_glob.matches(Path::new("/home/user/pictures/wallpapers")));
+
+        let rule_basename = FolderRule::new("Screenshots", SortOrder::CreatedReverse);
+        assert!(rule_basename.matches(Path::new("/home/user/Pictures/Screenshots")));
+    }
+
+    #[test]
+    fn test_ui_config_resolve_sort_for_dir() {
+        let mut ui = UiConfig::default();
+        ui.default_sort = Some(SortOrder::Natural);
+        ui.folder_rules = vec![
+            FolderRule::new("~/Downloads", SortOrder::ModifiedReverse),
+            FolderRule::new("*/videos", SortOrder::SizeReverse),
+        ];
+
+        if let Some(home) = dirs::home_dir() {
+            assert_eq!(
+                ui.resolve_sort_for_dir(&home.join("Downloads")),
+                Some(SortOrder::ModifiedReverse)
+            );
+            assert_eq!(
+                ui.resolve_sort_for_dir(&home.join("Projects")),
+                Some(SortOrder::Natural)
+            );
+        }
+        assert_eq!(
+            ui.resolve_sort_for_dir(Path::new("/media/storage/videos")),
+            Some(SortOrder::SizeReverse)
+        );
     }
 }

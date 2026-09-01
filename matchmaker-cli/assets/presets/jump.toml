@@ -89,3 +89,20 @@ additional_commands = [
 
 [start.command]
 command = ""
+
+# Automatic folder-specific sort rules
+[[folder_rules]]
+path = "~/Downloads"
+sort = "ModifiedReverse"
+
+[[folder_rules]]
+path = "*/Downloads"
+sort = "ModifiedReverse"
+
+[[folder_rules]]
+path = "*/screenshots"
+sort = "CreatedReverse"
+
+[[folder_rules]]
+path = "*/Screenshots"
+sort = "CreatedReverse"

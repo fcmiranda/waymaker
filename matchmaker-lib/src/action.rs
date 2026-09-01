@@ -201,13 +201,14 @@ pub enum Action<A: ActionExt = NullActionExt> {
 }
 
 /// Result sorting orders.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum SortOrder {
     /// Alphabetical (A-Z)
     Alphabetical,
     /// Alphabetical reverse (Z-A)
     AlphabeticalReverse,
     /// Natural sorting (e.g. 1 < 2 < 10)
+    #[default]
     Natural,
     /// Natural sorting reverse (10 > 2 > 1)
     NaturalReverse,

@@ -150,6 +150,13 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         }
     }
 
+    if !config.folder_rules.is_empty() {
+        config.render.ui.folder_rules.extend(config.folder_rules.clone());
+    }
+    if config.default_sort.is_some() {
+        config.render.ui.default_sort = config.default_sort;
+    }
+
     #[cfg(debug_assertions)]
     {
         config.tui.clear_on_exit = false;
@@ -693,6 +700,7 @@ pub async fn start(
         mut envs,
         source: _,
         rule: all_rules,
+        ..
     } = config;
 
     let default_base_cmd = base_command

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use indexmap::IndexMap;
+use matchmaker::SortOrder;
 use matchmaker::action::Actions;
 use matchmaker::binds::Trigger;
 use matchmaker::config::*;
@@ -65,6 +66,19 @@ pub struct Config {
     #[serde(default)]
     #[serde(alias = "rules")]
     pub rule: Vec<PathRule>,
+
+    /// Folder-specific rules (e.g. automatic sort order by directory).
+    #[serde(default)]
+    #[serde(alias = "folder_rules")]
+    #[serde(alias = "folder_rule")]
+    #[partial(no_recurse, unwrap)]
+    pub folder_rules: Vec<FolderRule>,
+
+    /// Global default sort order.
+    #[serde(default)]
+    #[serde(alias = "sort")]
+    #[partial(no_recurse, unwrap)]
+    pub default_sort: Option<SortOrder>,
 
     /// imports: only supported on overrides and with one nesting level
     #[serde(default)]

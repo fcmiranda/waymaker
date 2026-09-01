@@ -5,6 +5,7 @@ pub mod action;
 pub use action::{Action, Actions, SortOrder};
 pub mod binds;
 pub mod config;
+pub use config::{FolderRule, SortMenuConfig};
 mod config_types;
 pub mod event;
 pub mod frecency;

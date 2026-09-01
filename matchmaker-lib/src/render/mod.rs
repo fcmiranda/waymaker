@@ -326,6 +326,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
         }
     }
 
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(sort_order) = ui.config.resolve_sort_for_dir(&cwd) {
+            picker_ui.worker.set_sort_order(Some(sort_order));
+        }
+    }
+
     if let Some(handler) = initializer {
         handler(&mut state.dispatcher(
             &mut ui,
@@ -1335,6 +1341,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                 if matches!(interrupt, Interrupt::ChDir) {
                     picker_ui.results.cursor_jump(0);
+                    if let Ok(cwd) = std::env::current_dir() {
+                        if let Some(sort_order) = ui.config.resolve_sort_for_dir(&cwd) {
+                            picker_ui.worker.set_sort_order(Some(sort_order));
+                        }
+                    }
                 }
 
                 if matches!(interrupt, Interrupt::Become) {

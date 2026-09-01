@@ -1732,6 +1732,7 @@ dependencies = [
  "easy-ext",
  "env_logger",
  "futures",
+ "glob",
  "ignore",
  "image",
  "indexmap",

@@ -1308,7 +1308,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
             state.needs_redraw = true;
         }
 
-        if picker_ui.worker.matcher_dirty.swap(false, std::sync::atomic::Ordering::AcqRel) {
+        if picker_ui
+            .worker
+            .matcher_dirty
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+        {
             state.needs_redraw = true;
         }
 
@@ -1345,493 +1349,506 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                 .draw(|frame| {
                     let mut area = frame.area();
 
-                // mutates area!
-                render_ui(frame, &mut area, &ui);
+                    // mutates area!
+                    render_ui(frame, &mut area, &ui);
 
-                let mut _area = area;
+                    let mut _area = area;
 
-                let full_width_footer = footer_ui.is_single_column()
-                    && footer_ui.config.row_connection == RowConnectionStyle::Full;
+                    let full_width_footer = footer_ui.is_single_column()
+                        && footer_ui.config.row_connection == RowConnectionStyle::Full;
 
-                let mut breadcrumb_spans = Vec::new();
-                let mut is_global_breadcrumb = false;
-                let mut global_breadcrumb_rect = Rect::default();
+                    let mut breadcrumb_spans = Vec::new();
+                    let mut is_global_breadcrumb = false;
+                    let mut global_breadcrumb_rect = Rect::default();
 
-                if picker_ui.breadcrumb_config.show {
-                    if let Ok(cwd) = std::env::current_dir() {
-                        let mut components = Vec::new();
-                        let home_dir = std::env::var("HOME").ok().map(std::path::PathBuf::from);
+                    if picker_ui.breadcrumb_config.show {
+                        if let Ok(cwd) = std::env::current_dir() {
+                            let mut components = Vec::new();
+                            let home_dir = std::env::var("HOME").ok().map(std::path::PathBuf::from);
 
-                        if let Some(home) = home_dir {
-                            if let Ok(stripped) = cwd.strip_prefix(&home) {
-                                components.push("~".to_string());
-                                for comp in stripped.components() {
+                            if let Some(home) = home_dir {
+                                if let Ok(stripped) = cwd.strip_prefix(&home) {
+                                    components.push("~".to_string());
+                                    for comp in stripped.components() {
+                                        components
+                                            .push(comp.as_os_str().to_string_lossy().to_string());
+                                    }
+                                }
+                            }
+
+                            if components.is_empty() {
+                                for comp in cwd.components() {
                                     components.push(comp.as_os_str().to_string_lossy().to_string());
                                 }
                             }
-                        }
 
-                        if components.is_empty() {
-                            for comp in cwd.components() {
-                                components.push(comp.as_os_str().to_string_lossy().to_string());
+                            if picker_ui.breadcrumb_config.current_folder_only
+                                && !components.is_empty()
+                            {
+                                let last = components.pop().unwrap();
+                                components.clear();
+                                components.push(last);
                             }
-                        }
 
-                        if picker_ui.breadcrumb_config.current_folder_only && !components.is_empty()
-                        {
-                            let last = components.pop().unwrap();
-                            components.clear();
-                            components.push(last);
-                        }
+                            let truncate_len = picker_ui.breadcrumb_config.truncate_length;
+                            let num_components = components.len();
+                            let mut breadcrumb_width = 0;
 
-                        let truncate_len = picker_ui.breadcrumb_config.truncate_length;
-                        let num_components = components.len();
-                        let mut breadcrumb_width = 0;
+                            for (i, mut text) in components.into_iter().enumerate() {
+                                if truncate_len > 0 && i < num_components.saturating_sub(1) {
+                                    if text != "~" && text.chars().count() > truncate_len {
+                                        text = text.chars().take(truncate_len).collect();
+                                    }
+                                }
 
-                        for (i, mut text) in components.into_iter().enumerate() {
-                            if truncate_len > 0 && i < num_components.saturating_sub(1) {
-                                if text != "~" && text.chars().count() > truncate_len {
-                                    text = text.chars().take(truncate_len).collect();
+                                breadcrumb_width += text.chars().count() as u16;
+                                breadcrumb_spans.push(ratatui::text::Span::styled(
+                                    text,
+                                    ratatui::style::Style::from(
+                                        picker_ui.breadcrumb_config.style.clone(),
+                                    ),
+                                ));
+                                if i < num_components - 1 {
+                                    let sep = picker_ui.breadcrumb_config.separator.clone();
+                                    breadcrumb_width += sep.chars().count() as u16;
+                                    breadcrumb_spans.push(ratatui::text::Span::styled(
+                                        sep,
+                                        ratatui::style::Style::from(
+                                            picker_ui.breadcrumb_config.separator_style.clone(),
+                                        ),
+                                    ));
                                 }
                             }
 
-                            breadcrumb_width += text.chars().count() as u16;
-                            breadcrumb_spans.push(ratatui::text::Span::styled(
-                                text,
-                                ratatui::style::Style::from(
-                                    picker_ui.breadcrumb_config.style.clone(),
-                                ),
-                            ));
-                            if i < num_components - 1 {
-                                let sep = picker_ui.breadcrumb_config.separator.clone();
-                                breadcrumb_width += sep.chars().count() as u16;
-                                breadcrumb_spans.push(ratatui::text::Span::styled(
-                                    sep,
-                                    ratatui::style::Style::from(
-                                        picker_ui.breadcrumb_config.separator_style.clone(),
-                                    ),
-                                ));
+                            // Determine if we need global breadcrumb
+                            let has_preview = preview_ui.as_ref().is_some_and(|p| p.visible());
+                            let picker_w = if has_preview {
+                                let [_, p_area, _] = preview_ui.as_ref().unwrap().split(_area);
+                                p_area.width
+                            } else {
+                                _area.width
+                            };
+
+                            if has_preview || breadcrumb_width > picker_w {
+                                is_global_breadcrumb = true;
+                                global_breadcrumb_rect = split(&mut _area, 1, !picker_ui.reverse());
                             }
                         }
+                    }
 
-                        // Determine if we need global breadcrumb
-                        let has_preview = preview_ui.as_ref().is_some_and(|p| p.visible());
-                        let picker_w = if has_preview {
-                            let [_, p_area, _] = preview_ui.as_ref().unwrap().split(_area);
-                            p_area.width
+                    let show_nav_hints = ui.config.nav_mode
+                        && ui.config.nav_hints
+                        && state.focus == Focus::Results
+                        && !footer_ui.show;
+
+                    let effective_footer_height = if footer_ui.show {
+                        footer_ui.height()
+                    } else if show_nav_hints {
+                        1
+                    } else {
+                        0
+                    };
+
+                    let is_full_footer = full_width_footer || show_nav_hints;
+
+                    let mut footer =
+                        if is_full_footer || preview_ui.as_ref().is_none_or(|p| !p.visible()) {
+                            split(&mut _area, effective_footer_height, picker_ui.reverse())
                         } else {
-                            _area.width
+                            Rect::default()
                         };
 
-                        if has_preview || breadcrumb_width > picker_w {
-                            is_global_breadcrumb = true;
-                            global_breadcrumb_rect = split(&mut _area, 1, !picker_ui.reverse());
-                        }
-                    }
-                }
+                    // Compute how wide the gap needs to be to show the counter.
+                    // Rules:
+                    //   - suppress selected if sel_count == yank_count (fully covered by yank)
+                    //   - suppress yank    if yank_count == cut_count  (fully covered by cut)
+                    //   - if only one group: horizontal, width = " N " of that group
+                    //   - if multiple groups: vertical (one row each), width = widest " N "
+                    let _counter_gap_width: u16 = {
+                        let sel_raw = picker_ui.selector.len();
+                        let yank_raw = picker_ui.results.yank_paths.len();
+                        let cut_raw = picker_ui.results.cut_paths.len();
 
-                let show_nav_hints = ui.config.nav_mode
-                    && ui.config.nav_hints
-                    && state.focus == Focus::Results
-                    && !footer_ui.show;
+                        let show_cut = cut_raw > 0;
+                        let show_yank = yank_raw > 0 && yank_raw != cut_raw;
+                        let show_sel = sel_raw > 0 && sel_raw != yank_raw && sel_raw != cut_raw;
 
-                let effective_footer_height = if footer_ui.show {
-                    footer_ui.height()
-                } else if show_nav_hints {
-                    1
-                } else {
-                    0
-                };
+                        let widths: Vec<usize> = [
+                            show_cut.then(|| cut_raw.to_string().len() + 2),
+                            show_yank.then(|| yank_raw.to_string().len() + 2),
+                            show_sel.then(|| sel_raw.to_string().len() + 2),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .collect();
 
-                let is_full_footer = full_width_footer || show_nav_hints;
-
-                let mut footer =
-                    if is_full_footer || preview_ui.as_ref().is_none_or(|p| !p.visible()) {
-                        split(&mut _area, effective_footer_height, picker_ui.reverse())
-                    } else {
-                        Rect::default()
+                        widths.iter().copied().max().unwrap_or(0) as u16
                     };
 
-                // Compute how wide the gap needs to be to show the counter.
-                // Rules:
-                //   - suppress selected if sel_count == yank_count (fully covered by yank)
-                //   - suppress yank    if yank_count == cut_count  (fully covered by cut)
-                //   - if only one group: horizontal, width = " N " of that group
-                //   - if multiple groups: vertical (one row each), width = widest " N "
-                let _counter_gap_width: u16 = {
-                    let sel_raw = picker_ui.selector.len();
-                    let yank_raw = picker_ui.results.yank_paths.len();
-                    let cut_raw = picker_ui.results.cut_paths.len();
-
-                    let show_cut = cut_raw > 0;
-                    let show_yank = yank_raw > 0 && yank_raw != cut_raw;
-                    let show_sel = sel_raw > 0 && sel_raw != yank_raw && sel_raw != cut_raw;
-
-                    let widths: Vec<usize> = [
-                        show_cut.then(|| cut_raw.to_string().len() + 2),
-                        show_yank.then(|| yank_raw.to_string().len() + 2),
-                        show_sel.then(|| sel_raw.to_string().len() + 2),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .collect();
-
-                    widths.iter().copied().max().unwrap_or(0) as u16
-                };
-
-                let mut parent_peek_rect = Rect::default();
-                if ui.config.parent_peek.enabled && _area.width >= 50 {
-                    let top_offset = if !picker_ui.reverse() && picker_ui.query.config.show {
-                        1 + picker_ui.query.config.border.height()
-                    } else {
-                        0
-                    };
-                    let pw = ui.config.parent_peek.pct.compute_clamped(_area.width, 10, 30);
-                    parent_peek_rect = Rect {
-                        x: _area.x,
-                        y: _area.y + top_offset,
-                        width: pw,
-                        height: _area.height.saturating_sub(top_offset),
-                    };
-                    _area.x += pw;
-                    _area.width -= pw;
-                }
-
-                let [preview, picker_area, footer, gap_area] = if let Some(preview_ui) =
-                    preview_ui.as_mut()
-                    && preview_ui.visible()
-                {
-                    // Temporarily widen the gap so the counter fits horizontally.
-                    let original_gap = preview_ui.setting().map(|s| s.layout.gap).unwrap_or(0);
-                    let effective_gap = original_gap.max(if _counter_gap_width > 0 {
-                        _counter_gap_width + 2
-                    } else {
-                        0
-                    });
-                    if let Some(s) = preview_ui.setting_mut() {
-                        s.layout.gap = effective_gap;
-                    }
-                    let [preview, mut picker_area, gap_area] = preview_ui.split(_area);
-                    // Restore the configured gap so nothing else is affected.
-                    if let Some(s) = preview_ui.setting_mut() {
-                        s.layout.gap = original_gap;
-                    }
-
-                    if state.iterations == 0 && picker_area.width <= 5 {
-                        warn!("UI too narrow, hiding preview");
-                        preview_ui.show(false);
-
-                        [Rect::default(), _area, footer, Rect::default()]
-                    } else {
-                        if !is_full_footer {
-                            footer =
-                                split(&mut picker_area, effective_footer_height, picker_ui.reverse());
-                        }
-
-                        [preview, picker_area, footer, gap_area]
-                    }
-                } else {
-                    [Rect::default(), _area, footer, Rect::default()]
-                };
-
-                let original_breadcrumb_show = picker_ui.breadcrumb_config.show;
-                if is_global_breadcrumb {
-                    picker_ui.breadcrumb_config.show = false;
-                }
-                let [breadcrumb, action, input, status, header, results] =
-                    picker_ui.layout(picker_area);
-                if is_global_breadcrumb {
-                    picker_ui.breadcrumb_config.show = original_breadcrumb_show;
-                }
-
-                let mut footer = footer;
-                if !picker_ui.reverse() && footer.height > 0 {
-                    let picker_bottom = results.y + results.height;
-                    let preview_bottom = if preview.height > 0 {
-                        preview.y + preview.height
-                    } else {
-                        0
-                    };
-                    let content_bottom = picker_bottom.max(preview_bottom);
-                    if content_bottom < footer.y {
-                        footer.y = content_bottom;
-                    }
-                }
-
-                if parent_peek_rect.width > 0 {
-                    if footer.height > 0 {
-                        let available_h = footer.y.saturating_sub(parent_peek_rect.y);
-                        parent_peek_rect.height = parent_peek_rect.height.min(available_h);
-                    }
-                    if let Some(max_h) = ui.config.parent_peek.max {
-                        parent_peek_rect.height = parent_peek_rect.height.min(max_h);
-                    }
-                }
-
-                // save dimensions and check if dimensions changed
-                did_resize = state.update_layout(Layout {
-                    preview,
-                    action,
-                    input,
-                    status,
-                    header,
-                    results,
-                    footer,
-                    gap: gap_area,
-                    pane: _area,
-                });
-
-                if did_resize {
-                    picker_ui.results.update_dimensions(&results);
-                    picker_ui.action.update_width(action.width);
-                    picker_ui.query.update_width(input.width);
-                    footer_ui.update_width(
-                        if footer_ui.config.row_connection == RowConnectionStyle::Capped {
-                            area.width
+                    let mut parent_peek_rect = Rect::default();
+                    if ui.config.parent_peek.enabled && _area.width >= 50 {
+                        let top_offset = if !picker_ui.reverse() && picker_ui.query.config.show {
+                            1 + picker_ui.query.config.border.height()
                         } else {
-                            footer.width
-                        },
-                    );
-                    picker_ui.header.update_width(header.width);
-                    // although these only want update when the whole ui change
-                    ui.update_dimensions(area);
-                    if let Some(x) = overlay_ui_ref.as_deref_mut() {
-                        x.update_dimensions(&area);
-                    }
-                    if let Some(preview_ui) = preview_ui.as_mut() {
-                        preview_ui.update_dimensions(&preview);
-                    }
-                };
-
-                let status_inline_label: Option<Line<'_>> = if picker_ui.query.config.status_inline
-                {
-                    Some(picker_ui.results.status_line())
-                } else {
-                    None
-                };
-
-                let nav_color = ui.config.nav_color;
-                let nav_mode = ui.config.nav_mode;
-                let nav_do_blink = ui.config.nav_blink;
-                let nav_bold = ui.config.nav_bold;
-                let nav_bar = ui.config.nav_bar;
-                let nav_marker = ui.config.nav_marker.clone();
-                let nav_char = picker_ui
-                    .results
-                    .config
-                    .multi_prefix
-                    .chars()
-                    .next()
-                    .unwrap_or('│')
-                    .to_string();
-                let input_focus_info = nav_mode.then_some(FocusInfo {
-                    focused: state.focus == Focus::Input,
-                    blink_phase: state.focus_blink,
-                    color: nav_color,
-                    do_blink: nav_do_blink,
-                    bold: nav_bold,
-                    bar: None,
-                    marker: String::new(),
-                    nav_char: nav_char.clone(),
-                    nav_prompt: ui.config.nav_prompt.clone(),
-                });
-                let results_focus_info = nav_mode.then_some(FocusInfo {
-                    focused: state.focus == Focus::Results,
-                    blink_phase: state.focus_blink,
-                    color: nav_color,
-                    do_blink: nav_do_blink,
-                    bold: nav_bold,
-                    bar: nav_bar,
-                    marker: nav_marker,
-                    nav_char,
-                    nav_prompt: ui.config.nav_prompt.clone(),
-                });
-
-                if picker_ui.action_visible {
-                    let cfg = &picker_ui.action_config;
-                    // Apply width percentage — centered within the allocated row(s).
-                    let action_w = cfg.width_pct.compute_clamped(action.width, 1, 0);
-                    let x_pad = action.width.saturating_sub(action_w) / 2;
-                    let action_full_rect = Rect {
-                        x: action.x + x_pad,
-                        y: action.y,
-                        width: action_w,
-                        height: action.height,
-                    };
-                    // Render the separator border (default: bottom line) over the full area.
-                    // It only draws at the edges of `action_full_rect`, so the input and
-                    // preview content rendered afterwards is not obscured.
-                    if !cfg.border.is_empty() {
-                        frame.render_widget(cfg.border.as_static_block(), action_full_rect);
+                            0
+                        };
+                        let pw = ui
+                            .config
+                            .parent_peek
+                            .pct
+                            .compute_clamped(_area.width, 10, 30);
+                        parent_peek_rect = Rect {
+                            x: _area.x,
+                            y: _area.y + top_offset,
+                            width: pw,
+                            height: _area.height.saturating_sub(top_offset),
+                        };
+                        _area.x += pw;
+                        _area.width -= pw;
                     }
 
-                    let mut current_y = action_full_rect.y;
-
-                    let action_input_rect = Rect {
-                        x: action_full_rect.x,
-                        y: current_y,
-                        width: action_w,
-                        height: action_full_rect.height.min(1),
-                    };
-                    render_input(frame, action_input_rect, &mut picker_ui.action, None, None);
-                    current_y += 1;
-
-                    // Render preview area below if preview_height > 0.
-                    if cfg.preview_height > 0
-                        && action_full_rect.height > current_y - action_full_rect.y
+                    let [preview, picker_area, footer, gap_area] = if let Some(preview_ui) =
+                        preview_ui.as_mut()
+                        && preview_ui.visible()
                     {
-                        let preview_rect = Rect {
+                        // Temporarily widen the gap so the counter fits horizontally.
+                        let original_gap = preview_ui.setting().map(|s| s.layout.gap).unwrap_or(0);
+                        let effective_gap = original_gap.max(if _counter_gap_width > 0 {
+                            _counter_gap_width + 2
+                        } else {
+                            0
+                        });
+                        if let Some(s) = preview_ui.setting_mut() {
+                            s.layout.gap = effective_gap;
+                        }
+                        let [preview, mut picker_area, gap_area] = preview_ui.split(_area);
+                        // Restore the configured gap so nothing else is affected.
+                        if let Some(s) = preview_ui.setting_mut() {
+                            s.layout.gap = original_gap;
+                        }
+
+                        if state.iterations == 0 && picker_area.width <= 5 {
+                            warn!("UI too narrow, hiding preview");
+                            preview_ui.show(false);
+
+                            [Rect::default(), _area, footer, Rect::default()]
+                        } else {
+                            if !is_full_footer {
+                                footer = split(
+                                    &mut picker_area,
+                                    effective_footer_height,
+                                    picker_ui.reverse(),
+                                );
+                            }
+
+                            [preview, picker_area, footer, gap_area]
+                        }
+                    } else {
+                        [Rect::default(), _area, footer, Rect::default()]
+                    };
+
+                    let original_breadcrumb_show = picker_ui.breadcrumb_config.show;
+                    if is_global_breadcrumb {
+                        picker_ui.breadcrumb_config.show = false;
+                    }
+                    let [breadcrumb, action, input, status, header, results] =
+                        picker_ui.layout(picker_area);
+                    if is_global_breadcrumb {
+                        picker_ui.breadcrumb_config.show = original_breadcrumb_show;
+                    }
+
+                    let mut footer = footer;
+                    if !picker_ui.reverse() && footer.height > 0 {
+                        let picker_bottom = results.y + results.height;
+                        let preview_bottom = if preview.height > 0 {
+                            preview.y + preview.height
+                        } else {
+                            0
+                        };
+                        let content_bottom = picker_bottom.max(preview_bottom);
+                        if content_bottom < footer.y {
+                            footer.y = content_bottom;
+                        }
+                    }
+
+                    if parent_peek_rect.width > 0 {
+                        if footer.height > 0 {
+                            let available_h = footer.y.saturating_sub(parent_peek_rect.y);
+                            parent_peek_rect.height = parent_peek_rect.height.min(available_h);
+                        }
+                        if let Some(max_h) = ui.config.parent_peek.max {
+                            parent_peek_rect.height = parent_peek_rect.height.min(max_h);
+                        }
+                    }
+
+                    // save dimensions and check if dimensions changed
+                    did_resize = state.update_layout(Layout {
+                        preview,
+                        action,
+                        input,
+                        status,
+                        header,
+                        results,
+                        footer,
+                        gap: gap_area,
+                        pane: _area,
+                    });
+
+                    if did_resize {
+                        picker_ui.results.update_dimensions(&results);
+                        picker_ui.action.update_width(action.width);
+                        picker_ui.query.update_width(input.width);
+                        footer_ui.update_width(
+                            if footer_ui.config.row_connection == RowConnectionStyle::Capped {
+                                area.width
+                            } else {
+                                footer.width
+                            },
+                        );
+                        picker_ui.header.update_width(header.width);
+                        // although these only want update when the whole ui change
+                        ui.update_dimensions(area);
+                        if let Some(x) = overlay_ui_ref.as_deref_mut() {
+                            x.update_dimensions(&area);
+                        }
+                        if let Some(preview_ui) = preview_ui.as_mut() {
+                            preview_ui.update_dimensions(&preview);
+                        }
+                    };
+
+                    let status_inline_label: Option<Line<'_>> =
+                        if picker_ui.query.config.status_inline {
+                            Some(picker_ui.results.status_line())
+                        } else {
+                            None
+                        };
+
+                    let nav_color = ui.config.nav_color;
+                    let nav_mode = ui.config.nav_mode;
+                    let nav_do_blink = ui.config.nav_blink;
+                    let nav_bold = ui.config.nav_bold;
+                    let nav_bar = ui.config.nav_bar;
+                    let nav_marker = ui.config.nav_marker.clone();
+                    let nav_char = picker_ui
+                        .results
+                        .config
+                        .multi_prefix
+                        .chars()
+                        .next()
+                        .unwrap_or('│')
+                        .to_string();
+                    let input_focus_info = nav_mode.then_some(FocusInfo {
+                        focused: state.focus == Focus::Input,
+                        blink_phase: state.focus_blink,
+                        color: nav_color,
+                        do_blink: nav_do_blink,
+                        bold: nav_bold,
+                        bar: None,
+                        marker: String::new(),
+                        nav_char: nav_char.clone(),
+                        nav_prompt: ui.config.nav_prompt.clone(),
+                    });
+                    let results_focus_info = nav_mode.then_some(FocusInfo {
+                        focused: state.focus == Focus::Results,
+                        blink_phase: state.focus_blink,
+                        color: nav_color,
+                        do_blink: nav_do_blink,
+                        bold: nav_bold,
+                        bar: nav_bar,
+                        marker: nav_marker,
+                        nav_char,
+                        nav_prompt: ui.config.nav_prompt.clone(),
+                    });
+
+                    if picker_ui.action_visible {
+                        let cfg = &picker_ui.action_config;
+                        // Apply width percentage — centered within the allocated row(s).
+                        let action_w = cfg.width_pct.compute_clamped(action.width, 1, 0);
+                        let x_pad = action.width.saturating_sub(action_w) / 2;
+                        let action_full_rect = Rect {
+                            x: action.x + x_pad,
+                            y: action.y,
+                            width: action_w,
+                            height: action.height,
+                        };
+                        // Render the separator border (default: bottom line) over the full area.
+                        // It only draws at the edges of `action_full_rect`, so the input and
+                        // preview content rendered afterwards is not obscured.
+                        if !cfg.border.is_empty() {
+                            frame.render_widget(cfg.border.as_static_block(), action_full_rect);
+                        }
+
+                        let mut current_y = action_full_rect.y;
+
+                        let action_input_rect = Rect {
                             x: action_full_rect.x,
                             y: current_y,
                             width: action_w,
-                            height: cfg.preview_height,
+                            height: action_full_rect.height.min(1),
                         };
-                        let block = ratatui::widgets::Block::bordered();
-                        frame.render_widget(block, preview_rect);
-                    }
-                }
+                        render_input(frame, action_input_rect, &mut picker_ui.action, None, None);
+                        current_y += 1;
 
-                if picker_ui.breadcrumb_config.show && !breadcrumb_spans.is_empty() {
-                    let target_rect = if is_global_breadcrumb {
-                        global_breadcrumb_rect
+                        // Render preview area below if preview_height > 0.
+                        if cfg.preview_height > 0
+                            && action_full_rect.height > current_y - action_full_rect.y
+                        {
+                            let preview_rect = Rect {
+                                x: action_full_rect.x,
+                                y: current_y,
+                                width: action_w,
+                                height: cfg.preview_height,
+                            };
+                            let block = ratatui::widgets::Block::bordered();
+                            frame.render_widget(block, preview_rect);
+                        }
+                    }
+
+                    if picker_ui.breadcrumb_config.show && !breadcrumb_spans.is_empty() {
+                        let target_rect = if is_global_breadcrumb {
+                            global_breadcrumb_rect
+                        } else {
+                            breadcrumb
+                        };
+
+                        if target_rect.height > 0 {
+                            let p = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
+                                breadcrumb_spans,
+                            ));
+                            frame.render_widget(p, target_rect);
+                        }
+                    }
+                    if picker_ui.query.config.show {
+                        cursor_y_offset = render_input(
+                            frame,
+                            input,
+                            &mut picker_ui.query,
+                            status_inline_label,
+                            input_focus_info,
+                        )
+                        .y;
                     } else {
-                        breadcrumb
-                    };
-
-                    if target_rect.height > 0 {
-                        let p = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
-                            breadcrumb_spans,
-                        ));
-                        frame.render_widget(p, target_rect);
+                        cursor_y_offset = input.y;
                     }
-                }
-                if picker_ui.query.config.show {
-                    cursor_y_offset = render_input(
+                    // When status_inline is active, skip the separate status row.
+                    if !picker_ui.query.config.status_inline {
+                        render_status(frame, status, &picker_ui.results, ui.area().width);
+                    }
+                    render_results(
                         frame,
-                        input,
-                        &mut picker_ui.query,
-                        status_inline_label,
-                        input_focus_info,
-                    )
-                    .y;
-                } else {
-                    cursor_y_offset = input.y;
-                }
-                // When status_inline is active, skip the separate status row.
-                if !picker_ui.query.config.status_inline {
-                    render_status(frame, status, &picker_ui.results, ui.area().width);
-                }
-                render_results(
-                    frame,
-                    results,
-                    &mut picker_ui,
-                    &mut click,
-                    results_focus_info,
-                    state.reloading,
-                );
-                render_display(frame, header, &mut picker_ui.header, &picker_ui.results);
-                render_display(frame, footer, &mut footer_ui, &picker_ui.results);
-                if show_nav_hints && footer.height > 0 {
-                    render_nav_hints(frame, footer, ui.config.nav_basic);
-                }
-                if parent_peek_rect.width > 0 {
-                    render_parent_peek(frame, parent_peek_rect, &ui.config.parent_peek);
-                }
-                if let Some(preview_ui) = preview_ui.as_mut() {
-                    state.update_preview_visible(preview_ui);
-                    if preview_ui.visible() {
-                        // Set the dynamic title from the first column of the current item.
-                        let item_title = picker_ui
-                            .worker
-                            .get_nth(picker_ui.results.index())
-                            .map(|item| picker_ui.worker.columns[0].raw(item).into_owned());
-                        preview_ui.set_title(item_title);
-                        render_preview(frame, preview, preview_ui);
+                        results,
+                        &mut picker_ui,
+                        &mut click,
+                        results_focus_info,
+                        state.reloading,
+                    );
+                    render_display(frame, header, &mut picker_ui.header, &picker_ui.results);
+                    render_display(frame, footer, &mut footer_ui, &picker_ui.results);
+                    if show_nav_hints && footer.height > 0 {
+                        render_nav_hints(frame, footer, ui.config.nav_basic);
+                    }
+                    if parent_peek_rect.width > 0 {
+                        render_parent_peek(frame, parent_peek_rect, &ui.config.parent_peek);
+                    }
+                    if let Some(preview_ui) = preview_ui.as_mut() {
+                        state.update_preview_visible(preview_ui);
+                        if preview_ui.visible() {
+                            // Set the dynamic title from the first column of the current item.
+                            let item_title = picker_ui
+                                .worker
+                                .get_nth(picker_ui.results.index())
+                                .map(|item| picker_ui.worker.columns[0].raw(item).into_owned());
+                            preview_ui.set_title(item_title);
+                            render_preview(frame, preview, preview_ui);
 
-                        // Highlight the gap area when the mouse is hovering over it.
-                        if !gap_area.is_empty() {
-                            let is_hovered = mouse_hover.is_some_and(|p| gap_area.contains(p));
-                            let is_dragging = state.dragging.is_some();
-                            if is_hovered || is_dragging {
-                                let gap_block =
-                                    Block::default().style(Style::default().bg(Color::DarkGray));
-                                frame.render_widget(gap_block, gap_area);
-                            }
+                            // Highlight the gap area when the mouse is hovering over it.
+                            if !gap_area.is_empty() {
+                                let is_hovered = mouse_hover.is_some_and(|p| gap_area.contains(p));
+                                let is_dragging = state.dragging.is_some();
+                                if is_hovered || is_dragging {
+                                    let gap_block = Block::default()
+                                        .style(Style::default().bg(Color::DarkGray));
+                                    frame.render_widget(gap_block, gap_area);
+                                }
 
-                            // Counter bar: render cut / yank / selected counts.
-                            // - suppress selected if fully covered by yank (same count)
-                            // - suppress yank    if fully covered by cut  (same count)
-                            // - single group → one horizontal row
-                            // - multiple groups → stacked vertically, one row per group
-                            // - positioned 5 rows from the bottom of the gap
-                            let sel_raw = picker_ui.selector.len();
-                            let yank_raw = picker_ui.results.yank_paths.len();
-                            let cut_raw = picker_ui.results.cut_paths.len();
+                                // Counter bar: render cut / yank / selected counts.
+                                // - suppress selected if fully covered by yank (same count)
+                                // - suppress yank    if fully covered by cut  (same count)
+                                // - single group → one horizontal row
+                                // - multiple groups → stacked vertically, one row per group
+                                // - positioned 5 rows from the bottom of the gap
+                                let sel_raw = picker_ui.selector.len();
+                                let yank_raw = picker_ui.results.yank_paths.len();
+                                let cut_raw = picker_ui.results.cut_paths.len();
 
-                            let show_cut = cut_raw > 0;
-                            let show_yank = yank_raw > 0 && yank_raw != cut_raw;
-                            let show_sel = sel_raw > 0 && sel_raw != yank_raw && sel_raw != cut_raw;
+                                let show_cut = cut_raw > 0;
+                                let show_yank = yank_raw > 0 && yank_raw != cut_raw;
+                                let show_sel =
+                                    sel_raw > 0 && sel_raw != yank_raw && sel_raw != cut_raw;
 
-                            // Collect the groups to render (cut first = highest priority).
-                            let rcfg = &picker_ui.results.config;
-                            let groups: Vec<(usize, Color)> = [
-                                show_cut.then(|| {
-                                    (cut_raw, rcfg.cut_prefix_style.fg.unwrap_or(Color::Red))
-                                }),
-                                show_yank.then(|| {
-                                    (yank_raw, rcfg.yank_prefix_style.fg.unwrap_or(Color::Yellow))
-                                }),
-                                show_sel.then(|| {
-                                    (
-                                        sel_raw,
-                                        rcfg.selected_prefix_style.fg.unwrap_or(Color::Cyan),
-                                    )
-                                }),
-                            ]
-                            .into_iter()
-                            .flatten()
-                            .collect();
+                                // Collect the groups to render (cut first = highest priority).
+                                let rcfg = &picker_ui.results.config;
+                                let groups: Vec<(usize, Color)> = [
+                                    show_cut.then(|| {
+                                        (cut_raw, rcfg.cut_prefix_style.fg.unwrap_or(Color::Red))
+                                    }),
+                                    show_yank.then(|| {
+                                        (
+                                            yank_raw,
+                                            rcfg.yank_prefix_style.fg.unwrap_or(Color::Yellow),
+                                        )
+                                    }),
+                                    show_sel.then(|| {
+                                        (
+                                            sel_raw,
+                                            rcfg.selected_prefix_style.fg.unwrap_or(Color::Cyan),
+                                        )
+                                    }),
+                                ]
+                                .into_iter()
+                                .flatten()
+                                .collect();
 
-                            if !groups.is_empty() {
-                                let n_rows = groups.len() as u16;
-                                // Position from the top of the gap using the configured offset.
-                                let offset_from_top = preview_ui
-                                    .setting()
-                                    .map(|s| s.layout.gap_counter_offset)
-                                    .unwrap_or(0);
-                                let start_y = (gap_area.y + offset_from_top)
-                                    .min(gap_area.y + gap_area.height.saturating_sub(n_rows));
+                                if !groups.is_empty() {
+                                    let n_rows = groups.len() as u16;
+                                    // Position from the top of the gap using the configured offset.
+                                    let offset_from_top = preview_ui
+                                        .setting()
+                                        .map(|s| s.layout.gap_counter_offset)
+                                        .unwrap_or(0);
+                                    let start_y = (gap_area.y + offset_from_top)
+                                        .min(gap_area.y + gap_area.height.saturating_sub(n_rows));
 
-                                for (row_idx, (count, bg)) in groups.iter().enumerate() {
-                                    let row_y = start_y + row_idx as u16;
-                                    if row_y >= gap_area.y + gap_area.height {
-                                        break;
+                                    for (row_idx, (count, bg)) in groups.iter().enumerate() {
+                                        let row_y = start_y + row_idx as u16;
+                                        if row_y >= gap_area.y + gap_area.height {
+                                            break;
+                                        }
+                                        let row_rect = Rect {
+                                            x: gap_area.x,
+                                            y: row_y,
+                                            width: gap_area.width,
+                                            height: 1,
+                                        };
+                                        let span = Span::styled(
+                                            format!(" {} ", count),
+                                            Style::default().fg(Color::Black).bg(*bg),
+                                        );
+                                        frame.render_widget(
+                                            Paragraph::new(Line::from(span))
+                                                .alignment(ratatui::layout::Alignment::Center),
+                                            row_rect,
+                                        );
                                     }
-                                    let row_rect = Rect {
-                                        x: gap_area.x,
-                                        y: row_y,
-                                        width: gap_area.width,
-                                        height: 1,
-                                    };
-                                    let span = Span::styled(
-                                        format!(" {} ", count),
-                                        Style::default().fg(Color::Black).bg(*bg),
-                                    );
-                                    frame.render_widget(
-                                        Paragraph::new(Line::from(span))
-                                            .alignment(ratatui::layout::Alignment::Center),
-                                        row_rect,
-                                    );
                                 }
                             }
                         }
                     }
-                }
-                if let Some(x) = overlay_ui_ref {
-                    x.draw(frame);
-                }
-            })
-            .map_err(|e| MatchError::TUIError(e.to_string()))?;
+                    if let Some(x) = overlay_ui_ref {
+                        x.draw(frame);
+                    }
+                })
+                .map_err(|e| MatchError::TUIError(e.to_string()))?;
             state.needs_redraw = false;
         }
 
@@ -2184,10 +2201,7 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             format!(" {key}"),
             Style::default().fg(*color).add_modifier(Modifier::BOLD),
         );
-        let label_span = Span::styled(
-            format!(" {label} "),
-            Style::default().fg(Color::DarkGray),
-        );
+        let label_span = Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray));
         let pair_w = key_span.width() + label_span.width();
         if total_w + pair_w > max_w {
             break;
@@ -2205,7 +2219,9 @@ fn render_parent_peek(frame: &mut Frame, area: Rect, cfg: &crate::config::Parent
         return;
     }
 
-    let Ok(cwd) = std::env::current_dir() else { return };
+    let Ok(cwd) = std::env::current_dir() else {
+        return;
+    };
     let Some(parent) = cwd.parent() else { return };
 
     let parent_name = parent
@@ -2219,7 +2235,10 @@ fn render_parent_peek(frame: &mut Frame, area: Rect, cfg: &crate::config::Parent
 
     let inner = if cfg.border.show {
         let border_color = cfg.border.color.unwrap_or(Color::DarkGray);
-        let border_type = cfg.border.r#type.unwrap_or(ratatui::widgets::BorderType::Plain);
+        let border_type = cfg
+            .border
+            .r#type
+            .unwrap_or(ratatui::widgets::BorderType::Plain);
 
         let block = Block::default()
             .borders(Borders::RIGHT)
@@ -2227,7 +2246,9 @@ fn render_parent_peek(frame: &mut Frame, area: Rect, cfg: &crate::config::Parent
             .border_style(Style::default().fg(border_color))
             .title(Span::styled(
                 format!(" {} ", parent_name),
-                Style::default().fg(parent_color).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(parent_color)
+                    .add_modifier(Modifier::BOLD),
             ));
 
         let inner_area = block.inner(area);
@@ -2275,7 +2296,9 @@ fn render_parent_peek(frame: &mut Frame, area: Rect, cfg: &crate::config::Parent
         let text = format!("{}{}", icon, name);
 
         let style = if is_selected {
-            Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(highlight_color)
+                .add_modifier(Modifier::BOLD)
         } else if *is_dir {
             Style::default().fg(Color::Blue)
         } else {

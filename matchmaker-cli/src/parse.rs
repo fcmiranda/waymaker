@@ -33,7 +33,10 @@ static ALIASES: &[(&str, &str)] = &[
     ("parent-peek-pct", "ui.parent_peek.pct"),
     ("parent-peek-color", "ui.parent_peek.parent_color"),
     ("parent-peek-highlight", "ui.parent_peek.highlight"),
-    ("parent-peek-highlight-color", "ui.parent_peek.highlight_color"),
+    (
+        "parent-peek-highlight-color",
+        "ui.parent_peek.highlight_color",
+    ),
     ("parent-peek-border", "ui.parent_peek.border.show"),
     ("status-inline", "query.status_inline"),
     ("prompt", "query.prompt"),

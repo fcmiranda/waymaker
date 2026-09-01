@@ -253,4 +253,3 @@ fn parse_content_to_text(s: &str) -> Text<'static> {
         .collect();
     Text::from(lines)
 }
-

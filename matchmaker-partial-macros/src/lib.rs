@@ -416,7 +416,9 @@ pub fn partial(attr: TokenStream, item: TokenStream) -> TokenStream {
                             }
                         }
                     }
-                    CollectionKind::HashMap | CollectionKind::BTreeMap | CollectionKind::IndexMap => {
+                    CollectionKind::HashMap
+                    | CollectionKind::BTreeMap
+                    | CollectionKind::IndexMap => {
                         if !field_unwrap {
                             quote! {
                                 for (k, p_v) in p {

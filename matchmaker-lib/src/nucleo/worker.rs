@@ -267,7 +267,8 @@ impl<T: SSS> Worker<T> {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        self.notify_callback.store(Some(Arc::new(NotifyFn(Box::new(f)))));
+        self.notify_callback
+            .store(Some(Arc::new(NotifyFn(Box::new(f)))));
     }
 
     pub fn set_column_options(&mut self, index: usize, options: ColumnOptions) {

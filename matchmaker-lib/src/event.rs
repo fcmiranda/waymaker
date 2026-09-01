@@ -142,7 +142,7 @@ impl<A: ActionExt> EventLoop<A> {
         let mut matched = true;
         // a basic set of keys to ensure basic usability
         match key {
-            key!(ctrl-c) => {
+            key!(ctrl - c) => {
                 self.send(RenderCommand::quit_with(130));
             }
             key!(esc) => {
@@ -153,14 +153,14 @@ impl<A: ActionExt> EventLoop<A> {
             key!(enter) => self.send_action(Action::Accept),
             key!(right) => self.send_action(Action::ForwardChar),
             key!(left) => self.send_action(Action::BackwardChar),
-            key!(ctrl-right) => self.send_action(Action::ForwardWord),
-            key!(ctrl-left) => self.send_action(Action::BackwardWord),
+            key!(ctrl - right) => self.send_action(Action::ForwardWord),
+            key!(ctrl - left) => self.send_action(Action::BackwardWord),
             key!(backspace) => self.send_action(Action::DeleteChar),
-            key!(ctrl-h) => self.send_action(Action::DeleteWord),
-            key!(ctrl-u) => self.send_action(Action::Cancel),
-            key!(alt-h) => self.send_action(Action::Help("".to_string())),
-            key!(ctrl-'[') => self.send_action(Action::ToggleWrap),
-            key!(ctrl-']') => self.send_action(Action::TogglePreviewWrap),
+            key!(ctrl - h) => self.send_action(Action::DeleteWord),
+            key!(ctrl - u) => self.send_action(Action::Cancel),
+            key!(alt - h) => self.send_action(Action::Help("".to_string())),
+            key!(ctrl - '[') => self.send_action(Action::ToggleWrap),
+            key!(ctrl - ']') => self.send_action(Action::TogglePreviewWrap),
             _ => {
                 matched = false;
             }

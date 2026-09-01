@@ -160,7 +160,9 @@ pub fn action_handler(
     match a {
         MMAction::Accept => {
             if state.picker_ui.action_visible {
-                commit_fm_action(state, render_tx, undo_stack, redo_stack, fm_action, *fm_notify);
+                commit_fm_action(
+                    state, render_tx, undo_stack, redo_stack, fm_action, *fm_notify,
+                );
                 return;
             }
 
@@ -1013,10 +1015,7 @@ use crate::formatter::format_cli;
 fn show_action_box(state: &mut MMState<'_, '_>, prompt: &str, initial: &str) {
     state.picker_ui.action_visible = true;
     matchmaker::ACTION_BOX_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
-    state
-        .picker_ui
-        .action
-        .set(Some(initial.to_string()), 0);
+    state.picker_ui.action.set(Some(initial.to_string()), 0);
     state
         .picker_ui
         .action
@@ -1026,10 +1025,7 @@ fn show_action_box(state: &mut MMState<'_, '_>, prompt: &str, initial: &str) {
 fn show_styled_action_box(state: &mut MMState<'_, '_>, prompt: &str, initial: &str) {
     state.picker_ui.action_visible = true;
     matchmaker::ACTION_BOX_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
-    state
-        .picker_ui
-        .action
-        .set(Some(initial.to_string()), 0);
+    state.picker_ui.action.set(Some(initial.to_string()), 0);
     state
         .picker_ui
         .action

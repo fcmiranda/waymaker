@@ -1726,7 +1726,10 @@ mod tests {
         "#;
         let config: ResultsConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.tier_separator, HorizontalSeparator::Dashed);
-        assert_eq!(config.tier_separator_style.fg, Some(ratatui::style::Color::Cyan));
+        assert_eq!(
+            config.tier_separator_style.fg,
+            Some(ratatui::style::Color::Cyan)
+        );
 
         let toml_top = r#"
             tier_separator = "top"

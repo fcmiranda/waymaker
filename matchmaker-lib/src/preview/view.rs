@@ -40,7 +40,12 @@ impl Preview {
             s.lines.iter().skip(skip).take(take).cloned().collect()
         } else {
             let output = self.lines.read();
-            output.iter().skip(skip).take(take).map(|(_, line)| line.clone()).collect()
+            output
+                .iter()
+                .skip(skip)
+                .take(take)
+                .map(|(_, line)| line.clone())
+                .collect()
         }
     }
 

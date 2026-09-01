@@ -43,8 +43,11 @@ pub struct PreviewUI {
     pub zoom: f32,
     pub image_state: Option<ratatui_image::protocol::StatefulProtocol>,
     current_image_id: u64,
-    pending_protocol_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(u64, ratatui_image::protocol::StatefulProtocol)>>,
-    pending_protocol_tx: tokio::sync::mpsc::UnboundedSender<(u64, ratatui_image::protocol::StatefulProtocol)>,
+    pending_protocol_rx: Option<
+        tokio::sync::mpsc::UnboundedReceiver<(u64, ratatui_image::protocol::StatefulProtocol)>,
+    >,
+    pending_protocol_tx:
+        tokio::sync::mpsc::UnboundedSender<(u64, ratatui_image::protocol::StatefulProtocol)>,
     is_generating_protocol: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -562,7 +565,10 @@ impl PreviewUI {
             }
         }
 
-        let live_image_id = self.view.image_id.load(std::sync::atomic::Ordering::Acquire);
+        let live_image_id = self
+            .view
+            .image_id
+            .load(std::sync::atomic::Ordering::Acquire);
 
         if live_image_id != self.current_image_id {
             self.current_image_id = live_image_id;
@@ -775,17 +781,14 @@ impl PreviewUI {
 #[cfg(unix)]
 fn query_tty_picker(timeout: std::time::Duration) -> anyhow::Result<ratatui_image::picker::Picker> {
     use nix::sys::{
-        select::{select, FdSet},
+        select::{FdSet, select},
         time::{TimeVal, TimeValLike},
     };
     use std::fs::OpenOptions;
     use std::io::{Read, Write};
     use std::os::fd::AsFd;
 
-    let mut tty = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")?;
+    let mut tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
 
     let is_tmux = std::env::var("TERM_PROGRAM").is_ok_and(|v| v == "tmux")
         || std::env::var("TERM").is_ok_and(|t| t.starts_with("tmux"));
@@ -860,8 +863,8 @@ fn query_tty_picker(timeout: std::time::Duration) -> anyhow::Result<ratatui_imag
 }
 
 #[cfg(windows)]
-fn query_tty_picker(_timeout: std::time::Duration) -> anyhow::Result<ratatui_image::picker::Picker> {
+fn query_tty_picker(
+    _timeout: std::time::Duration,
+) -> anyhow::Result<ratatui_image::picker::Picker> {
     anyhow::bail!("TTY querying is not supported on Windows")
 }
-
-

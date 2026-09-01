@@ -321,7 +321,10 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(temp_dir.join("src").join("sub"))?;
         fs::write(temp_dir.join("src").join("main.rs"), "fn main() {}")?;
-        fs::write(temp_dir.join("src").join("sub").join("lib.rs"), "pub fn x() {}")?;
+        fs::write(
+            temp_dir.join("src").join("sub").join("lib.rs"),
+            "pub fn x() {}",
+        )?;
         fs::write(temp_dir.join("README.md"), "# Test")?;
 
         let options = WalkerOptions {
@@ -354,7 +357,11 @@ mod tests {
         let mut unique_items = items.clone();
         unique_items.sort();
         unique_items.dedup();
-        assert_eq!(items.len(), unique_items.len(), "Items should be unique without duplicates");
+        assert_eq!(
+            items.len(),
+            unique_items.len(),
+            "Items should be unique without duplicates"
+        );
 
         let _ = fs::remove_dir_all(&temp_dir);
         Ok(())

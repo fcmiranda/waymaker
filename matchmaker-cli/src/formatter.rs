@@ -98,7 +98,8 @@ impl TemplateAST {
                         let key = &template[start..j];
                         if is_valid_content(key) {
                             if !cur_literal.is_empty() {
-                                tokens.push(TemplateToken::Literal(std::mem::take(&mut cur_literal)));
+                                tokens
+                                    .push(TemplateToken::Literal(std::mem::take(&mut cur_literal)));
                             }
                             let k = key.trim_start_matches('=');
                             if !key.starts_with(['+', '-', '$']) && k != "query" && k != "q" {

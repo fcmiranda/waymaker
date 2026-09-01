@@ -79,11 +79,28 @@ pub enum HorizontalSeparator {
     Heavy,
     #[serde(alias = "dashed")]
     Dashed,
-    #[serde(alias = "top", alias = "Upper", alias = "upper", alias = "UpperBlock", alias = "upper_block")]
+    #[serde(
+        alias = "top",
+        alias = "Upper",
+        alias = "upper",
+        alias = "UpperBlock",
+        alias = "upper_block"
+    )]
     Top,
-    #[serde(alias = "bottom", alias = "Lower", alias = "lower", alias = "LowerBlock", alias = "lower_block")]
+    #[serde(
+        alias = "bottom",
+        alias = "Lower",
+        alias = "lower",
+        alias = "LowerBlock",
+        alias = "lower_block"
+    )]
     Bottom,
-    #[serde(alias = "underline", alias = "underlined", alias = "under_line", alias = "Underline")]
+    #[serde(
+        alias = "underline",
+        alias = "underlined",
+        alias = "under_line",
+        alias = "Underline"
+    )]
     Underline,
 }
 

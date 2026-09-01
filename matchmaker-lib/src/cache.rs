@@ -94,7 +94,9 @@ impl DirCacheRecord {
             return None;
         }
 
-        let root = std::str::from_utf8(&bytes[24..24 + root_len]).ok()?.to_string();
+        let root = std::str::from_utf8(&bytes[24..24 + root_len])
+            .ok()?
+            .to_string();
         let payload = &bytes[24 + root_len..];
 
         let items = if payload.is_empty() {
@@ -217,7 +219,10 @@ impl DirCacheStore {
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
 
-        if current_mtime_nanos != 0 && rec.mtime_nanos != 0 && current_mtime_nanos != rec.mtime_nanos {
+        if current_mtime_nanos != 0
+            && rec.mtime_nanos != 0
+            && current_mtime_nanos != rec.mtime_nanos
+        {
             log::debug!(
                 "DirCache invalidated for {raw_root}: directory mtime changed ({current_mtime_nanos} != {})",
                 rec.mtime_nanos
@@ -350,7 +355,11 @@ mod tests {
             root: "/home/user/project".to_string(),
             timestamp: 1234567890,
             mtime_nanos: 987654321,
-            items: vec!["src/lib.rs".to_string(), "Cargo.toml".to_string(), "docs/README.md".to_string()],
+            items: vec![
+                "src/lib.rs".to_string(),
+                "Cargo.toml".to_string(),
+                "docs/README.md".to_string(),
+            ],
         };
 
         let encoded = rec.to_zero_copy_bytes();

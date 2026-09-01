@@ -117,8 +117,8 @@ impl FrecencySnapshot {
         let clean = clean_path(path);
         // 1. Direct exact match in scores table
         if let Some(&score) = self.scores.get(clean) {
-            let is_cwd_child = !self.cwd.is_empty()
-                && (clean.starts_with(&self.cwd) || !clean.starts_with('/'));
+            let is_cwd_child =
+                !self.cwd.is_empty() && (clean.starts_with(&self.cwd) || !clean.starts_with('/'));
             if is_cwd_child && location_bias > 0 {
                 return score.saturating_add((score as u64 * location_bias as u64 / 100) as u32);
             }
@@ -138,7 +138,9 @@ impl FrecencySnapshot {
                     if let Some(&score) = self.scores.get(clean_path(full_str)) {
                         let is_cwd_child = !self.cwd.is_empty() && full_str.starts_with(&self.cwd);
                         if is_cwd_child && location_bias > 0 {
-                            return score.saturating_add((score as u64 * location_bias as u64 / 100) as u32);
+                            return score.saturating_add(
+                                (score as u64 * location_bias as u64 / 100) as u32,
+                            );
                         }
                         return score;
                     }
@@ -154,7 +156,9 @@ impl FrecencySnapshot {
                 if let Ok(full_str) = std::str::from_utf8(&buf[..needed]) {
                     if let Some(&score) = self.scores.get(clean_path(full_str)) {
                         if location_bias > 0 {
-                            return score.saturating_add((score as u64 * location_bias as u64 / 100) as u32);
+                            return score.saturating_add(
+                                (score as u64 * location_bias as u64 / 100) as u32,
+                            );
                         }
                         return score;
                     }
@@ -744,13 +748,17 @@ mod tests {
         let mut snapshot = store.get_snapshot();
         snapshot.cwd = temp_dir.to_str().unwrap().to_string();
 
-        let rel_accessed = "github/matchmaker/fecavmi/.agents/skills/skill-creator/scripts/run_eval.py";
+        let rel_accessed =
+            "github/matchmaker/fecavmi/.agents/skills/skill-creator/scripts/run_eval.py";
         let rel_unaccessed = "github/acpd/.agents/skills/skill-creator/scripts/run_eval.py";
 
         let accessed_bonus = snapshot.get_bonus(rel_accessed);
         let unaccessed_bonus = snapshot.get_bonus(rel_unaccessed);
 
-        assert!(accessed_bonus > 0, "Accessed path should have a positive bonus");
+        assert!(
+            accessed_bonus > 0,
+            "Accessed path should have a positive bonus"
+        );
         assert_eq!(
             unaccessed_bonus, 0,
             "Unaccessed path must have 0 bonus (no basename pollution)"

@@ -422,7 +422,9 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                     "hints" => config.render.ui.nav_hints = true,
                     "no-hints" => config.render.ui.nav_hints = false,
                     "parent-peek" | "parent_peek" => config.render.ui.parent_peek.enabled = true,
-                    "no-parent-peek" | "no_parent_peek" => config.render.ui.parent_peek.enabled = false,
+                    "no-parent-peek" | "no_parent_peek" => {
+                        config.render.ui.parent_peek.enabled = false
+                    }
                     "status-inline" => config.render.query.status_inline = true,
                     "no-status-inline" => config.render.query.status_inline = false,
                     _ => eprintln!("warning: unknown --nav property '{}'", prop),
@@ -442,10 +444,14 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                     "false" | "off" | "no" | "0" => config.render.ui.nav_hints = false,
                     _ => config.render.ui.nav_hints = true,
                 },
-                Some(("parent-peek" | "parent_peek", s)) => match s.trim().to_ascii_lowercase().as_str() {
-                    "false" | "off" | "no" | "0" => config.render.ui.parent_peek.enabled = false,
-                    _ => config.render.ui.parent_peek.enabled = true,
-                },
+                Some(("parent-peek" | "parent_peek", s)) => {
+                    match s.trim().to_ascii_lowercase().as_str() {
+                        "false" | "off" | "no" | "0" => {
+                            config.render.ui.parent_peek.enabled = false
+                        }
+                        _ => config.render.ui.parent_peek.enabled = true,
+                    }
+                }
                 Some(("parent-peek-pct" | "parent_peek_pct", s)) => {
                     if let Ok(pct) = s.parse::<u16>() {
                         config.render.ui.parent_peek.pct = matchmaker::config::Percentage::new(pct);
@@ -456,19 +462,27 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                         config.render.ui.parent_peek.parent_color = Some(color);
                     }
                 }
-                Some(("parent-peek-highlight" | "parent_peek_highlight", s)) => match s.trim().to_ascii_lowercase().as_str() {
-                    "false" | "off" | "no" | "0" => config.render.ui.parent_peek.highlight = false,
-                    _ => config.render.ui.parent_peek.highlight = true,
-                },
+                Some(("parent-peek-highlight" | "parent_peek_highlight", s)) => {
+                    match s.trim().to_ascii_lowercase().as_str() {
+                        "false" | "off" | "no" | "0" => {
+                            config.render.ui.parent_peek.highlight = false
+                        }
+                        _ => config.render.ui.parent_peek.highlight = true,
+                    }
+                }
                 Some(("parent-peek-highlight-color" | "parent_peek_highlight_color", s)) => {
                     if let Ok(color) = s.trim().parse::<ratatui::style::Color>() {
                         config.render.ui.parent_peek.highlight_color = Some(color);
                     }
                 }
-                Some(("parent-peek-border" | "parent_peek_border", s)) => match s.trim().to_ascii_lowercase().as_str() {
-                    "false" | "off" | "no" | "0" | "none" => config.render.ui.parent_peek.border.show = false,
-                    _ => config.render.ui.parent_peek.border.show = true,
-                },
+                Some(("parent-peek-border" | "parent_peek_border", s)) => {
+                    match s.trim().to_ascii_lowercase().as_str() {
+                        "false" | "off" | "no" | "0" | "none" => {
+                            config.render.ui.parent_peek.border.show = false
+                        }
+                        _ => config.render.ui.parent_peek.border.show = true,
+                    }
+                }
                 Some(("parent-peek-border-color" | "parent_peek_border_color", s)) => {
                     if let Ok(color) = s.trim().parse::<ratatui::style::Color>() {
                         config.render.ui.parent_peek.border.color = Some(color);
@@ -1077,7 +1091,8 @@ pub async fn start(
                 let target_dir = target_path.clone();
                 let env_vars = state.make_env_vars();
                 tokio::task::spawn_blocking(move || {
-                    let lines: Option<Vec<String>> = if is_default_file_walker_command(&cmd_to_run) {
+                    let lines: Option<Vec<String>> = if is_default_file_walker_command(&cmd_to_run)
+                    {
                         let walker = matchmaker::walker::AsyncWalker::from_root(&target_dir);
                         Some(walker.collect_sync())
                     } else if let Some(out) = Command::from_script(&cmd_to_run)
@@ -1089,10 +1104,8 @@ pub async fn start(
                         ._elog()
                     {
                         let text = String::from_utf8_lossy(&out.stdout);
-                        let mut l: Vec<String> = text
-                            .split(spec_sep)
-                            .map(|s| s.to_string())
-                            .collect();
+                        let mut l: Vec<String> =
+                            text.split(spec_sep).map(|s| s.to_string()).collect();
                         if l.last().map_or(false, |line| line.is_empty()) {
                             l.pop();
                         }
@@ -1207,8 +1220,7 @@ pub async fn start(
                     let mut fresh_items: Vec<String> = collect_rx.into_iter().collect();
                     if !fresh_items.is_empty() {
                         fresh_items.sort_by_key(|item| {
-                            let slashes =
-                                item.bytes().filter(|&b| b == b'/' || b == b'\\').count();
+                            let slashes = item.bytes().filter(|&b| b == b'/' || b == b'\\').count();
                             (slashes, item.clone())
                         });
                         let cache_store = matchmaker::cache::DirCacheStore::open();
@@ -1601,4 +1613,3 @@ fn is_default_file_walker_command(cmd: &str) -> bool {
         || trimmed == "fd --strip-cwd-prefix --print0"
         || trimmed == "find . -print0"
 }
-

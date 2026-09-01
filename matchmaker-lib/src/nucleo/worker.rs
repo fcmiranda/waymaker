@@ -1984,6 +1984,7 @@ mod tests {
             cols[0] = item.clone().into();
         });
 
+        worker.nucleo.set_stability(u32::MAX);
         worker.nucleo.tick(10);
         let mut matcher = Matcher::default();
 
@@ -2119,6 +2120,28 @@ mod tests {
         assert_eq!(
             items,
             vec!["a.zip", "file1.txt", "file2.txt", "file10.txt", "b.tar"]
+        );
+
+        // 7. None (preserves exact stream/command insertion order)
+        worker.set_sort_order(None);
+        let (results, _, _, _) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+        let items: Vec<&String> = results.iter().map(|r| r.2).collect();
+        assert_eq!(
+            items,
+            vec!["file10.txt", "file2.txt", "file1.txt", "a.zip", "b.tar"]
         );
     }
 }

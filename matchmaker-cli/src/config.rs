@@ -76,7 +76,6 @@ pub struct Config {
 
     /// Global default sort order.
     #[serde(default)]
-    #[serde(alias = "sort")]
     #[partial(no_recurse, unwrap)]
     pub default_sort: Option<SortOrder>,
 

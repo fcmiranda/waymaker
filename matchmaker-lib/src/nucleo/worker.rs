@@ -2144,4 +2144,88 @@ mod tests {
             vec!["file10.txt", "file2.txt", "file1.txt", "a.zip", "b.tar"]
         );
     }
+
+    #[test]
+    fn test_awt_type_ordering() {
+        use crate::Matchmaker;
+        use crate::config::*;
+        use crate::nucleo::injector::Injector;
+
+        let mut columns = ColumnsConfig::default();
+        columns.split = Split::Delimiter(regex::Regex::new("\t").unwrap());
+        columns.default = Some(StringValue("type".to_string()));
+        columns.names = vec![
+            ColumnSetting { name: ColumnName("type".to_string()), hidden: false, ignore: false },
+            ColumnSetting { name: ColumnName("description".to_string()), hidden: false, ignore: false },
+            ColumnSetting { name: ColumnName("icon".to_string()), hidden: true, ignore: false },
+            ColumnSetting { name: ColumnName("prefix".to_string()), hidden: true, ignore: false },
+        ];
+
+        let mut worker_config = WorkerConfig::default();
+        worker_config.sort_threshold = SortThreshold::SMART;
+
+        let (mut mm, injector, _) = Matchmaker::new_from_config(
+            RenderConfig::default(),
+            TerminalConfig::default(),
+            worker_config,
+            columns,
+            ExitConfig::default(),
+            (false, false),
+        );
+
+        let lines = vec![
+            "\u{1b}[1;36m feat\u{1b}[0m\tNew feature\t\tfeat/\n",
+            "\u{1b}[1;31m fix\u{1b}[0m\tBug fix\t\tfix/\n",
+            "\u{1b}[1;33m󰣪 refactor\u{1b}[0m\tCode restructuring\t󰣪\trefactor/\n",
+            "\u{1b}[1;35m󰓅 perf\u{1b}[0m\tPerformance optimization\t󰓅\tperf/\n",
+            "\u{1b}[1;36m ci\u{1b}[0m\tCI/CD workflows / pipelines\t\tci/\n",
+            "\u{1b}[1;34m chore\u{1b}[0m\tMaintenance / config\t\tchore/\n",
+            "\u{1b}[1;32m󰧮 docs\u{1b}[0m\tDocumentation\t󰧮\tdocs/\n",
+            "\u{1b}[1;36m󰙨 test\u{1b}[0m\tTest suites\t󰙨\ttest/\n",
+            "\u{1b}[1;33m󰏖 build\u{1b}[0m\tDependencies / build\t󰏖\tbuild/\n",
+            "\u{1b}[2m󰓹 custom\u{1b}[0m\tNo prefix / freeform\t󰓹\t\n",
+        ];
+
+        for line in &lines {
+            let _ = injector.push((None, line.to_string()));
+        }
+
+        mm.worker.nucleo.tick(10);
+        let mut matcher = Matcher::default();
+
+        let (results, _, _, _) = mm.worker.results(
+            0,
+            10,
+            &[100, 100, 100, 100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+
+        let items: Vec<String> = results
+            .iter()
+            .map(|r| {
+                // Return column 0 raw or text
+                r.1[0].to_string()
+            })
+            .collect();
+        println!("Items returned:\n{:#?}", items);
+
+        assert_eq!(items[0], "\u{1b}[1;36m feat\u{1b}[0m");
+        assert_eq!(items[1], "\u{1b}[1;31m fix\u{1b}[0m");
+        assert_eq!(items[2], "\u{1b}[1;33m󰣪 refactor\u{1b}[0m");
+        assert_eq!(items[3], "\u{1b}[1;35m󰓅 perf\u{1b}[0m");
+        assert_eq!(items[4], "\u{1b}[1;36m ci\u{1b}[0m");
+        assert_eq!(items[5], "\u{1b}[1;34m chore\u{1b}[0m");
+        assert_eq!(items[6], "\u{1b}[1;32m󰧮 docs\u{1b}[0m");
+        assert_eq!(items[7], "\u{1b}[1;36m󰙨 test\u{1b}[0m");
+        assert_eq!(items[8], "\u{1b}[1;33m󰏖 build\u{1b}[0m");
+        assert_eq!(items[9], "\u{1b}[2m󰓹 custom\u{1b}[0m");
+    }
 }

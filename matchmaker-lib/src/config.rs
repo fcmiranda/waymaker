@@ -348,6 +348,11 @@ pub struct UiConfig {
     #[partial(recurse)]
     #[serde(deserialize_with = "deserialize_parent_peek", default)]
     pub parent_peek: ParentPeekConfig,
+
+    /// Configuration for the sort options menu in the footer.
+    #[partial(recurse)]
+    #[serde(default)]
+    pub sort_menu: SortMenuConfig,
 }
 
 impl Default for UiConfig {
@@ -398,6 +403,7 @@ impl Default for UiConfig {
             nav_focus_on_start: NavFocus::Filter,
             nav_hints: true,
             parent_peek: ParentPeekConfig::default(),
+            sort_menu: SortMenuConfig::default(),
         }
     }
 }
@@ -653,6 +659,40 @@ where
         })),
         Some(Helper::Config(c)) => Ok(Some(c)),
         None => Ok(None),
+    }
+}
+
+/// Configuration for the interactive sort options menu.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct SortMenuConfig {
+    /// Number of columns to display in the sort menu grid (e.g. 2, 3, 4).
+    /// If set to 0 or 1, it renders as a single horizontal line.
+    /// Default: 4.
+    pub columns: usize,
+    /// Whether to display the "Sort:" title header.
+    pub show_title: bool,
+}
+
+impl Default for SortMenuConfig {
+    fn default() -> Self {
+        Self {
+            columns: 4,
+            show_title: true,
+        }
+    }
+}
+
+impl SortMenuConfig {
+    /// Calculate the required height in rows for the sort menu.
+    pub fn height(&self, item_count: usize) -> u16 {
+        if self.columns <= 1 {
+            1
+        } else {
+            let rows = (item_count + self.columns - 1) / self.columns;
+            rows.max(1) as u16
+        }
     }
 }
 

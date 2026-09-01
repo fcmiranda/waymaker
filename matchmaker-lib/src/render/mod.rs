@@ -137,9 +137,12 @@ fn apply_sort_menu<A: ActionExt>(
                     'N' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::NaturalReverse)))),
                     'm' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Modified)))),
                     'M' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::ModifiedReverse)))),
+                    'b' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Created)))),
+                    'B' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::CreatedReverse)))),
                     's' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Size)))),
                     'S' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::SizeReverse)))),
                     'e' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Extension)))),
+                    'E' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::ExtensionReverse)))),
                     _ => {
                         // Any other char cancels sort menu
                     }
@@ -1519,7 +1522,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         && !footer_ui.show;
 
                     let effective_footer_height = if show_sort_menu {
-                        1
+                        ui.config.sort_menu.height(SORT_MENU_ITEMS.len())
                     } else if footer_ui.show {
                         footer_ui.height()
                     } else if show_nav_hints {
@@ -1823,7 +1826,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     );
                     render_display(frame, header, &mut picker_ui.header, &picker_ui.results);
                     if show_sort_menu && footer.height > 0 {
-                        render_sort_menu(frame, footer);
+                        render_sort_menu(frame, footer, &ui.config.sort_menu);
                     } else {
                         render_display(frame, footer, &mut footer_ui, &picker_ui.results);
                         if show_nav_hints && footer.height > 0 {
@@ -2244,49 +2247,95 @@ fn render_display(frame: &mut Frame, area: Rect, ui: &mut DisplayUI, results_ui:
     }
 }
 
-fn render_sort_menu(frame: &mut Frame, area: Rect) {
+const SORT_MENU_ITEMS: &[(&str, &str, ratatui::style::Color)] = &[
+    ("[a]", "Alpha", ratatui::style::Color::Cyan),
+    ("[A]", "Alpha (rev)", ratatui::style::Color::Cyan),
+    ("[n]", "Natural", ratatui::style::Color::Green),
+    ("[N]", "Natural (rev)", ratatui::style::Color::Green),
+    ("[m]", "Mtime", ratatui::style::Color::Yellow),
+    ("[M]", "Mtime (rev)", ratatui::style::Color::Yellow),
+    ("[b]", "Btime", ratatui::style::Color::LightGreen),
+    ("[B]", "Btime (rev)", ratatui::style::Color::LightGreen),
+    ("[s]", "Size", ratatui::style::Color::Magenta),
+    ("[S]", "Size (rev)", ratatui::style::Color::Magenta),
+    ("[e]", "Ext", ratatui::style::Color::Blue),
+    ("[E]", "Ext (rev)", ratatui::style::Color::Blue),
+    ("[Esc]", "Cancel", ratatui::style::Color::DarkGray),
+];
+
+fn render_sort_menu(frame: &mut Frame, area: Rect, cfg: &crate::config::SortMenuConfig) {
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
-    let items: &[(&str, &str, Color)] = &[
-        ("[a]", "Alpha", Color::Cyan),
-        ("[A]", "Alpha (rev)", Color::Cyan),
-        ("[n]", "Natural", Color::Green),
-        ("[N]", "Natural (rev)", Color::Green),
-        ("[m]", "Mtime", Color::Yellow),
-        ("[M]", "Mtime (rev)", Color::Yellow),
-        ("[s]", "Size", Color::Magenta),
-        ("[S]", "Size (rev)", Color::Magenta),
-        ("[e]", "Ext", Color::Blue),
-        ("[Esc]", "Cancel", Color::DarkGray),
-    ];
-
-    let mut spans = vec![Span::styled(
-        " Sort: ",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
-    )];
-    let mut total_w = 7;
-    let max_w = area.width as usize;
-
-    for (key, label, color) in items {
-        let key_span = Span::styled(
-            format!("{key}"),
-            Style::default().fg(*color).add_modifier(Modifier::BOLD),
-        );
-        let label_span = Span::styled(format!(" {label} "), Style::default().fg(Color::White));
-        let pair_w = key_span.width() + label_span.width();
-        if total_w + pair_w > max_w {
-            break;
+    if cfg.columns <= 1 {
+        let mut spans = Vec::new();
+        let mut total_w = 0;
+        if cfg.show_title {
+            let title_span = Span::styled(
+                " Sort: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
+            total_w += title_span.width();
+            spans.push(title_span);
         }
-        total_w += pair_w;
-        spans.push(key_span);
-        spans.push(label_span);
-    }
+        let max_w = area.width as usize;
 
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        for (key, label, color) in SORT_MENU_ITEMS {
+            let key_span = Span::styled(
+                format!("{key}"),
+                Style::default().fg(*color).add_modifier(Modifier::BOLD),
+            );
+            let label_span = Span::styled(format!(" {label} "), Style::default().fg(Color::White));
+            let pair_w = key_span.width() + label_span.width();
+            if total_w + pair_w > max_w {
+                break;
+            }
+            total_w += pair_w;
+            spans.push(key_span);
+            spans.push(label_span);
+        }
+
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    } else {
+        let cols = cfg.columns;
+        let col_w = (area.width as usize) / cols;
+        if col_w == 0 {
+            return;
+        }
+
+        let num_rows = (SORT_MENU_ITEMS.len() + cols - 1) / cols;
+        let mut lines = Vec::with_capacity(num_rows);
+
+        for row in 0..num_rows {
+            let mut line_spans = Vec::new();
+            for col in 0..cols {
+                let idx = row * cols + col;
+                if idx < SORT_MENU_ITEMS.len() {
+                    let (key, label, color) = SORT_MENU_ITEMS[idx];
+                    let key_span = Span::styled(
+                        format!(" {key}"),
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
+                    );
+                    let label_span = Span::styled(
+                        format!(" {label}"),
+                        Style::default().fg(Color::White),
+                    );
+                    let used_w = key_span.width() + label_span.width();
+                    line_spans.push(key_span);
+                    line_spans.push(label_span);
+                    if col + 1 < cols && used_w < col_w {
+                        line_spans.push(Span::raw(" ".repeat(col_w - used_w)));
+                    }
+                }
+            }
+            lines.push(Line::from(line_spans));
+        }
+
+        frame.render_widget(Paragraph::new(lines), area);
+    }
 }
 
 fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
@@ -2637,6 +2686,24 @@ mod test {
         assert!(matches!(
             buffer[0],
             RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Natural)))
+        ));
+        assert!(!sort_menu_active);
+
+        // Test next key 'b' in sort menu dispatches Action::Sort(Created) and closes menu
+        sort_menu_active = true;
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('b'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Created)))
         ));
         assert!(!sort_menu_active);
 

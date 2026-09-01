@@ -418,6 +418,7 @@ impl<T: SSS> Worker<T> {
                 clean_range: (usize, usize),
                 score: u64,
                 mtime: Option<std::time::SystemTime>,
+                btime: Option<std::time::SystemTime>,
                 size: Option<u64>,
                 ext_range: Option<(usize, usize)>,
             }
@@ -457,7 +458,7 @@ impl<T: SSS> Worker<T> {
                         get_item_tier_and_clean_path(raw_path.as_ref(), self.dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
-                    let (mtime, size, ext_range) = match self.sort_order {
+                    let (mtime, btime, size, ext_range) = match self.sort_order {
                         Some(
                             crate::action::SortOrder::Modified
                             | crate::action::SortOrder::ModifiedReverse,
@@ -466,7 +467,20 @@ impl<T: SSS> Worker<T> {
                                 .or_else(|_| std::fs::symlink_metadata(clean))
                                 .and_then(|meta| meta.modified())
                                 .ok();
-                            (m, None, None)
+                            (m, None, None, None)
+                        }
+                        Some(
+                            crate::action::SortOrder::Created
+                            | crate::action::SortOrder::CreatedReverse,
+                        ) => {
+                            let meta = std::fs::metadata(clean)
+                                .or_else(|_| std::fs::symlink_metadata(clean))
+                                .ok();
+                            let b = meta
+                                .as_ref()
+                                .and_then(|m| m.created().ok())
+                                .or_else(|| meta.as_ref().and_then(|m| m.modified().ok()));
+                            (None, b, None, None)
                         }
                         Some(
                             crate::action::SortOrder::Size
@@ -476,9 +490,12 @@ impl<T: SSS> Worker<T> {
                                 .or_else(|_| std::fs::symlink_metadata(clean))
                                 .map(|meta| meta.len())
                                 .ok();
-                            (None, s, None)
+                            (None, None, s, None)
                         }
-                        Some(crate::action::SortOrder::Extension) => {
+                        Some(
+                            crate::action::SortOrder::Extension
+                            | crate::action::SortOrder::ExtensionReverse,
+                        ) => {
                             let ext = std::path::Path::new(clean)
                                 .extension()
                                 .and_then(|e| e.to_str());
@@ -487,9 +504,9 @@ impl<T: SSS> Worker<T> {
                                     e.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                                 (start, start + e.len())
                             });
-                            (None, None, range)
+                            (None, None, None, range)
                         }
-                        _ => (None, None, None),
+                        _ => (None, None, None, None),
                     };
                     DecoratedItem {
                         item,
@@ -498,6 +515,7 @@ impl<T: SSS> Worker<T> {
                         clean_range,
                         score,
                         mtime,
+                        btime,
                         size,
                         ext_range,
                     }
@@ -542,6 +560,20 @@ impl<T: SSS> Worker<T> {
                                 .cmp(&a_time)
                                 .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
                         }
+                        SortOrder::Created => {
+                            let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            a_time
+                                .cmp(&b_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::CreatedReverse => {
+                            let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            b_time
+                                .cmp(&a_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
                         SortOrder::Size => {
                             let a_size = a.size.unwrap_or(0);
                             let b_size = b.size.unwrap_or(0);
@@ -557,6 +589,8 @@ impl<T: SSS> Worker<T> {
                                 .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
                         }
                         SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
+                            .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
+                        SortOrder::ExtensionReverse => cmp_ascii_case_insensitive(b.ext(), a.ext())
                             .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
                     };
 
@@ -747,6 +781,7 @@ impl<T: SSS> Worker<T> {
                 clean_range: (usize, usize),
                 score: u64,
                 mtime: Option<std::time::SystemTime>,
+                btime: Option<std::time::SystemTime>,
                 size: Option<u64>,
                 ext_range: Option<(usize, usize)>,
             }
@@ -786,7 +821,7 @@ impl<T: SSS> Worker<T> {
                         get_item_tier_and_clean_path(raw_path.as_ref(), self.dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
-                    let (mtime, size, ext_range) = match self.sort_order {
+                    let (mtime, btime, size, ext_range) = match self.sort_order {
                         Some(
                             crate::action::SortOrder::Modified
                             | crate::action::SortOrder::ModifiedReverse,
@@ -795,7 +830,20 @@ impl<T: SSS> Worker<T> {
                                 .or_else(|_| std::fs::symlink_metadata(clean))
                                 .and_then(|meta| meta.modified())
                                 .ok();
-                            (m, None, None)
+                            (m, None, None, None)
+                        }
+                        Some(
+                            crate::action::SortOrder::Created
+                            | crate::action::SortOrder::CreatedReverse,
+                        ) => {
+                            let meta = std::fs::metadata(clean)
+                                .or_else(|_| std::fs::symlink_metadata(clean))
+                                .ok();
+                            let b = meta
+                                .as_ref()
+                                .and_then(|m| m.created().ok())
+                                .or_else(|| meta.as_ref().and_then(|m| m.modified().ok()));
+                            (None, b, None, None)
                         }
                         Some(
                             crate::action::SortOrder::Size
@@ -805,9 +853,12 @@ impl<T: SSS> Worker<T> {
                                 .or_else(|_| std::fs::symlink_metadata(clean))
                                 .map(|meta| meta.len())
                                 .ok();
-                            (None, s, None)
+                            (None, None, s, None)
                         }
-                        Some(crate::action::SortOrder::Extension) => {
+                        Some(
+                            crate::action::SortOrder::Extension
+                            | crate::action::SortOrder::ExtensionReverse,
+                        ) => {
                             let ext = std::path::Path::new(clean)
                                 .extension()
                                 .and_then(|e| e.to_str());
@@ -816,9 +867,9 @@ impl<T: SSS> Worker<T> {
                                     e.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                                 (start, start + e.len())
                             });
-                            (None, None, range)
+                            (None, None, None, range)
                         }
-                        _ => (None, None, None),
+                        _ => (None, None, None, None),
                     };
                     DecoratedItem {
                         item,
@@ -827,6 +878,7 @@ impl<T: SSS> Worker<T> {
                         clean_range,
                         score,
                         mtime,
+                        btime,
                         size,
                         ext_range,
                     }
@@ -871,6 +923,20 @@ impl<T: SSS> Worker<T> {
                                 .cmp(&a_time)
                                 .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
                         }
+                        SortOrder::Created => {
+                            let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            a_time
+                                .cmp(&b_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::CreatedReverse => {
+                            let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            b_time
+                                .cmp(&a_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
                         SortOrder::Size => {
                             let a_size = a.size.unwrap_or(0);
                             let b_size = b.size.unwrap_or(0);
@@ -886,6 +952,8 @@ impl<T: SSS> Worker<T> {
                                 .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
                         }
                         SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
+                            .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
+                        SortOrder::ExtensionReverse => cmp_ascii_case_insensitive(b.ext(), a.ext())
                             .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
                     };
 
@@ -2028,6 +2096,29 @@ mod tests {
         assert_eq!(
             items,
             vec!["b.tar", "file1.txt", "file2.txt", "file10.txt", "a.zip"]
+        );
+
+        // 6. Extension Reverse
+        worker.set_sort_order(Some(SortOrder::ExtensionReverse));
+        let (results, _, _, _) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+        let items: Vec<&String> = results.iter().map(|r| r.2).collect();
+        // .zip > .txt > .tar
+        assert_eq!(
+            items,
+            vec!["a.zip", "file1.txt", "file2.txt", "file10.txt", "b.tar"]
         );
     }
 }

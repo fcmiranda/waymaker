@@ -215,12 +215,18 @@ pub enum SortOrder {
     Modified,
     /// Modification time reverse (newest first / most recent)
     ModifiedReverse,
+    /// Creation / Birth time (oldest first)
+    Created,
+    /// Creation / Birth time reverse (newest first / most recent)
+    CreatedReverse,
     /// File size (smallest first)
     Size,
     /// File size reverse (largest first)
     SizeReverse,
     /// File extension
     Extension,
+    /// File extension reverse
+    ExtensionReverse,
 }
 
 impl Display for SortOrder {
@@ -232,9 +238,12 @@ impl Display for SortOrder {
             Self::NaturalReverse => write!(f, "NaturalReverse"),
             Self::Modified => write!(f, "Modified"),
             Self::ModifiedReverse => write!(f, "ModifiedReverse"),
+            Self::Created => write!(f, "Created"),
+            Self::CreatedReverse => write!(f, "CreatedReverse"),
             Self::Size => write!(f, "Size"),
             Self::SizeReverse => write!(f, "SizeReverse"),
             Self::Extension => write!(f, "Extension"),
+            Self::ExtensionReverse => write!(f, "ExtensionReverse"),
         }
     }
 }
@@ -255,13 +264,21 @@ impl FromStr for SortOrder {
             "m" | "Modified" | "modified" | "mtime" | "Mtime" | "time" => Ok(Self::Modified),
             "M" | "ModifiedReverse" | "modified_reverse" | "mtime_rev" | "mtime_reverse"
             | "mtime_desc" | "MtimeRev" => Ok(Self::ModifiedReverse),
+            "b" | "Created" | "created" | "btime" | "Btime" | "birth" | "birth_time"
+            | "birthtime" | "ctime" => Ok(Self::Created),
+            "B" | "CreatedReverse" | "created_reverse" | "created_rev" | "btime_rev"
+            | "btime_reverse" | "btime_desc" | "birth_time_rev" | "BtimeRev" => {
+                Ok(Self::CreatedReverse)
+            }
             "s" | "Size" | "size" => Ok(Self::Size),
             "S" | "SizeReverse" | "size_reverse" | "size_rev" | "size_desc" | "SizeRev" => {
                 Ok(Self::SizeReverse)
             }
             "e" | "Extension" | "extension" | "ext" | "Ext" => Ok(Self::Extension),
+            "E" | "ExtensionReverse" | "extension_reverse" | "ext_rev" | "extension_rev"
+            | "ExtRev" => Ok(Self::ExtensionReverse),
             other => Err(format!(
-                "Unknown sort order: '{other}'. Expected one of: a/A (alphabetical), n/N (natural), m/M (modified), s/S (size), e (extension)"
+                "Unknown sort order: '{other}'. Expected one of: a/A (alphabetical), n/N (natural), m/M (modified), b/B (created/btime), s/S (size), e/E (extension)"
             )),
         }
     }
@@ -682,13 +699,19 @@ mod tests {
         assert_eq!(SortOrder::from_str("N").unwrap(), SortOrder::NaturalReverse);
         assert_eq!(SortOrder::from_str("m").unwrap(), SortOrder::Modified);
         assert_eq!(SortOrder::from_str("M").unwrap(), SortOrder::ModifiedReverse);
+        assert_eq!(SortOrder::from_str("b").unwrap(), SortOrder::Created);
+        assert_eq!(SortOrder::from_str("B").unwrap(), SortOrder::CreatedReverse);
+        assert_eq!(SortOrder::from_str("btime").unwrap(), SortOrder::Created);
+        assert_eq!(SortOrder::from_str("btime_rev").unwrap(), SortOrder::CreatedReverse);
         assert_eq!(SortOrder::from_str("s").unwrap(), SortOrder::Size);
         assert_eq!(SortOrder::from_str("S").unwrap(), SortOrder::SizeReverse);
         assert_eq!(SortOrder::from_str("e").unwrap(), SortOrder::Extension);
+        assert_eq!(SortOrder::from_str("E").unwrap(), SortOrder::ExtensionReverse);
         assert_eq!(SortOrder::from_str("natural").unwrap(), SortOrder::Natural);
         assert_eq!(SortOrder::from_str("mtime").unwrap(), SortOrder::Modified);
         assert_eq!(SortOrder::from_str("mtime_rev").unwrap(), SortOrder::ModifiedReverse);
         assert_eq!(SortOrder::from_str("ext").unwrap(), SortOrder::Extension);
+        assert_eq!(SortOrder::from_str("ext_rev").unwrap(), SortOrder::ExtensionReverse);
     }
 
     #[test]

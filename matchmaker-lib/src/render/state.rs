@@ -67,6 +67,8 @@ pub struct State {
     pub(crate) focus_tick: u8,
     /// Pending key prefix for multi-character sequences in focus mode.
     pub pending_nav_key: Option<char>,
+    /// Whether the sort shortcut menu is active in the footer.
+    pub sort_menu_active: bool,
 
     pub(crate) events: Event,
 
@@ -144,6 +146,7 @@ impl State {
             focus_blink: true,
             focus_tick: 0,
             pending_nav_key: None,
+            sort_menu_active: false,
 
             input: String::new(),
             iterations: 0,

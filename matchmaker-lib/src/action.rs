@@ -178,6 +178,11 @@ pub enum Action<A: ActionExt = NullActionExt> {
     /// Set query cursor pos
     QueryPos(i32),
 
+    /// Open/toggle the sort options menu in the footer
+    SortMenu,
+    /// Sort results by specified order, or reset if None
+    Sort(Option<SortOrder>),
+
     // Other/Experimental/Debugging
     /// Insert char into input
     Char(char),
@@ -193,6 +198,73 @@ pub enum Action<A: ActionExt = NullActionExt> {
     SetMode(String),
     /// A description of a binding, only used for help display.
     Trace(String),
+}
+
+/// Result sorting orders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SortOrder {
+    /// Alphabetical (A-Z)
+    Alphabetical,
+    /// Alphabetical reverse (Z-A)
+    AlphabeticalReverse,
+    /// Natural sorting (e.g. 1 < 2 < 10)
+    Natural,
+    /// Natural sorting reverse (10 > 2 > 1)
+    NaturalReverse,
+    /// Modification time (oldest first)
+    Modified,
+    /// Modification time reverse (newest first / most recent)
+    ModifiedReverse,
+    /// File size (smallest first)
+    Size,
+    /// File size reverse (largest first)
+    SizeReverse,
+    /// File extension
+    Extension,
+}
+
+impl Display for SortOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Alphabetical => write!(f, "Alphabetical"),
+            Self::AlphabeticalReverse => write!(f, "AlphabeticalReverse"),
+            Self::Natural => write!(f, "Natural"),
+            Self::NaturalReverse => write!(f, "NaturalReverse"),
+            Self::Modified => write!(f, "Modified"),
+            Self::ModifiedReverse => write!(f, "ModifiedReverse"),
+            Self::Size => write!(f, "Size"),
+            Self::SizeReverse => write!(f, "SizeReverse"),
+            Self::Extension => write!(f, "Extension"),
+        }
+    }
+}
+
+impl FromStr for SortOrder {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim() {
+            "a" | "Alphabetical" | "alphabetical" | "name" | "Name" | "Alpha" | "alpha" => {
+                Ok(Self::Alphabetical)
+            }
+            "A" | "AlphabeticalReverse" | "alphabetical_reverse" | "name_rev" | "name_reverse"
+            | "name_desc" | "AlphaRev" | "alpha_rev" => Ok(Self::AlphabeticalReverse),
+            "n" | "Natural" | "natural" => Ok(Self::Natural),
+            "N" | "NaturalReverse" | "natural_reverse" | "natural_desc" | "NaturalRev"
+            | "natural_rev" => Ok(Self::NaturalReverse),
+            "m" | "Modified" | "modified" | "mtime" | "Mtime" | "time" => Ok(Self::Modified),
+            "M" | "ModifiedReverse" | "modified_reverse" | "mtime_rev" | "mtime_reverse"
+            | "mtime_desc" | "MtimeRev" => Ok(Self::ModifiedReverse),
+            "s" | "Size" | "size" => Ok(Self::Size),
+            "S" | "SizeReverse" | "size_reverse" | "size_rev" | "size_desc" | "SizeRev" => {
+                Ok(Self::SizeReverse)
+            }
+            "e" | "Extension" | "extension" | "ext" | "Ext" => Ok(Self::Extension),
+            other => Err(format!(
+                "Unknown sort order: '{other}'. Expected one of: a/A (alphabetical), n/N (natural), m/M (modified), s/S (size), e (extension)"
+            )),
+        }
+    }
 }
 
 // --------------- MACROS ---------------
@@ -391,7 +463,7 @@ enum_from_str_display!(
 
     PreviewHalfPageUp, PreviewHalfPageDown,
 
-    ForwardChar,BackwardChar, ForwardWord, BackwardWord, DeleteChar, DeleteWord, DeleteNextChar, DeleteNextWord, DeleteLineStart, DeleteLineEnd, Cancel, Redraw, NextColumn, PrevColumn, PrintKey;
+    ForwardChar,BackwardChar, ForwardWord, BackwardWord, DeleteChar, DeleteWord, DeleteNextChar, DeleteNextWord, DeleteLineStart, DeleteLineEnd, Cancel, Redraw, NextColumn, PrevColumn, PrintKey, SortMenu;
 
     tuples:
     Execute, ExecuteAsync, ExecuteThen, ExecuteSilent, Become, BecomeSilent, Preview,
@@ -402,7 +474,7 @@ enum_from_str_display!(
     (Up, 1), (Down, 1), (PreviewUp, 1), (PreviewDown, 1), (Quit, 130), (Overlay, 0), (Print, String::new()), (Help, String::new()), (Reload, String::new()), (PreviewScroll, 1), (PreviewHScroll, 1), (HScroll, 0), (VScroll, 0), (ExpandPreview, 1), (ShrinkPreview, 1);
 
     options:
-    SwitchPreview, SetPreview, ToggleColumn, ShowColumn
+    SwitchPreview, SetPreview, ToggleColumn, ShowColumn, Sort
 );
 
 macro_rules! enum_from_str_display {
@@ -595,5 +667,46 @@ impl<A: ActionExt> Deref for Actions<A> {
 impl<A: ActionExt> DerefMut for Actions<A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sort_order_from_str() {
+        assert_eq!(SortOrder::from_str("a").unwrap(), SortOrder::Alphabetical);
+        assert_eq!(SortOrder::from_str("A").unwrap(), SortOrder::AlphabeticalReverse);
+        assert_eq!(SortOrder::from_str("n").unwrap(), SortOrder::Natural);
+        assert_eq!(SortOrder::from_str("N").unwrap(), SortOrder::NaturalReverse);
+        assert_eq!(SortOrder::from_str("m").unwrap(), SortOrder::Modified);
+        assert_eq!(SortOrder::from_str("M").unwrap(), SortOrder::ModifiedReverse);
+        assert_eq!(SortOrder::from_str("s").unwrap(), SortOrder::Size);
+        assert_eq!(SortOrder::from_str("S").unwrap(), SortOrder::SizeReverse);
+        assert_eq!(SortOrder::from_str("e").unwrap(), SortOrder::Extension);
+        assert_eq!(SortOrder::from_str("natural").unwrap(), SortOrder::Natural);
+        assert_eq!(SortOrder::from_str("mtime").unwrap(), SortOrder::Modified);
+        assert_eq!(SortOrder::from_str("mtime_rev").unwrap(), SortOrder::ModifiedReverse);
+        assert_eq!(SortOrder::from_str("ext").unwrap(), SortOrder::Extension);
+    }
+
+    #[test]
+    fn test_action_sort_from_str_and_display() {
+        let a_menu: Action = Action::from_str("SortMenu").unwrap();
+        assert_eq!(a_menu, Action::SortMenu);
+        assert_eq!(a_menu.to_string(), "SortMenu");
+
+        let a_sort_none: Action = Action::from_str("Sort").unwrap();
+        assert_eq!(a_sort_none, Action::Sort(None));
+        assert_eq!(a_sort_none.to_string(), "Sort");
+
+        let a_sort_alpha: Action = Action::from_str("Sort(a)").unwrap();
+        assert_eq!(a_sort_alpha, Action::Sort(Some(SortOrder::Alphabetical)));
+        assert_eq!(a_sort_alpha.to_string(), "Sort(Alphabetical)");
+
+        let a_sort_mtime: Action = Action::from_str("Sort(M)").unwrap();
+        assert_eq!(a_sort_mtime, Action::Sort(Some(SortOrder::ModifiedReverse)));
+        assert_eq!(a_sort_mtime.to_string(), "Sort(ModifiedReverse)");
     }
 }

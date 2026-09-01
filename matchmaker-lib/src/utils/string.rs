@@ -233,6 +233,68 @@ pub fn allocate_widths(
     Ok(result)
 }
 
+/// Natural comparison between two string slices (numbers compared numerically e.g. 1 < 2 < 10, letters case-insensitively).
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let mut a_bytes = a.as_bytes();
+    let mut b_bytes = b.as_bytes();
+
+    while !a_bytes.is_empty() && !b_bytes.is_empty() {
+        if a_bytes[0].is_ascii_digit() && b_bytes[0].is_ascii_digit() {
+            let a_digits_len = a_bytes
+                .iter()
+                .position(|&c| !c.is_ascii_digit())
+                .unwrap_or(a_bytes.len());
+            let b_digits_len = b_bytes
+                .iter()
+                .position(|&c| !c.is_ascii_digit())
+                .unwrap_or(b_bytes.len());
+
+            let a_num_str = &a_bytes[..a_digits_len];
+            let b_num_str = &b_bytes[..b_digits_len];
+
+            let a_non_zero = a_num_str
+                .iter()
+                .position(|&c| c != b'0')
+                .unwrap_or(a_num_str.len());
+            let b_non_zero = b_num_str
+                .iter()
+                .position(|&c| c != b'0')
+                .unwrap_or(b_num_str.len());
+
+            let a_trimmed = &a_num_str[a_non_zero..];
+            let b_trimmed = &b_num_str[b_non_zero..];
+
+            if a_trimmed.len() != b_trimmed.len() {
+                return a_trimmed.len().cmp(&b_trimmed.len());
+            }
+
+            let num_cmp = a_trimmed.cmp(b_trimmed);
+            if num_cmp != std::cmp::Ordering::Equal {
+                return num_cmp;
+            }
+
+            if a_digits_len != b_digits_len {
+                return a_digits_len.cmp(&b_digits_len);
+            }
+
+            a_bytes = &a_bytes[a_digits_len..];
+            b_bytes = &b_bytes[b_digits_len..];
+        } else {
+            let ca = a_bytes[0].to_ascii_lowercase();
+            let cb = b_bytes[0].to_ascii_lowercase();
+
+            if ca != cb {
+                return ca.cmp(&cb);
+            }
+
+            a_bytes = &a_bytes[1..];
+            b_bytes = &b_bytes[1..];
+        }
+    }
+
+    a_bytes.len().cmp(&b_bytes.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,5 +388,43 @@ mod tests {
 
         let err_result = allocate_widths(&original, space, min_width);
         assert_eq!(err_result, Err(vec![0, 11, 11, 10, 0, 12]));
+    }
+
+    #[test]
+    fn test_natural_cmp() {
+        use std::cmp::Ordering;
+
+        assert_eq!(natural_cmp("1", "2"), Ordering::Less);
+        assert_eq!(natural_cmp("2", "10"), Ordering::Less);
+        assert_eq!(natural_cmp("10", "2"), Ordering::Greater);
+        assert_eq!(natural_cmp("file1.txt", "file2.txt"), Ordering::Less);
+        assert_eq!(natural_cmp("file2.txt", "file10.txt"), Ordering::Less);
+        assert_eq!(natural_cmp("file10.txt", "file2.txt"), Ordering::Greater);
+        assert_eq!(natural_cmp("a1b2", "a1b10"), Ordering::Less);
+        assert_eq!(natural_cmp("A", "a"), Ordering::Equal);
+        assert_eq!(natural_cmp("a", "b"), Ordering::Less);
+        assert_eq!(natural_cmp("1.0", "1.0"), Ordering::Equal);
+        assert_eq!(natural_cmp("01", "1"), Ordering::Greater); // more leading zeros
+        assert_eq!(natural_cmp("", "a"), Ordering::Less);
+        assert_eq!(natural_cmp("", ""), Ordering::Equal);
+
+        let mut list = vec![
+            "file10.txt",
+            "file1.txt",
+            "file2.txt",
+            "file100.txt",
+            "file20.txt",
+        ];
+        list.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(
+            list,
+            vec![
+                "file1.txt",
+                "file2.txt",
+                "file10.txt",
+                "file20.txt",
+                "file100.txt"
+            ]
+        );
     }
 }

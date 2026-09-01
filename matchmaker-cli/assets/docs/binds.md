@@ -167,6 +167,8 @@ Actions are the operations performed when a trigger is activated.
 | `ToggleHeader`      | Toggle header row visibility.                                        |
 | `ToggleParentPeek`  | Toggle 3-pane parent directory peek layout.                          |
 | `ToggleActionBox`   | Toggle the action dialog box.                                        |
+| `SortMenu`          | Toggle interactive sort options menu in footer.                      |
+| `Sort(order)`       | Sort results by specified order (`Alphabetical`, `AlphabeticalReverse`, `Natural`, `NaturalReverse`, `Modified`, `ModifiedReverse`, `Size`, `SizeReverse`, `Extension`, or reset if empty). |
 
 ### Preview
 

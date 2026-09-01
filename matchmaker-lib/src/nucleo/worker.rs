@@ -190,6 +190,7 @@ where
     pub frecency_snapshot: Option<crate::frecency::FrecencySnapshot>,
     pub typo_tolerance: bool,
     pub dir_first: bool,
+    pub sort_order: Option<crate::action::SortOrder>,
     pub matcher_dirty: Arc<AtomicBool>,
     notify_callback: Arc<arc_swap::ArcSwapOption<NotifyFn>>,
 
@@ -259,8 +260,17 @@ impl<T: SSS> Worker<T> {
             frecency_snapshot: None,
             typo_tolerance: false,
             dir_first: false,
+            sort_order: None,
             version: Arc::new(AtomicU32::new(0)),
         }
+    }
+
+    pub fn set_sort_order(&mut self, order: Option<crate::action::SortOrder>) {
+        self.sort_order = order;
+    }
+
+    pub fn get_sort_order(&self) -> Option<crate::action::SortOrder> {
+        self.sort_order
     }
 
     pub fn set_notify<F>(&self, f: F)
@@ -362,12 +372,15 @@ impl<T: SSS> Worker<T> {
         let is_query_empty = query_str.is_empty();
         let query_len = query_str.len();
 
-        let should_sort = (!is_query_empty
-            && ((self.frecency && self.frecency_snapshot.is_some()) || self.depth_penalty > 0))
+        let should_sort = self.sort_order.is_some()
+            || (!is_query_empty
+                && ((self.frecency && self.frecency_snapshot.is_some()) || self.depth_penalty > 0))
             || self.dir_first;
 
         if should_sort {
-            let total_sort = if self.sort_cap > 0 {
+            let total_sort = if self.sort_order.is_some() {
+                total
+            } else if self.sort_cap > 0 {
                 total.min(self.sort_cap as u32)
             } else {
                 total
@@ -404,12 +417,24 @@ impl<T: SSS> Worker<T> {
                 raw_path: Cow<'a, str>,
                 clean_range: (usize, usize),
                 score: u64,
+                mtime: Option<std::time::SystemTime>,
+                size: Option<u64>,
+                ext_range: Option<(usize, usize)>,
             }
 
             impl<'a, T> DecoratedItem<'a, T> {
                 #[inline]
                 fn clean(&self) -> &str {
                     &self.raw_path[self.clean_range.0..self.clean_range.1]
+                }
+
+                #[inline]
+                fn ext(&self) -> &str {
+                    if let Some((start, end)) = self.ext_range {
+                        &self.raw_path[start..end]
+                    } else {
+                        ""
+                    }
                 }
             }
 
@@ -432,17 +457,115 @@ impl<T: SSS> Worker<T> {
                         get_item_tier_and_clean_path(raw_path.as_ref(), self.dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
+                    let (mtime, size, ext_range) = match self.sort_order {
+                        Some(
+                            crate::action::SortOrder::Modified
+                            | crate::action::SortOrder::ModifiedReverse,
+                        ) => {
+                            let m = std::fs::metadata(clean)
+                                .or_else(|_| std::fs::symlink_metadata(clean))
+                                .and_then(|meta| meta.modified())
+                                .ok();
+                            (m, None, None)
+                        }
+                        Some(
+                            crate::action::SortOrder::Size
+                            | crate::action::SortOrder::SizeReverse,
+                        ) => {
+                            let s = std::fs::metadata(clean)
+                                .or_else(|_| std::fs::symlink_metadata(clean))
+                                .map(|meta| meta.len())
+                                .ok();
+                            (None, s, None)
+                        }
+                        Some(crate::action::SortOrder::Extension) => {
+                            let ext = std::path::Path::new(clean)
+                                .extension()
+                                .and_then(|e| e.to_str());
+                            let range = ext.map(|e| {
+                                let start =
+                                    e.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
+                                (start, start + e.len())
+                            });
+                            (None, None, range)
+                        }
+                        _ => (None, None, None),
+                    };
                     DecoratedItem {
                         item,
                         tier,
                         raw_path,
                         clean_range,
                         score,
+                        mtime,
+                        size,
+                        ext_range,
                     }
                 })
                 .collect();
 
             decorated.sort_unstable_by(|a, b| {
+                if let Some(sort_order) = self.sort_order {
+                    use crate::action::SortOrder;
+                    if self.dir_first && a.tier != b.tier {
+                        return a.tier.cmp(&b.tier);
+                    }
+
+                    let ord = match sort_order {
+                        SortOrder::Alphabetical => {
+                            cmp_ascii_case_insensitive(a.clean(), b.clean())
+                                .then_with(|| a.clean().cmp(b.clean()))
+                        }
+                        SortOrder::AlphabeticalReverse => {
+                            cmp_ascii_case_insensitive(b.clean(), a.clean())
+                                .then_with(|| b.clean().cmp(a.clean()))
+                        }
+                        SortOrder::Natural => {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                                .then_with(|| a.clean().cmp(b.clean()))
+                        }
+                        SortOrder::NaturalReverse => {
+                            crate::utils::string::natural_cmp(b.clean(), a.clean())
+                                .then_with(|| b.clean().cmp(a.clean()))
+                        }
+                        SortOrder::Modified => {
+                            let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            a_time
+                                .cmp(&b_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::ModifiedReverse => {
+                            let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            b_time
+                                .cmp(&a_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::Size => {
+                            let a_size = a.size.unwrap_or(0);
+                            let b_size = b.size.unwrap_or(0);
+                            a_size
+                                .cmp(&b_size)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::SizeReverse => {
+                            let a_size = a.size.unwrap_or(0);
+                            let b_size = b.size.unwrap_or(0);
+                            b_size
+                                .cmp(&a_size)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
+                            .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
+                    };
+
+                    if ord != std::cmp::Ordering::Equal {
+                        return ord;
+                    }
+                    return b.score.cmp(&a.score);
+                }
+
                 if a.tier != b.tier {
                     return a.tier.cmp(&b.tier);
                 }
@@ -577,13 +700,16 @@ impl<T: SSS> Worker<T> {
         let query_str = self.query.primary_column_query().unwrap_or_default();
         let is_query_empty = query_str.is_empty();
         let query_len = query_str.len();
-        let should_sort = (!is_query_empty
-            && ((self.frecency && self.frecency_snapshot.is_some()) || self.depth_penalty > 0))
+        let should_sort = self.sort_order.is_some()
+            || (!is_query_empty
+                && ((self.frecency && self.frecency_snapshot.is_some()) || self.depth_penalty > 0))
             || self.dir_first;
 
         let (items_buf, initial_prev_tier) = if should_sort {
             let total = status.matched_count;
-            let total_sort = if self.sort_cap > 0 {
+            let total_sort = if self.sort_order.is_some() {
+                total
+            } else if self.sort_cap > 0 {
                 total.min(self.sort_cap as u32)
             } else {
                 total
@@ -620,12 +746,24 @@ impl<T: SSS> Worker<T> {
                 raw_path: Cow<'a, str>,
                 clean_range: (usize, usize),
                 score: u64,
+                mtime: Option<std::time::SystemTime>,
+                size: Option<u64>,
+                ext_range: Option<(usize, usize)>,
             }
 
             impl<'a, T> DecoratedItem<'a, T> {
                 #[inline]
                 fn clean(&self) -> &str {
                     &self.raw_path[self.clean_range.0..self.clean_range.1]
+                }
+
+                #[inline]
+                fn ext(&self) -> &str {
+                    if let Some((start, end)) = self.ext_range {
+                        &self.raw_path[start..end]
+                    } else {
+                        ""
+                    }
                 }
             }
 
@@ -648,17 +786,115 @@ impl<T: SSS> Worker<T> {
                         get_item_tier_and_clean_path(raw_path.as_ref(), self.dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
+                    let (mtime, size, ext_range) = match self.sort_order {
+                        Some(
+                            crate::action::SortOrder::Modified
+                            | crate::action::SortOrder::ModifiedReverse,
+                        ) => {
+                            let m = std::fs::metadata(clean)
+                                .or_else(|_| std::fs::symlink_metadata(clean))
+                                .and_then(|meta| meta.modified())
+                                .ok();
+                            (m, None, None)
+                        }
+                        Some(
+                            crate::action::SortOrder::Size
+                            | crate::action::SortOrder::SizeReverse,
+                        ) => {
+                            let s = std::fs::metadata(clean)
+                                .or_else(|_| std::fs::symlink_metadata(clean))
+                                .map(|meta| meta.len())
+                                .ok();
+                            (None, s, None)
+                        }
+                        Some(crate::action::SortOrder::Extension) => {
+                            let ext = std::path::Path::new(clean)
+                                .extension()
+                                .and_then(|e| e.to_str());
+                            let range = ext.map(|e| {
+                                let start =
+                                    e.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
+                                (start, start + e.len())
+                            });
+                            (None, None, range)
+                        }
+                        _ => (None, None, None),
+                    };
                     DecoratedItem {
                         item,
                         tier,
                         raw_path,
                         clean_range,
                         score,
+                        mtime,
+                        size,
+                        ext_range,
                     }
                 })
                 .collect();
 
             decorated.sort_unstable_by(|a, b| {
+                if let Some(sort_order) = self.sort_order {
+                    use crate::action::SortOrder;
+                    if self.dir_first && a.tier != b.tier {
+                        return a.tier.cmp(&b.tier);
+                    }
+
+                    let ord = match sort_order {
+                        SortOrder::Alphabetical => {
+                            cmp_ascii_case_insensitive(a.clean(), b.clean())
+                                .then_with(|| a.clean().cmp(b.clean()))
+                        }
+                        SortOrder::AlphabeticalReverse => {
+                            cmp_ascii_case_insensitive(b.clean(), a.clean())
+                                .then_with(|| b.clean().cmp(a.clean()))
+                        }
+                        SortOrder::Natural => {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                                .then_with(|| a.clean().cmp(b.clean()))
+                        }
+                        SortOrder::NaturalReverse => {
+                            crate::utils::string::natural_cmp(b.clean(), a.clean())
+                                .then_with(|| b.clean().cmp(a.clean()))
+                        }
+                        SortOrder::Modified => {
+                            let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            a_time
+                                .cmp(&b_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::ModifiedReverse => {
+                            let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                            b_time
+                                .cmp(&a_time)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::Size => {
+                            let a_size = a.size.unwrap_or(0);
+                            let b_size = b.size.unwrap_or(0);
+                            a_size
+                                .cmp(&b_size)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::SizeReverse => {
+                            let a_size = a.size.unwrap_or(0);
+                            let b_size = b.size.unwrap_or(0);
+                            b_size
+                                .cmp(&a_size)
+                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                        }
+                        SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
+                            .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
+                    };
+
+                    if ord != std::cmp::Ordering::Equal {
+                        return ord;
+                    }
+                    return b.score.cmp(&a.score);
+                }
+
                 if a.tier != b.tier {
                     return a.tier.cmp(&b.tier);
                 }
@@ -1656,5 +1892,142 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0, None);
         assert_eq!(results[1].0, None);
+    }
+
+    #[test]
+    fn test_worker_sort_orders() {
+        use crate::action::SortOrder;
+
+        let mut worker = Worker::<String>::new_single_column();
+        let injector = worker.nucleo.injector();
+        injector.push("file10.txt".to_string(), |item, cols| {
+            cols[0] = item.clone().into();
+        });
+        injector.push("file2.txt".to_string(), |item, cols| {
+            cols[0] = item.clone().into();
+        });
+        injector.push("file1.txt".to_string(), |item, cols| {
+            cols[0] = item.clone().into();
+        });
+        injector.push("a.zip".to_string(), |item, cols| {
+            cols[0] = item.clone().into();
+        });
+        injector.push("b.tar".to_string(), |item, cols| {
+            cols[0] = item.clone().into();
+        });
+
+        worker.nucleo.tick(10);
+        let mut matcher = Matcher::default();
+
+        // 1. Alphabetical
+        worker.set_sort_order(Some(SortOrder::Alphabetical));
+        let (results, _, _, _) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+        let items: Vec<&String> = results.iter().map(|r| r.2).collect();
+        assert_eq!(
+            items,
+            vec!["a.zip", "b.tar", "file1.txt", "file10.txt", "file2.txt"]
+        );
+
+        // 2. Alphabetical Reverse
+        worker.set_sort_order(Some(SortOrder::AlphabeticalReverse));
+        let (results, _, _, _) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+        let items: Vec<&String> = results.iter().map(|r| r.2).collect();
+        assert_eq!(
+            items,
+            vec!["file2.txt", "file10.txt", "file1.txt", "b.tar", "a.zip"]
+        );
+
+        // 3. Natural
+        worker.set_sort_order(Some(SortOrder::Natural));
+        let (results, _, _, _) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+        let items: Vec<&String> = results.iter().map(|r| r.2).collect();
+        assert_eq!(
+            items,
+            vec!["a.zip", "b.tar", "file1.txt", "file2.txt", "file10.txt"]
+        );
+
+        // 4. Natural Reverse
+        worker.set_sort_order(Some(SortOrder::NaturalReverse));
+        let (results, _, _, _) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+        let items: Vec<&String> = results.iter().map(|r| r.2).collect();
+        assert_eq!(
+            items,
+            vec!["file10.txt", "file2.txt", "file1.txt", "b.tar", "a.zip"]
+        );
+
+        // 5. Extension
+        worker.set_sort_order(Some(SortOrder::Extension));
+        let (results, _, _, _) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+        let items: Vec<&String> = results.iter().map(|r| r.2).collect();
+        // .tar < .txt < .zip
+        assert_eq!(
+            items,
+            vec!["b.tar", "file1.txt", "file2.txt", "file10.txt", "a.zip"]
+        );
     }
 }

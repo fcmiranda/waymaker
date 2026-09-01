@@ -294,6 +294,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             "D",
             matchmaker::acs![Action::Semantic("fm_dragdrop".into())],
         );
+        nb(",", matchmaker::acs![Action::SortMenu]);
     }
 
     if cli.dump_config {

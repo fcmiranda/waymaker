@@ -2,7 +2,7 @@
 
 // event
 pub mod action;
-pub use action::{Action, Actions};
+pub use action::{Action, Actions, SortOrder};
 pub mod binds;
 pub mod config;
 mod config_types;

@@ -107,7 +107,59 @@ fn action_from_null<A: ActionExt>(action: Action<NullActionExt>) -> Option<Actio
         Action::Copy(x) => Action::Copy(x),
         Action::CopyAsync(x) => Action::CopyAsync(x),
         Action::Trace(x) => Action::Trace(x),
+        Action::SortMenu => Action::SortMenu,
+        Action::Sort(x) => Action::Sort(x),
     })
+}
+
+/// Pre-process `buffer` when the sort menu is active: intercept the next key to select a sort order or cancel.
+fn apply_sort_menu<A: ActionExt>(
+    buffer: &mut Vec<RenderCommand<A>>,
+    sort_menu_active: &mut bool,
+) {
+    if !*sort_menu_active {
+        return;
+    }
+
+    let mut out = Vec::with_capacity(buffer.len());
+
+    for cmd in buffer.drain(..) {
+        match cmd {
+            RenderCommand::Tick => {
+                out.push(RenderCommand::Tick);
+            }
+            RenderCommand::Action(Action::Char(c)) => {
+                *sort_menu_active = false;
+                match c {
+                    'a' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Alphabetical)))),
+                    'A' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::AlphabeticalReverse)))),
+                    'n' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Natural)))),
+                    'N' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::NaturalReverse)))),
+                    'm' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Modified)))),
+                    'M' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::ModifiedReverse)))),
+                    's' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Size)))),
+                    'S' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::SizeReverse)))),
+                    'e' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Extension)))),
+                    _ => {
+                        // Any other char cancels sort menu
+                    }
+                }
+            }
+            RenderCommand::Action(Action::Quit(1)) | RenderCommand::Action(Action::Cancel) => {
+                // Escape or Cancel closes sort menu without exiting the picker
+                *sort_menu_active = false;
+            }
+            RenderCommand::Action(Action::SortMenu) => {
+                *sort_menu_active = false;
+            }
+            other => {
+                *sort_menu_active = false;
+                out.push(other);
+            }
+        }
+    }
+
+    *buffer = out;
 }
 
 /// Pre-process `buffer` for navigation mode: simulate `ToggleFocus` events encountered in the
@@ -118,8 +170,14 @@ fn apply_focus_binds<A: ActionExt>(
     focus_binds: &std::collections::HashMap<String, crate::action::Actions<NullActionExt>>,
     overlay_active: bool,
     pending_nav_key: &mut Option<char>,
+    sort_menu_active: &mut bool,
 ) {
     if overlay_active {
+        return;
+    }
+
+    if *sort_menu_active {
+        apply_sort_menu(buffer, sort_menu_active);
         return;
     }
 
@@ -139,6 +197,12 @@ fn apply_focus_binds<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::ToggleFocus));
             }
             RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
+                if c == ',' {
+                    *pending_nav_key = None;
+                    *sort_menu_active = true;
+                    out.push(RenderCommand::Action(Action::SortMenu));
+                    continue;
+                }
                 match pending_nav_key.take() {
                     Some('g') => {
                         if c == 'g' {
@@ -306,7 +370,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
             )
         };
 
-        if ui.config.nav_mode {
+        if state.sort_menu_active {
+            apply_sort_menu(&mut buffer, &mut state.sort_menu_active);
+        } else if ui.config.nav_mode {
             if !ui.config.nav_passthrough {
                 apply_focus_binds(
                     &mut buffer,
@@ -315,6 +381,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     picker_ui.action_visible
                         || overlay_ui.as_ref().map_or(false, |o| o.index().is_some()),
                     &mut state.pending_nav_key,
+                    &mut state.sort_menu_active,
                 );
             }
 
@@ -1203,6 +1270,15 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 *m = s;
                             }
                         }
+                        Action::Sort(order) => {
+                            picker_ui.worker.set_sort_order(order);
+                            state.sort_menu_active = false;
+                            state.needs_redraw = true;
+                        }
+                        Action::SortMenu => {
+                            state.sort_menu_active = !state.sort_menu_active;
+                            state.needs_redraw = true;
+                        }
 
                         // unreachable
                         Action::PrintKey => {}
@@ -1436,12 +1512,15 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                     }
 
+                    let show_sort_menu = state.sort_menu_active;
                     let show_nav_hints = ui.config.nav_mode
                         && ui.config.nav_hints
                         && state.focus == Focus::Results
                         && !footer_ui.show;
 
-                    let effective_footer_height = if footer_ui.show {
+                    let effective_footer_height = if show_sort_menu {
+                        1
+                    } else if footer_ui.show {
                         footer_ui.height()
                     } else if show_nav_hints {
                         1
@@ -1449,7 +1528,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         0
                     };
 
-                    let is_full_footer = full_width_footer || show_nav_hints;
+                    let is_full_footer = full_width_footer || show_nav_hints || show_sort_menu;
 
                     let mut footer =
                         if is_full_footer || preview_ui.as_ref().is_none_or(|p| !p.visible()) {
@@ -1743,9 +1822,13 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         state.reloading,
                     );
                     render_display(frame, header, &mut picker_ui.header, &picker_ui.results);
-                    render_display(frame, footer, &mut footer_ui, &picker_ui.results);
-                    if show_nav_hints && footer.height > 0 {
-                        render_nav_hints(frame, footer, ui.config.nav_basic);
+                    if show_sort_menu && footer.height > 0 {
+                        render_sort_menu(frame, footer);
+                    } else {
+                        render_display(frame, footer, &mut footer_ui, &picker_ui.results);
+                        if show_nav_hints && footer.height > 0 {
+                            render_nav_hints(frame, footer, ui.config.nav_basic);
+                        }
                     }
                     if parent_peek_rect.width > 0 {
                         render_parent_peek(frame, parent_peek_rect, &ui.config.parent_peek);
@@ -2161,6 +2244,51 @@ fn render_display(frame: &mut Frame, area: Rect, ui: &mut DisplayUI, results_ui:
     }
 }
 
+fn render_sort_menu(frame: &mut Frame, area: Rect) {
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
+    let items: &[(&str, &str, Color)] = &[
+        ("[a]", "Alpha", Color::Cyan),
+        ("[A]", "Alpha (rev)", Color::Cyan),
+        ("[n]", "Natural", Color::Green),
+        ("[N]", "Natural (rev)", Color::Green),
+        ("[m]", "Mtime", Color::Yellow),
+        ("[M]", "Mtime (rev)", Color::Yellow),
+        ("[s]", "Size", Color::Magenta),
+        ("[S]", "Size (rev)", Color::Magenta),
+        ("[e]", "Ext", Color::Blue),
+        ("[Esc]", "Cancel", Color::DarkGray),
+    ];
+
+    let mut spans = vec![Span::styled(
+        " Sort: ",
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )];
+    let mut total_w = 7;
+    let max_w = area.width as usize;
+
+    for (key, label, color) in items {
+        let key_span = Span::styled(
+            format!("{key}"),
+            Style::default().fg(*color).add_modifier(Modifier::BOLD),
+        );
+        let label_span = Span::styled(format!(" {label} "), Style::default().fg(Color::White));
+        let pair_w = key_span.width() + label_span.width();
+        if total_w + pair_w > max_w {
+            break;
+        }
+        total_w += pair_w;
+        spans.push(key_span);
+        spans.push(label_span);
+    }
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
 fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
@@ -2174,11 +2302,13 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             ("[C-h/l]", "Trav", Color::Green),
             ("[p]", "Toggle", Color::Magenta),
             ("[J/K]", "Scroll", Color::Blue),
+            ("[,]", "Sort", Color::Yellow),
         ]
     } else {
         &[
             ("[Tab]", "Filter", Color::Cyan),
             ("[Space]", "Sel/Unsel", Color::Yellow),
+            ("[,]", "Sort", Color::Yellow),
             ("[f]", "Cycle", Color::Cyan),
             ("[a]", "Add", Color::Green),
             ("[r]", "Rename", Color::Yellow),
@@ -2372,6 +2502,7 @@ mod test {
         focus_binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
 
         let mut pending = None;
+        let mut sort_menu_active = false;
 
         // Test gg
         let mut buffer = vec![
@@ -2384,6 +2515,7 @@ mod test {
             &focus_binds,
             false,
             &mut pending,
+            &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -2400,6 +2532,7 @@ mod test {
             &focus_binds,
             false,
             &mut pending,
+            &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -2416,6 +2549,7 @@ mod test {
             &focus_binds,
             false,
             &mut pending,
+            &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -2432,6 +2566,7 @@ mod test {
             &focus_binds,
             false,
             &mut pending,
+            &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -2451,6 +2586,7 @@ mod test {
             &focus_binds,
             false,
             &mut pending,
+            &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(0))));
@@ -2467,10 +2603,56 @@ mod test {
             &focus_binds,
             false,
             &mut pending,
+            &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(-1))));
         assert_eq!(pending, None);
+
+        // Test ',' opens sort menu
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char(','))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::SortMenu)));
+        assert!(sort_menu_active);
+
+        // Test next key 'n' in sort menu dispatches Action::Sort(Natural) and closes menu
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('n'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Natural)))
+        ));
+        assert!(!sort_menu_active);
+
+        // Test ',' then 'Esc' cancels without dispatching sort
+        sort_menu_active = true;
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Quit(1))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 0);
+        assert!(!sort_menu_active);
     }
 }
 

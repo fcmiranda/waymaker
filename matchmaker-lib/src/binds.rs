@@ -569,8 +569,13 @@ impl FromStr for Trigger {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         if let Some((mode, kind_str)) = value.split_once("^^") {
-            if !mode.is_empty() && mode.chars().all(|c| c.is_alphanumeric()) {
-                let kind = TriggerKind::from_str(kind_str)?;
+            let mode = mode.trim();
+            if !mode.is_empty()
+                && mode
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == ',')
+            {
+                let kind = TriggerKind::from_str(kind_str.trim())?;
                 return Ok(Trigger {
                     kind,
                     mode: mode.to_string(),
@@ -1128,5 +1133,19 @@ mod test {
         let help_hide_str = help_hide.to_string();
         assert!(help_hide_str.contains("a = Print(a)"));
         assert!(!help_hide_str.contains("@foo = Print(foo)"));
+    }
+
+    #[test]
+    fn test_trigger_from_str_modes() {
+        let t1 = Trigger::from_str("0,1^^@accept").unwrap();
+        assert_eq!(t1.mode, "0,1");
+        assert_eq!(t1.kind, TriggerKind::Semantic("accept".to_string()));
+
+        let t2 = Trigger::from_str("0,2^^enter").unwrap();
+        assert_eq!(t2.mode, "0,2");
+        assert!(matches!(t2.kind, TriggerKind::Key(_)));
+
+        let t3 = Trigger::from_str("nav2^^ctrl-f").unwrap();
+        assert_eq!(t3.mode, "nav2");
     }
 }

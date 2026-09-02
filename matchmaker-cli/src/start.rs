@@ -1229,7 +1229,72 @@ pub async fn start(
             get_active_cmd(&current_dir)
         };
 
-        if is_default_file_walker_command(&cmd) {
+        let is_bookmarks = cmd.contains("--bookmarks") || cmd.contains("--pins");
+        let is_dirs = !is_bookmarks && (cmd.contains("--dirs") || cmd.starts_with("mm list -d"));
+
+        if is_bookmarks {
+            state.picker_ui.worker.restart(false);
+            state.reloading = true;
+
+            let injector = state.injector();
+            let injector = IndexedInjector::new_globally_indexed(injector);
+            let injector = SegmentedInjector::new(injector, splitter.clone());
+            let injector = AnsiInjector::new(injector, preprocess.clone());
+
+            let mut push_fn = inject_line(
+                state.picker_ui.header.config.header_lines,
+                reload_render_tx.clone(),
+                injector,
+                group_prefix.clone(),
+            );
+
+            state.picker_ui.selector.clear();
+            let store = matchmaker::frecency::FrecencyStore::open();
+            let pins = store.list_pins();
+            for pin in pins {
+                let _ = push_fn(pin);
+            }
+
+            let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
+                    vec![],
+                )),
+            ));
+        } else if is_dirs {
+            state.picker_ui.worker.restart(false);
+            state.reloading = true;
+
+            let injector = state.injector();
+            let injector = IndexedInjector::new_globally_indexed(injector);
+            let injector = SegmentedInjector::new(injector, splitter.clone());
+            let injector = AnsiInjector::new(injector, preprocess.clone());
+
+            let mut push_fn = inject_line(
+                state.picker_ui.header.config.header_lines,
+                reload_render_tx.clone(),
+                injector,
+                group_prefix.clone(),
+            );
+
+            state.picker_ui.selector.clear();
+            let store = matchmaker::frecency::FrecencyStore::open();
+            store.auto_import_from_zoxide_if_empty();
+            if let Ok(cwd) = std::env::current_dir() {
+                let _ = store.add(&cwd.to_string_lossy());
+            }
+            let snapshot = store.get_snapshot_with_half_life(30);
+            let mut items: Vec<(String, u32)> = snapshot.scores.into_iter().collect();
+            items.sort_by(|a, b| b.1.cmp(&a.1));
+            for (path, _) in items {
+                let _ = push_fn(path);
+            }
+
+            let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
+                    vec![],
+                )),
+            ));
+        } else if is_default_file_walker_command(&cmd) {
             let cwd_str = current_dir.to_string_lossy().to_string();
             let cache_store = matchmaker::cache::DirCacheStore::open();
 

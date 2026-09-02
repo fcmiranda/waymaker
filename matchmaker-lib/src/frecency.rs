@@ -311,12 +311,30 @@ impl FrecencyStore {
         let db = match db_res {
             Ok(database) => Some(Arc::new(database)),
             Err(err) => {
-                log::error!("redb error opening {path:?}: {err}. Attempting recovery...");
-                // If database corrupt, attempt backup and recreate clean
-                let backup_path =
-                    path.with_extension(format!("corrupt.{}.bak", current_unix_secs()));
-                let _ = fs::rename(path, &backup_path);
-                Database::create(path).ok().map(Arc::new)
+                log::warn!("redb error opening {path:?}: {err}.");
+                match &err {
+                    redb::DatabaseError::DatabaseAlreadyOpen => {
+                        let mut retried = None;
+                        for _ in 0..10 {
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                            if let Ok(d) = Database::create(path) {
+                                retried = Some(Arc::new(d));
+                                break;
+                            }
+                        }
+                        retried
+                    }
+                    _ => {
+                        if path.exists() {
+                            let backup_path =
+                                path.with_extension(format!("corrupt.{}.bak", current_unix_secs()));
+                            let _ = fs::rename(path, &backup_path);
+                            Database::create(path).ok().map(Arc::new)
+                        } else {
+                            None
+                        }
+                    }
+                }
             }
         };
 

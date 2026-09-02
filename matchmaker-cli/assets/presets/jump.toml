@@ -55,9 +55,12 @@ percentage = 50
 
 [binds]
 "@reloadnext" = "ReloadNext"
+"@pins" = "ReloadNext(2)"
+"@dirs" = "ReloadNext(1)"
+"@pin" = "FmTogglePin"
 "ctrl-f" = "@reloadnext"
-"ctrl-b" = "ReloadNext(2)"
-"*" = "FmTogglePin"
+"ctrl-b" = "@pins"
+"*" = "@pin"
 "ctrl-j" = "Down"
 "ctrl-k" = "Up"
 "ctrl-p" = "SwitchPreview"
@@ -67,8 +70,8 @@ percentage = 50
 
 [ui.nav_binds]
 "f" = "@reloadnext"
-"b" = "ReloadNext(2)"
-"*" = "FmTogglePin"
+"b" = "@pins"
+"*" = "@pin"
 "l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
 "h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
 "ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]

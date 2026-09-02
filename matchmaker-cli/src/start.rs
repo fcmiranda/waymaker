@@ -1399,10 +1399,20 @@ pub async fn start(
             {
                 acs![MMAction::FmTogglePin]
             }
+            Action::Semantic(ref s)
+                if s == "pins" || s == "bookmarks" || s == "reload_pins" || s == "reload_bookmarks" =>
+            {
+                acs![MMAction::ReloadNext(Some(2))]
+            }
+            Action::Semantic(ref s)
+                if s == "dirs" || s == "frecency" || s == "reload_dirs" || s == "reload_frecency" =>
+            {
+                acs![MMAction::ReloadNext(Some(1))]
+            }
             Action::Semantic(ref s) if s == "cycle" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadnext" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadprev" => acs![MMAction::ReloadPrev],
-            Action::Semantic(ref s) if s == "reload_local" => acs![MMAction::ReloadNext(Some(0))],
+            Action::Semantic(ref s) if s == "reload_local" || s == "local" => acs![MMAction::ReloadNext(Some(0))],
             _ => acs![a],
         });
 

@@ -290,6 +290,16 @@ pub fn action_handler(
             let payload = &additional_commands.0[index];
             state.envs.set("MM_INDEX", index);
             state.set_interrupt(Interrupt::Reload, payload.clone());
+
+            let mode_label = match index {
+                0 => "{cyan:Mode: Local}",
+                1 => "{blue:Mode: Frecency}",
+                2 => "{yellow:Mode: 📌 Pins}",
+                _ => "{magenta:Mode: Custom}",
+            };
+            let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                MMAction::SetStyledStatus(mode_label.to_string()),
+            )));
         }
 
         MMAction::ReloadPrev => {
@@ -326,6 +336,16 @@ pub fn action_handler(
             state.envs.set("MM_INDEX", index);
 
             state.set_interrupt(Interrupt::Reload, payload.clone());
+
+            let mode_label = match index {
+                0 => "{cyan:Mode: Local}",
+                1 => "{blue:Mode: Frecency}",
+                2 => "{yellow:Mode: 📌 Pins}",
+                _ => "{magenta:Mode: Custom}",
+            };
+            let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                MMAction::SetStyledStatus(mode_label.to_string()),
+            )));
         }
 
         MMAction::ReloadReady(_) => {
@@ -902,14 +922,13 @@ pub fn action_handler(
                         }
                     }
                 }
-                if *fm_notify {
-                    let verb = if last_state { "Pinned" } else { "Unpinned" };
-                    let color = if last_state { "{yellow:📌}" } else { "{darkgray}" };
-                    let msg = fm_notify_msg(verb, &paths, color);
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
-                }
+                let verb = if last_state { "Pinned" } else { "Unpinned" };
+                let color = if last_state { "{yellow:📌}" } else { "{darkgray}" };
+                let msg = fm_notify_msg(verb, &paths, color);
+                let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                    MMAction::SetStyledStatus(msg),
+                )));
+                let _ = render_tx.send(RenderCommand::Action(Action::Redraw));
                 let _ = render_tx.send(RenderCommand::Refresh);
             }
         }

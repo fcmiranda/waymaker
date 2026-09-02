@@ -201,13 +201,17 @@ mod tests {
     #[test]
     fn test_awt_type_deserialization() {
         use matchmaker_partial::Apply;
-        let toml_str = std::fs::read_to_string("/home/fecavmi/.config/matchmaker/presets/awt-type.toml")
-            .unwrap();
+        let toml_str =
+            std::fs::read_to_string("/home/fecavmi/.config/matchmaker/presets/awt-type.toml")
+                .unwrap();
         let partial: PartialConfig = toml::from_str(&toml_str).unwrap();
         let mut config = Config::default();
         config.apply(partial);
 
         println!("Config worker: {:#?}", config.matcher.worker);
-        assert_eq!(config.matcher.worker.sort_threshold, matchmaker::config::SortThreshold::SMART);
+        assert_eq!(
+            config.matcher.worker.sort_threshold,
+            matchmaker::config::SortThreshold::SMART
+        );
     }
 }

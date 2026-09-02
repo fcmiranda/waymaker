@@ -483,8 +483,7 @@ impl<T: SSS> Worker<T> {
                             (None, b, None, None)
                         }
                         Some(
-                            crate::action::SortOrder::Size
-                            | crate::action::SortOrder::SizeReverse,
+                            crate::action::SortOrder::Size | crate::action::SortOrder::SizeReverse,
                         ) => {
                             let s = std::fs::metadata(clean)
                                 .or_else(|_| std::fs::symlink_metadata(clean))
@@ -530,10 +529,8 @@ impl<T: SSS> Worker<T> {
                     }
 
                     let ord = match sort_order {
-                        SortOrder::Alphabetical => {
-                            cmp_ascii_case_insensitive(a.clean(), b.clean())
-                                .then_with(|| a.clean().cmp(b.clean()))
-                        }
+                        SortOrder::Alphabetical => cmp_ascii_case_insensitive(a.clean(), b.clean())
+                            .then_with(|| a.clean().cmp(b.clean())),
                         SortOrder::AlphabeticalReverse => {
                             cmp_ascii_case_insensitive(b.clean(), a.clean())
                                 .then_with(|| b.clean().cmp(a.clean()))
@@ -549,44 +546,44 @@ impl<T: SSS> Worker<T> {
                         SortOrder::Modified => {
                             let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            a_time
-                                .cmp(&b_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            a_time.cmp(&b_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::ModifiedReverse => {
                             let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            b_time
-                                .cmp(&a_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            b_time.cmp(&a_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::Created => {
                             let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            a_time
-                                .cmp(&b_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            a_time.cmp(&b_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::CreatedReverse => {
                             let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            b_time
-                                .cmp(&a_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            b_time.cmp(&a_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::Size => {
                             let a_size = a.size.unwrap_or(0);
                             let b_size = b.size.unwrap_or(0);
-                            a_size
-                                .cmp(&b_size)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            a_size.cmp(&b_size).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::SizeReverse => {
                             let a_size = a.size.unwrap_or(0);
                             let b_size = b.size.unwrap_or(0);
-                            b_size
-                                .cmp(&a_size)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            b_size.cmp(&a_size).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
                             .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
@@ -846,8 +843,7 @@ impl<T: SSS> Worker<T> {
                             (None, b, None, None)
                         }
                         Some(
-                            crate::action::SortOrder::Size
-                            | crate::action::SortOrder::SizeReverse,
+                            crate::action::SortOrder::Size | crate::action::SortOrder::SizeReverse,
                         ) => {
                             let s = std::fs::metadata(clean)
                                 .or_else(|_| std::fs::symlink_metadata(clean))
@@ -893,10 +889,8 @@ impl<T: SSS> Worker<T> {
                     }
 
                     let ord = match sort_order {
-                        SortOrder::Alphabetical => {
-                            cmp_ascii_case_insensitive(a.clean(), b.clean())
-                                .then_with(|| a.clean().cmp(b.clean()))
-                        }
+                        SortOrder::Alphabetical => cmp_ascii_case_insensitive(a.clean(), b.clean())
+                            .then_with(|| a.clean().cmp(b.clean())),
                         SortOrder::AlphabeticalReverse => {
                             cmp_ascii_case_insensitive(b.clean(), a.clean())
                                 .then_with(|| b.clean().cmp(a.clean()))
@@ -912,44 +906,44 @@ impl<T: SSS> Worker<T> {
                         SortOrder::Modified => {
                             let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            a_time
-                                .cmp(&b_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            a_time.cmp(&b_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::ModifiedReverse => {
                             let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            b_time
-                                .cmp(&a_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            b_time.cmp(&a_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::Created => {
                             let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            a_time
-                                .cmp(&b_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            a_time.cmp(&b_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::CreatedReverse => {
                             let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                             let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            b_time
-                                .cmp(&a_time)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            b_time.cmp(&a_time).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::Size => {
                             let a_size = a.size.unwrap_or(0);
                             let b_size = b.size.unwrap_or(0);
-                            a_size
-                                .cmp(&b_size)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            a_size.cmp(&b_size).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::SizeReverse => {
                             let a_size = a.size.unwrap_or(0);
                             let b_size = b.size.unwrap_or(0);
-                            b_size
-                                .cmp(&a_size)
-                                .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean()))
+                            b_size.cmp(&a_size).then_with(|| {
+                                crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            })
                         }
                         SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
                             .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
@@ -2155,10 +2149,26 @@ mod tests {
         columns.split = Split::Delimiter(regex::Regex::new("\t").unwrap());
         columns.default = Some(StringValue("type".to_string()));
         columns.names = vec![
-            ColumnSetting { name: ColumnName("type".to_string()), hidden: false, ignore: false },
-            ColumnSetting { name: ColumnName("description".to_string()), hidden: false, ignore: false },
-            ColumnSetting { name: ColumnName("icon".to_string()), hidden: true, ignore: false },
-            ColumnSetting { name: ColumnName("prefix".to_string()), hidden: true, ignore: false },
+            ColumnSetting {
+                name: ColumnName("type".to_string()),
+                hidden: false,
+                ignore: false,
+            },
+            ColumnSetting {
+                name: ColumnName("description".to_string()),
+                hidden: false,
+                ignore: false,
+            },
+            ColumnSetting {
+                name: ColumnName("icon".to_string()),
+                hidden: true,
+                ignore: false,
+            },
+            ColumnSetting {
+                name: ColumnName("prefix".to_string()),
+                hidden: true,
+                ignore: false,
+            },
         ];
 
         let mut worker_config = WorkerConfig::default();

@@ -570,11 +570,7 @@ impl FromStr for Trigger {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         if let Some((mode, kind_str)) = value.split_once("^^") {
             let mode = mode.trim();
-            if !mode.is_empty()
-                && mode
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == ',')
-            {
+            if !mode.is_empty() && mode.chars().all(|c| c.is_alphanumeric() || c == ',') {
                 let kind = TriggerKind::from_str(kind_str.trim())?;
                 return Ok(Trigger {
                     kind,

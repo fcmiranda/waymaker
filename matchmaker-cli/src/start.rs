@@ -151,7 +151,11 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     if !config.folder_rules.is_empty() {
-        config.render.ui.folder_rules.extend(config.folder_rules.clone());
+        config
+            .render
+            .ui
+            .folder_rules
+            .extend(config.folder_rules.clone());
     }
     if config.default_sort.is_some() {
         config.render.ui.default_sort = config.default_sort;

@@ -257,8 +257,14 @@ impl FromStr for SortOrder {
             "a" | "Alphabetical" | "alphabetical" | "name" | "Name" | "Alpha" | "alpha" => {
                 Ok(Self::Alphabetical)
             }
-            "A" | "AlphabeticalReverse" | "alphabetical_reverse" | "name_rev" | "name_reverse"
-            | "name_desc" | "AlphaRev" | "alpha_rev" => Ok(Self::AlphabeticalReverse),
+            "A"
+            | "AlphabeticalReverse"
+            | "alphabetical_reverse"
+            | "name_rev"
+            | "name_reverse"
+            | "name_desc"
+            | "AlphaRev"
+            | "alpha_rev" => Ok(Self::AlphabeticalReverse),
             "n" | "Natural" | "natural" => Ok(Self::Natural),
             "N" | "NaturalReverse" | "natural_reverse" | "natural_desc" | "NaturalRev"
             | "natural_rev" => Ok(Self::NaturalReverse),
@@ -695,24 +701,42 @@ mod tests {
     #[test]
     fn test_sort_order_from_str() {
         assert_eq!(SortOrder::from_str("a").unwrap(), SortOrder::Alphabetical);
-        assert_eq!(SortOrder::from_str("A").unwrap(), SortOrder::AlphabeticalReverse);
+        assert_eq!(
+            SortOrder::from_str("A").unwrap(),
+            SortOrder::AlphabeticalReverse
+        );
         assert_eq!(SortOrder::from_str("n").unwrap(), SortOrder::Natural);
         assert_eq!(SortOrder::from_str("N").unwrap(), SortOrder::NaturalReverse);
         assert_eq!(SortOrder::from_str("m").unwrap(), SortOrder::Modified);
-        assert_eq!(SortOrder::from_str("M").unwrap(), SortOrder::ModifiedReverse);
+        assert_eq!(
+            SortOrder::from_str("M").unwrap(),
+            SortOrder::ModifiedReverse
+        );
         assert_eq!(SortOrder::from_str("b").unwrap(), SortOrder::Created);
         assert_eq!(SortOrder::from_str("B").unwrap(), SortOrder::CreatedReverse);
         assert_eq!(SortOrder::from_str("btime").unwrap(), SortOrder::Created);
-        assert_eq!(SortOrder::from_str("btime_rev").unwrap(), SortOrder::CreatedReverse);
+        assert_eq!(
+            SortOrder::from_str("btime_rev").unwrap(),
+            SortOrder::CreatedReverse
+        );
         assert_eq!(SortOrder::from_str("s").unwrap(), SortOrder::Size);
         assert_eq!(SortOrder::from_str("S").unwrap(), SortOrder::SizeReverse);
         assert_eq!(SortOrder::from_str("e").unwrap(), SortOrder::Extension);
-        assert_eq!(SortOrder::from_str("E").unwrap(), SortOrder::ExtensionReverse);
+        assert_eq!(
+            SortOrder::from_str("E").unwrap(),
+            SortOrder::ExtensionReverse
+        );
         assert_eq!(SortOrder::from_str("natural").unwrap(), SortOrder::Natural);
         assert_eq!(SortOrder::from_str("mtime").unwrap(), SortOrder::Modified);
-        assert_eq!(SortOrder::from_str("mtime_rev").unwrap(), SortOrder::ModifiedReverse);
+        assert_eq!(
+            SortOrder::from_str("mtime_rev").unwrap(),
+            SortOrder::ModifiedReverse
+        );
         assert_eq!(SortOrder::from_str("ext").unwrap(), SortOrder::Extension);
-        assert_eq!(SortOrder::from_str("ext_rev").unwrap(), SortOrder::ExtensionReverse);
+        assert_eq!(
+            SortOrder::from_str("ext_rev").unwrap(),
+            SortOrder::ExtensionReverse
+        );
     }
 
     #[test]

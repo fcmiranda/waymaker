@@ -113,10 +113,7 @@ fn action_from_null<A: ActionExt>(action: Action<NullActionExt>) -> Option<Actio
 }
 
 /// Pre-process `buffer` when the sort menu is active: intercept the next key to select a sort order or cancel.
-fn apply_sort_menu<A: ActionExt>(
-    buffer: &mut Vec<RenderCommand<A>>,
-    sort_menu_active: &mut bool,
-) {
+fn apply_sort_menu<A: ActionExt>(buffer: &mut Vec<RenderCommand<A>>, sort_menu_active: &mut bool) {
     if !*sort_menu_active {
         return;
     }
@@ -131,18 +128,42 @@ fn apply_sort_menu<A: ActionExt>(
             RenderCommand::Action(Action::Char(c)) => {
                 *sort_menu_active = false;
                 match c {
-                    'a' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Alphabetical)))),
-                    'A' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::AlphabeticalReverse)))),
-                    'n' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Natural)))),
-                    'N' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::NaturalReverse)))),
-                    'm' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Modified)))),
-                    'M' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::ModifiedReverse)))),
-                    'b' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Created)))),
-                    'B' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::CreatedReverse)))),
-                    's' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Size)))),
-                    'S' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::SizeReverse)))),
-                    'e' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::Extension)))),
-                    'E' => out.push(RenderCommand::Action(Action::Sort(Some(crate::action::SortOrder::ExtensionReverse)))),
+                    'a' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::Alphabetical,
+                    )))),
+                    'A' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::AlphabeticalReverse,
+                    )))),
+                    'n' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::Natural,
+                    )))),
+                    'N' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::NaturalReverse,
+                    )))),
+                    'm' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::Modified,
+                    )))),
+                    'M' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::ModifiedReverse,
+                    )))),
+                    'b' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::Created,
+                    )))),
+                    'B' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::CreatedReverse,
+                    )))),
+                    's' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::Size,
+                    )))),
+                    'S' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::SizeReverse,
+                    )))),
+                    'e' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::Extension,
+                    )))),
+                    'E' => out.push(RenderCommand::Action(Action::Sort(Some(
+                        crate::action::SortOrder::ExtensionReverse,
+                    )))),
                     _ => {
                         // Any other char cancels sort menu
                     }
@@ -2115,6 +2136,8 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
         let widget = ui.make_preview();
         frame.render_widget(widget, area);
     }
+
+    ui.render_scrollbar(frame, area);
 }
 
 fn render_results<T: SSS, S: Selection>(
@@ -2330,10 +2353,8 @@ fn render_sort_menu(frame: &mut Frame, area: Rect, cfg: &crate::config::SortMenu
                         format!(" {key}"),
                         Style::default().fg(color).add_modifier(Modifier::BOLD),
                     );
-                    let label_span = Span::styled(
-                        format!(" {label}"),
-                        Style::default().fg(Color::White),
-                    );
+                    let label_span =
+                        Span::styled(format!(" {label}"), Style::default().fg(Color::White));
                     let used_w = key_span.width() + label_span.width();
                     line_spans.push(key_span);
                     line_spans.push(label_span);

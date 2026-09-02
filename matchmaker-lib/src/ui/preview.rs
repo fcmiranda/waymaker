@@ -1,5 +1,6 @@
 use log::error;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
@@ -776,6 +777,69 @@ impl PreviewUI {
         }
         preview
     }
+
+    /// Draw the optional preview scrollbar on the right border of `area`.
+    pub fn render_scrollbar(&self, frame: &mut Frame, area: Rect) {
+        if !self.config.scrollbar || area.width == 0 || area.height < 2 {
+            return;
+        }
+
+        let total_lines = self.view.len();
+        let visible_height = self.area.height as usize;
+        let offset = self.offset;
+
+        let (top_y, bottom_y, style) = if let Some(border) = self.active_border() {
+            let sides = border.sides();
+            let has_top = sides.intersects(ratatui::widgets::Borders::TOP);
+            let has_bottom = sides.intersects(ratatui::widgets::Borders::BOTTOM);
+            let top_y = if has_top { area.y + 1 } else { area.y };
+            let bottom_y = if has_bottom {
+                area.bottom().saturating_sub(1)
+            } else {
+                area.bottom()
+            };
+            let border_color = if border.color != ratatui::style::Color::Reset {
+                border.color
+            } else if self.config.border.color != ratatui::style::Color::Reset {
+                self.config.border.color
+            } else {
+                ratatui::style::Color::DarkGray
+            };
+            let style = Style::default()
+                .fg(border_color)
+                .bg(border.bg)
+                .add_modifier(border.modifier);
+            (top_y, bottom_y, style)
+        } else {
+            let top_y = area.y;
+            let bottom_y = area.bottom();
+            let style = Style::default().fg(ratatui::style::Color::DarkGray);
+            (top_y, bottom_y, style)
+        };
+
+        let track_height = bottom_y.saturating_sub(top_y) as usize;
+        if track_height < 2 || (total_lines <= visible_height && offset == 0) {
+            return;
+        }
+
+        let scroll_area_size = track_height.saturating_sub(1);
+        let (scrollbar_start, scrollbar_height) =
+            calc_scrollbar(total_lines, visible_height, offset, scroll_area_size);
+
+        let start_y = top_y + scrollbar_start as u16;
+        let end_y = start_y + scrollbar_height as u16;
+        let right_x = area.x + area.width.saturating_sub(1);
+
+        let buf = frame.buffer_mut();
+        for y in top_y..bottom_y {
+            if y >= start_y && y <= end_y {
+                if let Some(cell) = buf.cell_mut((right_x, y)) {
+                    cell.set_char('▐');
+                    cell.set_style(style);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -867,4 +931,204 @@ fn query_tty_picker(
     _timeout: std::time::Duration,
 ) -> anyhow::Result<ratatui_image::picker::Picker> {
     anyhow::bail!("TTY querying is not supported on Windows")
+}
+
+/// Calculate start offset and height of the scrollbar thumb within `scroll_area_size`.
+/// Exact port of lazygit's `calcScrollbar` in `pkg/gocui/scrollbar.go`.
+pub fn calc_scrollbar(
+    list_size: usize,
+    page_size: usize,
+    position: usize,
+    scroll_area_size: usize,
+) -> (usize, usize) {
+    let height = calc_scrollbar_height(list_size, page_size, scroll_area_size);
+    let max_position = list_size.saturating_sub(page_size);
+    if max_position == 0 {
+        return (0, height);
+    }
+    if position >= max_position {
+        return (scroll_area_size.saturating_sub(height), height);
+    }
+    let range = (scroll_area_size.saturating_sub(height).saturating_sub(1)) as f64;
+    let start = (((position as f64) / (max_position as f64)) * range).ceil() as usize;
+    (start, height)
+}
+
+/// Calculate the height of the scrollbar thumb.
+/// Exact port of lazygit's `calcScrollbarHeight` in `pkg/gocui/scrollbar.go`.
+pub fn calc_scrollbar_height(list_size: usize, page_size: usize, scroll_area_size: usize) -> usize {
+    if page_size >= list_size || list_size == 0 {
+        return scroll_area_size;
+    }
+
+    ((page_size as f64 / list_size as f64) * scroll_area_size as f64) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calc_scrollbar_compatibility() {
+        let tests = vec![
+            ("page size greater than list size", 5, 10, 0, 20, 0, 20),
+            ("page size matches list size", 10, 10, 0, 20, 0, 20),
+            ("page size half of list size", 10, 5, 0, 20, 0, 10),
+            (
+                "page size half of list size at scroll end",
+                10,
+                5,
+                5,
+                20,
+                10,
+                10,
+            ),
+            (
+                "page size third of list size having scrolled half the way",
+                15,
+                5,
+                5,
+                21,
+                7,
+                7,
+            ),
+            (
+                "page size third of list size having scrolled the full way",
+                15,
+                5,
+                10,
+                21,
+                14,
+                7,
+            ),
+            (
+                "page size third of list size having scrolled by one",
+                15,
+                5,
+                1,
+                21,
+                2,
+                7,
+            ),
+            (
+                "page size third of list size having scrolled up from the bottom by one",
+                15,
+                5,
+                9,
+                21,
+                12,
+                7,
+            ),
+        ];
+
+        for (
+            name,
+            list_size,
+            page_size,
+            position,
+            scroll_area_size,
+            expected_start,
+            expected_height,
+        ) in tests
+        {
+            let (start, height) = calc_scrollbar(list_size, page_size, position, scroll_area_size);
+            assert_eq!(
+                start, expected_start,
+                "Test '{}' failed: expected start {}, got {}",
+                name, expected_start, start
+            );
+            assert_eq!(
+                height, expected_height,
+                "Test '{}' failed: expected height {}, got {}",
+                name, expected_height, height
+            );
+        }
+    }
+
+    #[test]
+    fn test_render_scrollbar_draws_half_blocks_when_enabled() {
+        use crate::preview::previewer::Previewer;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        use ratatui::text::Text;
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut config = PreviewConfig::default();
+        config.scrollbar = true;
+        config.show = crate::config::ShowCondition::Bool(true);
+
+        let (previewer, _tx) = Previewer::new(Default::default());
+        let text: Text<'static> = (1..=30)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .into();
+        previewer.set_string(text);
+
+        let mut ui = PreviewUI::new(previewer.view(), config, [40, 10]);
+        ui.update_dimensions(&Rect::new(0, 0, 40, 10));
+
+        terminal
+            .draw(|f| {
+                ui.render_scrollbar(f, Rect::new(0, 0, 40, 10));
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let right_x = 39;
+        let mut found_thumb = false;
+        for y in 0..10 {
+            if buf.cell((right_x, y)).map(|c| c.symbol()) == Some("▐") {
+                found_thumb = true;
+                break;
+            }
+        }
+        assert!(
+            found_thumb,
+            "Scrollbar thumb '▐' should be rendered on right edge"
+        );
+    }
+
+    #[test]
+    fn test_render_scrollbar_disabled_by_default() {
+        use crate::preview::previewer::Previewer;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        use ratatui::text::Text;
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let config = PreviewConfig::default();
+        assert!(
+            !config.scrollbar,
+            "Preview scrollbar must be disabled by default"
+        );
+
+        let (previewer, _tx) = Previewer::new(Default::default());
+        let text: Text<'static> = (1..=30)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .into();
+        previewer.set_string(text);
+
+        let mut ui = PreviewUI::new(previewer.view(), config, [40, 10]);
+        ui.update_dimensions(&Rect::new(0, 0, 40, 10));
+
+        terminal
+            .draw(|f| {
+                ui.render_scrollbar(f, Rect::new(0, 0, 40, 10));
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        for y in 0..10 {
+            for x in 0..40 {
+                assert_ne!(buf.cell((x, y)).map(|c| c.symbol()), Some("▐"));
+            }
+        }
+    }
 }

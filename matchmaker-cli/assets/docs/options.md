@@ -233,6 +233,7 @@ All colors and modifiers come from ratatui:
 #### Preview Panel (`preview.`, `p`)
 
 - `show`: (bool) Toggle the preview window.
+- `scrollbar`: (bool) Enable scrollbar in the preview window (alias: `sb`, default: `false`).
 - `scroll_wrap`: (bool) Enable scroll wrapping in preview.
 - `wrap`: (bool) Enable line wrapping in preview.
 - `layout`: List of preview settings. This path overrides the existing preview layouts in order.

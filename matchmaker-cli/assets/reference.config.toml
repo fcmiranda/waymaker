@@ -480,6 +480,10 @@ media_fit = "fit"
 # Valores: inteiros >= 0, None (usa largura da borda) | Default: None
 # drag_width = 1
 
+# Exibe a barra de rolagem (scrollbar) no painel de preview.
+# Valores: true, false | Default: false
+# scrollbar = true
+
 # Borda do painel de preview.
 [preview.border]
 type = "Rounded"

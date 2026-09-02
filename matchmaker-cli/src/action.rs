@@ -138,6 +138,7 @@ pub struct ActionContext {
     pub undo_stack: crate::fm::UndoStack,
     pub redo_stack: crate::fm::UndoStack,
     pub fm_action: Option<FmActionMode>,
+    pub query_history: std::collections::HashMap<usize, (String, usize)>,
 }
 
 pub fn action_handler(
@@ -155,6 +156,7 @@ pub fn action_handler(
         undo_stack,
         redo_stack,
         fm_action,
+        query_history,
     }: &mut ActionContext,
 ) {
     match a {
@@ -242,6 +244,7 @@ pub fn action_handler(
                 return;
             }
 
+            let old_index = additional_commands.1;
             let index = match x {
                 None => {
                     additional_commands.1 =
@@ -250,6 +253,7 @@ pub fn action_handler(
                 }
                 Some(x) => {
                     if x < additional_commands.0.len() {
+                        additional_commands.1 = x;
                         x
                     } else {
                         error!("Index {x} is out of bounds for ReloadNext");
@@ -257,6 +261,25 @@ pub fn action_handler(
                     }
                 }
             };
+
+            if old_index != index {
+                query_history.insert(
+                    old_index,
+                    (
+                        state.picker_ui.query.input.clone(),
+                        state.picker_ui.query.cursor,
+                    ),
+                );
+                if let Some((saved_input, saved_cursor)) = query_history.get(&index) {
+                    state
+                        .picker_ui
+                        .query
+                        .set(Some(saved_input.clone()), *saved_cursor as u16);
+                } else {
+                    state.picker_ui.query.set(Some(String::new()), 0);
+                }
+            }
+
             let payload = &additional_commands.0[index];
             state.envs.set("MM_INDEX", index);
             state.set_interrupt(Interrupt::Reload, payload.clone());
@@ -267,10 +290,29 @@ pub fn action_handler(
                 return;
             }
 
+            let old_index = additional_commands.1;
             additional_commands.1 = (additional_commands.1 + additional_commands.0.len() - 1)
                 % additional_commands.0.len();
 
             let index = additional_commands.1;
+
+            if old_index != index {
+                query_history.insert(
+                    old_index,
+                    (
+                        state.picker_ui.query.input.clone(),
+                        state.picker_ui.query.cursor,
+                    ),
+                );
+                if let Some((saved_input, saved_cursor)) = query_history.get(&index) {
+                    state
+                        .picker_ui
+                        .query
+                        .set(Some(saved_input.clone()), *saved_cursor as u16);
+                } else {
+                    state.picker_ui.query.set(Some(String::new()), 0);
+                }
+            }
 
             let payload = &additional_commands.0[index];
 
@@ -1246,5 +1288,129 @@ mod tests {
 
         let (_trigger, action) = parse_push_bind_parts(&push_inner).unwrap();
         assert_eq!(action, Action::Semantic("enter_mm".into()));
+    }
+
+    #[test]
+    fn test_reload_next_and_prev_query_preservation() {
+        use matchmaker::config::*;
+        use matchmaker::nucleo::Worker;
+        use matchmaker::render::State;
+        use matchmaker::ui::{DisplayUI, PickerUI, UI};
+        use matchmaker::Selector;
+        use std::sync::{Arc, Mutex};
+
+        let (bind_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (render_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (controller_tx, _) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut matcher = matchmaker::nucleo::nucleo::Matcher::default();
+        let worker = Worker::<ConfigMMItem>::new_indexable(["col0"], None);
+        let selection_set: Selector<ConfigMMItem, ConfigMMInnerItem> =
+            Selector::new(matchmaker::nucleo::Indexed::identifier).disabled();
+
+        let mut picker_ui = PickerUI::new(
+            ResultsConfig::default(),
+            StatusConfig::default(),
+            QueryConfig::default(),
+            DisplayConfig::default(),
+            ActionBoxConfig::default(),
+            BreadcrumbConfig::default(),
+            &mut matcher,
+            worker,
+            selection_set,
+        );
+
+        let mut ui = UI {
+            layout: None,
+            area: ratatui::layout::Rect::default(),
+            config: UiConfig::default(),
+        };
+        let mut footer_ui = DisplayUI::new(DisplayConfig::default());
+        let mut preview_ui = None;
+        let mut state = State::new();
+
+        let mut action_context = ActionContext {
+            bind_tx,
+            render_tx,
+            additional_commands: (
+                vec![
+                    "cmd0".to_string(),
+                    "cmd1".to_string(),
+                    "cmd2".to_string(),
+                ],
+                0,
+            ),
+            output_template: None,
+            print_handle: AppendOnly::new(),
+            output_separator: "\n".to_string(),
+            clipboard: Arc::new(Mutex::new(None)),
+            fm_notify: false,
+            undo_stack: Arc::new(Mutex::new(Vec::new())),
+            redo_stack: Arc::new(Mutex::new(Vec::new())),
+            fm_action: None,
+            query_history: std::collections::HashMap::new(),
+        };
+
+        let mut mm_state = state.dispatcher(
+            &mut ui,
+            &mut picker_ui,
+            &mut footer_ui,
+            &mut preview_ui,
+            &controller_tx,
+        );
+
+        // 1. Initially on index 0 (normal mode)
+        mm_state
+            .picker_ui
+            .query
+            .set(Some("normal_query".to_string()), 12);
+        assert_eq!(mm_state.picker_ui.query.input, "normal_query");
+
+        // 2. Cycle to index 1 (cycle mode)
+        action_handler(
+            MMAction::ReloadNext(None),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(action_context.additional_commands.1, 1);
+        assert_eq!(mm_state.picker_ui.query.input, "");
+
+        // 3. User types cycle query on index 1
+        mm_state
+            .picker_ui
+            .query
+            .set(Some("cycle_query".to_string()), 11);
+
+        // 4. Cycle to index 2
+        action_handler(
+            MMAction::ReloadNext(None),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(action_context.additional_commands.1, 2);
+        assert_eq!(mm_state.picker_ui.query.input, "");
+
+        // 5. Cycle back to index 0 (normal mode)
+        action_handler(
+            MMAction::ReloadNext(None),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(action_context.additional_commands.1, 0);
+        assert_eq!(mm_state.picker_ui.query.input, "normal_query");
+
+        // 6. Cycle to index 1 (cycle mode)
+        action_handler(
+            MMAction::ReloadNext(None),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(action_context.additional_commands.1, 1);
+        assert_eq!(mm_state.picker_ui.query.input, "cycle_query");
+
+        // 7. Cycle backwards (ReloadPrev) to index 0 (normal mode)
+        action_handler(MMAction::ReloadPrev, &mut mm_state, &mut action_context);
+        assert_eq!(action_context.additional_commands.1, 0);
+        assert_eq!(mm_state.picker_ui.query.input, "normal_query");
     }
 }

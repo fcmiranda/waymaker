@@ -1374,6 +1374,7 @@ pub async fn start(
         undo_stack: Arc::new(Mutex::new(Vec::new())),
         redo_stack: Arc::new(Mutex::new(Vec::new())),
         fm_action: None,
+        query_history: std::collections::HashMap::new(),
     };
 
     options = options
@@ -1393,7 +1394,9 @@ pub async fn start(
             Action::Semantic(ref s) if s == "fm_undo" => acs![MMAction::FmUndo],
             Action::Semantic(ref s) if s == "fm_redo" => acs![MMAction::FmRedo],
             Action::Semantic(ref s) if s == "fm_dragdrop" => acs![MMAction::FmDragDrop],
+            Action::Semantic(ref s) if s == "cycle" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadnext" => acs![MMAction::ReloadNext(None)],
+            Action::Semantic(ref s) if s == "reloadprev" => acs![MMAction::ReloadPrev],
             Action::Semantic(ref s) if s == "reload_local" => acs![MMAction::ReloadNext(Some(0))],
             _ => acs![a],
         });

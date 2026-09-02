@@ -173,8 +173,9 @@ ansi = false # don't set to true here
 "@open" = "Execute($EDITOR {1})"
 "@open_2" = "Become($EDITOR {1})"
 "@reload" = "Reload"
-"@next" = ["ReloadNext", "Cancel"]
-"@prev" = ["ReloadPrev", "Cancel"]
+"@next" = "ReloadNext"
+"@prev" = "ReloadPrev"
+"@cycle" = "ReloadNext"
 "@help" = "Help"
 "@break" = "Redraw" # invalid unicode or unsupported emoji can break rendering
 

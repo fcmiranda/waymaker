@@ -29,7 +29,7 @@ use crate::{
 // UI
 pub struct UI {
     pub layout: Option<TerminalLayoutSettings>,
-    area: Rect, // unused
+    pub area: Rect,
     pub config: UiConfig,
 }
 

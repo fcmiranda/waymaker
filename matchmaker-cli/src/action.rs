@@ -301,7 +301,11 @@ pub fn action_handler(
                 MMAction::SetStyledStatus(mode_label.to_string()),
             )));
             let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
-            let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
+            if index == 0 && state.ui.config.nav_mode {
+                let _ = render_tx.send(RenderCommand::Action(Action::FocusNav));
+            } else {
+                let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
+            }
             state.picker_ui.results.cursor_jump(0);
         }
 

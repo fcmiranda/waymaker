@@ -300,6 +300,9 @@ pub fn action_handler(
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                 MMAction::SetStyledStatus(mode_label.to_string()),
             )));
+            let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
+            let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
+            state.picker_ui.results.cursor_jump(0);
         }
 
         MMAction::ReloadPrev => {
@@ -346,11 +349,17 @@ pub fn action_handler(
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                 MMAction::SetStyledStatus(mode_label.to_string()),
             )));
+            let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
+            let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
+            state.picker_ui.results.cursor_jump(0);
         }
 
         MMAction::ReloadReady(_) => {
             state.reloading = false;
             state.picker_ui.update();
+            state.picker_ui.results.cursor_jump(0);
+            let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
+            let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
             state.needs_redraw = true;
         }
 

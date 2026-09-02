@@ -42,6 +42,8 @@ fn action_from_null<A: ActionExt>(action: Action<NullActionExt>) -> Option<Actio
         Action::ToggleWrap => Action::ToggleWrap,
         Action::ToggleActionBox => Action::ToggleActionBox,
         Action::ToggleFocus => Action::ToggleFocus,
+        Action::FocusFilter => Action::FocusFilter,
+        Action::FocusNav => Action::FocusNav,
         Action::ToggleParentPeek => Action::ToggleParentPeek,
         Action::ToggleFooter => Action::ToggleFooter,
         Action::ToggleHeader => Action::ToggleHeader,
@@ -219,6 +221,14 @@ fn apply_focus_binds<A: ActionExt>(
                     Focus::Results => Focus::Input,
                 };
                 out.push(RenderCommand::Action(Action::ToggleFocus));
+            }
+            RenderCommand::Action(Action::FocusFilter) => {
+                sim_focus = Focus::Input;
+                out.push(RenderCommand::Action(Action::FocusFilter));
+            }
+            RenderCommand::Action(Action::FocusNav) => {
+                sim_focus = Focus::Results;
+                out.push(RenderCommand::Action(Action::FocusNav));
             }
             RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
                 if c == ',' {
@@ -1261,6 +1271,30 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                     };
                                     picker_ui.query.set_prompt(prompt);
                                 }
+                            }
+                        }
+                        Action::FocusFilter => {
+                            if ui.config.nav_mode {
+                                state.focus = Focus::Input;
+                                state.focus_blink = true;
+                                state.focus_tick = 0;
+                                let prompt = &ui.config.nav_prompt;
+                                if !prompt.is_empty() {
+                                    picker_ui.query.set_prompt(None);
+                                }
+                                tui.redraw();
+                            }
+                        }
+                        Action::FocusNav => {
+                            if ui.config.nav_mode {
+                                state.focus = Focus::Results;
+                                state.focus_blink = true;
+                                state.focus_tick = 0;
+                                let prompt = &ui.config.nav_prompt;
+                                if !prompt.is_empty() {
+                                    picker_ui.query.set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
+                                }
+                                tui.redraw();
                             }
                         }
                         Action::Overlay(index) => {

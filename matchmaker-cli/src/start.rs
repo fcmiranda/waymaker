@@ -1026,6 +1026,10 @@ pub async fn start(
                 let store = matchmaker::frecency::FrecencyStore::open();
                 let _ = store.add(&new_cwd.to_string_lossy());
                 if state.ui.config.nav_mode {
+                    // Reset view to local mode (index 0) and nav mode upon entering/changing directory
+                    let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
+                        matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(Some(0))),
+                    ));
                     let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
                         matchmaker::action::Action::FocusNav,
                     ));

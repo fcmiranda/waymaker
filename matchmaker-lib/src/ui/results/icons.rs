@@ -258,7 +258,11 @@ pub(super) fn insert_icon_span(
     current_icon_style: StyleSetting,
     is_pinned: bool,
 ) {
-    let (icon, color) = icon_for_name(name);
+    let (icon, color) = if is_pinned {
+        ('', Color::Yellow)
+    } else {
+        icon_for_name(name)
+    };
     let style = if is_current_row {
         if current_icon_style.fg.is_some()
             || current_icon_style.bg.is_some()
@@ -275,22 +279,13 @@ pub(super) fn insert_icon_span(
     } else {
         ratatui::style::Style::default().fg(color)
     };
-    let icon_span = if is_pinned {
-        ratatui::text::Span::raw("📌")
-    } else {
-        ratatui::text::Span::styled(format!("{icon}"), style)
-    };
+    let icon_span = ratatui::text::Span::styled(format!("{icon}"), style);
     let index = if has_nav_bar { 2 } else { 1 };
     for line in col.lines.iter_mut() {
         let at = index.min(line.spans.len());
-        if is_pinned {
-            line.spans.insert(at, ratatui::text::Span::raw(" "));
-            line.spans.insert(at + 1, ratatui::text::Span::raw("📌"));
-        } else {
-            line.spans.insert(at, ratatui::text::Span::raw(" "));
-            line.spans.insert(at + 1, icon_span.clone());
-            line.spans.insert(at + 2, ratatui::text::Span::raw(" "));
-        }
+        line.spans.insert(at, ratatui::text::Span::raw(" "));
+        line.spans.insert(at + 1, icon_span.clone());
+        line.spans.insert(at + 2, ratatui::text::Span::raw(" "));
     }
 }
 

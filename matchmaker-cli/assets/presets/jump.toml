@@ -55,12 +55,12 @@ percentage = 50
 
 [binds]
 "@reloadnext" = "ReloadNext"
-"@pins" = "ReloadNext(2)"
+"@bookmarks" = "ReloadNext(2)"
 "@dirs" = "ReloadNext(1)"
-"@pin" = "FmTogglePin"
+"@bookmark" = "FmTogglePin"
 "ctrl-f" = "@reloadnext"
-"ctrl-b" = "@pins"
-"*" = "@pin"
+"ctrl-b" = "@bookmarks"
+"*" = "@bookmark"
 "ctrl-j" = "Down"
 "ctrl-k" = "Up"
 "ctrl-p" = "SwitchPreview"
@@ -70,8 +70,8 @@ percentage = 50
 
 [ui.nav_binds]
 "f" = "@reloadnext"
-"b" = "@pins"
-"*" = "@pin"
+"b" = "@bookmarks"
+"*" = "@bookmark"
 "l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
 "h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
 "ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
@@ -92,7 +92,7 @@ separator_style.fg = "Blue"
 additional_commands = [
     "",
     "mm list --dirs 2>/dev/null",
-    "mm list --pins 2>/dev/null"
+    "mm list --bookmarks 2>/dev/null"
 ]
 
 [start.command]

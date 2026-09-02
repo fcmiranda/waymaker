@@ -230,8 +230,8 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 };
                 let store = matchmaker::frecency::FrecencyStore::open();
                 match store.pin(target) {
-                    Ok(_) => println!("📌 Pinned '{target}'"),
-                    Err(e) => eprintln!("Failed to pin '{target}': {e}"),
+                    Ok(_) => println!(" Bookmarked '{target}'"),
+                    Err(e) => eprintln!("Failed to bookmark '{target}': {e}"),
                 }
             } else {
                 let store = matchmaker::frecency::FrecencyStore::open();
@@ -245,12 +245,12 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             if let Some(path) = args.get(1) {
                 let store = matchmaker::frecency::FrecencyStore::open();
                 match store.unpin(path) {
-                    Ok(true) => println!("󰤭 Unpinned '{path}'"),
-                    Ok(false) => println!("Path '{path}' was not pinned"),
-                    Err(e) => eprintln!("Failed to unpin '{path}': {e}"),
+                    Ok(true) => println!("󰤭 Unbookmarked '{path}'"),
+                    Ok(false) => println!("Path '{path}' was not bookmarked"),
+                    Err(e) => eprintln!("Failed to unbookmark '{path}': {e}"),
                 }
             } else {
-                eprintln!("Usage: mm unpin <path>");
+                eprintln!("Usage: mm unbookmark <path>");
                 exit(1);
             }
             true

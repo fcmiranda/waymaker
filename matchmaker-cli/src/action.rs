@@ -294,7 +294,7 @@ pub fn action_handler(
             let mode_label = match index {
                 0 => "{cyan:Mode: Local}",
                 1 => "{blue:Mode: Frecency}",
-                2 => "{yellow:Mode: 📌 Pins}",
+                2 => "{yellow:Mode:  Bookmarks}",
                 _ => "{magenta:Mode: Custom}",
             };
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
@@ -340,7 +340,7 @@ pub fn action_handler(
             let mode_label = match index {
                 0 => "{cyan:Mode: Local}",
                 1 => "{blue:Mode: Frecency}",
-                2 => "{yellow:Mode: 📌 Pins}",
+                2 => "{yellow:Mode:  Bookmarks}",
                 _ => "{magenta:Mode: Custom}",
             };
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
@@ -922,8 +922,8 @@ pub fn action_handler(
                         }
                     }
                 }
-                let verb = if last_state { "Pinned" } else { "Unpinned" };
-                let color = if last_state { "{yellow:📌}" } else { "{darkgray}" };
+                let verb = if last_state { "Bookmarked" } else { "Unbookmarked" };
+                let color = if last_state { "{yellow:}" } else { "{darkgray}" };
                 let msg = fm_notify_msg(verb, &paths, color);
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                     MMAction::SetStyledStatus(msg),

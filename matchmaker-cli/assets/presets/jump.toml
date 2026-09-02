@@ -56,10 +56,6 @@ side = "right"
 percentage = 50
 
 [binds]
-"@reloadnext" = "ReloadNext"
-"@bookmarks" = "ReloadNext(2)"
-"@dirs" = "ReloadNext(1)"
-"@bookmark" = "FmTogglePin"
 "ctrl-f" = "@dirs"
 "ctrl-b" = "@bookmarks"
 "*" = "@bookmark"

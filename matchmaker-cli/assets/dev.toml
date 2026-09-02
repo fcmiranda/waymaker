@@ -125,9 +125,7 @@ max = 120
 "@next" = "ReloadNext"
 "@prev" = "ReloadPrev"
 "@cycle" = "ReloadNext"
-"@pin" = "FmTogglePin"
-"@bookmark" = "FmTogglePin"
-"*" = "@pin"
+"*" = "@bookmark"
 
 # Printing
 "alt-p" = "@print"

@@ -455,13 +455,27 @@ impl QueryUI {
             self.active_text_style(focused),
         ));
 
-        if (self.config.underline || !self.config.underline_style.is_empty()) && area_width > 0 {
-            let left_width = line.spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
-            let padding = area_width.saturating_sub(left_width);
-            if padding > 0 {
-                line.push_span(Span::raw(" ".repeat(padding as usize)));
+        let (should_underline, u_style) = if focused {
+            let active = self.config.filter_underline.unwrap_or(self.config.underline)
+                || !self.config.filter_underline_style.is_empty();
+            let style = if !self.config.filter_underline_style.is_empty() {
+                self.config.filter_underline_style
+            } else {
+                self.config.underline_style
+            };
+            (active, style)
+        } else {
+            let active = self.config.underline && self.config.filter_underline != Some(true);
+            (active, self.config.underline_style)
+        };
+
+        if should_underline && area_width > 0 {
+            let cur_w = line.spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
+            let pad = area_width.saturating_sub(cur_w);
+            if pad > 0 {
+                line.push_span(Span::raw(" ".repeat(pad as usize)));
             }
-            let u_fg = self.config.underline_style.fg;
+            let u_fg = u_style.fg;
             for span in line.spans.iter_mut() {
                 span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
                 if let Some(fg) = u_fg {
@@ -522,13 +536,27 @@ impl QueryUI {
             }
         }
 
-        if (self.config.underline || !self.config.underline_style.is_empty()) && area_width > 0 {
+        let (should_underline, u_style) = if focused {
+            let active = self.config.filter_underline.unwrap_or(self.config.underline)
+                || !self.config.filter_underline_style.is_empty();
+            let style = if !self.config.filter_underline_style.is_empty() {
+                self.config.filter_underline_style
+            } else {
+                self.config.underline_style
+            };
+            (active, style)
+        } else {
+            let active = self.config.underline && self.config.filter_underline != Some(true);
+            (active, self.config.underline_style)
+        };
+
+        if should_underline && area_width > 0 {
             let cur_w = line.spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
             let pad = area_width.saturating_sub(cur_w);
             if pad > 0 {
                 line.push_span(Span::raw(" ".repeat(pad as usize)));
             }
-            let u_fg = self.config.underline_style.fg;
+            let u_fg = u_style.fg;
             for span in line.spans.iter_mut() {
                 span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
                 if let Some(fg) = u_fg {

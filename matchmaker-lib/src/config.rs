@@ -498,6 +498,14 @@ pub struct QueryConfig {
     /// Style and color of the query underline separator.
     #[partial(recurse)]
     pub underline_style: StyleSetting,
+
+    /// Whether the underline separator is shown when in filter mode (focused).
+    /// If None, inherits from `underline`.
+    pub filter_underline: Option<bool>,
+
+    /// Style and color of the query underline separator when in filter mode (focused).
+    #[partial(recurse)]
+    pub filter_underline_style: StyleSetting,
 }
 
 impl Default for QueryConfig {
@@ -527,6 +535,11 @@ impl Default for QueryConfig {
             show: true,
             underline: false,
             underline_style: StyleSetting {
+                modifier: Modifier::empty(),
+                ..Default::default()
+            },
+            filter_underline: None,
+            filter_underline_style: StyleSetting {
                 modifier: Modifier::empty(),
                 ..Default::default()
             },

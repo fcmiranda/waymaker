@@ -19,8 +19,8 @@ match_indent = false
 
 [query]
 status_inline = true
-underline = true
-underline_style.fg = "DarkGray"
+filter_underline = true
+filter_underline_style.fg = "DarkGray"
 
 [matcher]
 sort = "smart"

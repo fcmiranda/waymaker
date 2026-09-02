@@ -2247,7 +2247,7 @@ fn render_input(
     let widget = if let Some(label) = status {
         ui.make_input_with_status_focused(label, area.width, focused, nav_prompt)
     } else {
-        ui.make_input_focused(focused, nav_prompt)
+        ui.make_input_focused(area.width, focused, nav_prompt)
     };
     let p = ui.cursor_offset_for_prompt(&area, &active_prompt);
 

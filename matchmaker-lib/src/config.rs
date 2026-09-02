@@ -491,6 +491,13 @@ pub struct QueryConfig {
 
     /// Whether to show the filter input bar.
     pub show: bool,
+
+    /// Underline separator drawn directly across the query filter row (0 extra vertical lines).
+    pub underline: bool,
+
+    /// Style and color of the query underline separator.
+    #[partial(recurse)]
+    pub underline_style: StyleSetting,
 }
 
 impl Default for QueryConfig {
@@ -518,6 +525,11 @@ impl Default for QueryConfig {
             scroll_padding: true,
             status_inline: false,
             show: true,
+            underline: false,
+            underline_style: StyleSetting {
+                modifier: Modifier::empty(),
+                ..Default::default()
+            },
         }
     }
 }

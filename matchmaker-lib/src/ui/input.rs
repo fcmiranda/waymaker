@@ -438,15 +438,37 @@ impl QueryUI {
     // remember to call scroll_to_cursor beforehand
 
     pub fn make_input(&self) -> Paragraph<'_> {
-        self.make_input_focused(true, None)
+        self.make_input_focused(0, true, None)
     }
 
-    pub fn make_input_focused(&self, focused: bool, nav_prompt: Option<&str>) -> Paragraph<'_> {
+    pub fn make_input_focused(
+        &self,
+        area_width: u16,
+        focused: bool,
+        nav_prompt: Option<&str>,
+    ) -> Paragraph<'_> {
+        use unicode_width::UnicodeWidthStr;
+
         let mut line = self.active_prompt(focused, nav_prompt);
         line.push_span(Span::styled(
             self.state.render(),
             self.active_text_style(focused),
         ));
+
+        if (self.config.underline || !self.config.underline_style.is_empty()) && area_width > 0 {
+            let left_width = line.spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
+            let padding = area_width.saturating_sub(left_width);
+            if padding > 0 {
+                line.push_span(Span::raw(" ".repeat(padding as usize)));
+            }
+            let u_fg = self.config.underline_style.fg;
+            for span in line.spans.iter_mut() {
+                span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+                if let Some(fg) = u_fg {
+                    span.style = span.style.underline_color(fg);
+                }
+            }
+        }
 
         Paragraph::new(line).block(self.config.border.as_block())
     }
@@ -497,6 +519,21 @@ impl QueryUI {
             line.push_span(Span::raw(" ".repeat(padding as usize)));
             for span in right_label.spans {
                 line.push_span(span);
+            }
+        }
+
+        if (self.config.underline || !self.config.underline_style.is_empty()) && area_width > 0 {
+            let cur_w = line.spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
+            let pad = area_width.saturating_sub(cur_w);
+            if pad > 0 {
+                line.push_span(Span::raw(" ".repeat(pad as usize)));
+            }
+            let u_fg = self.config.underline_style.fg;
+            for span in line.spans.iter_mut() {
+                span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+                if let Some(fg) = u_fg {
+                    span.style = span.style.underline_color(fg);
+                }
             }
         }
 

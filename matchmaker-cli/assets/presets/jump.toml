@@ -19,11 +19,8 @@ match_indent = false
 
 [query]
 status_inline = true
-
-[query.border]
-type = "Plain"
-sides = "BOTTOM"
-color = "DarkGray"
+underline = true
+underline_style.fg = "DarkGray"
 
 [matcher]
 sort = "smart"

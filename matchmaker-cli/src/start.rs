@@ -1394,6 +1394,11 @@ pub async fn start(
             Action::Semantic(ref s) if s == "fm_undo" => acs![MMAction::FmUndo],
             Action::Semantic(ref s) if s == "fm_redo" => acs![MMAction::FmRedo],
             Action::Semantic(ref s) if s == "fm_dragdrop" => acs![MMAction::FmDragDrop],
+            Action::Semantic(ref s)
+                if s == "fm_pin" || s == "fm_bookmark" || s == "pin" || s == "bookmark" =>
+            {
+                acs![MMAction::FmTogglePin]
+            }
             Action::Semantic(ref s) if s == "cycle" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadnext" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadprev" => acs![MMAction::ReloadPrev],

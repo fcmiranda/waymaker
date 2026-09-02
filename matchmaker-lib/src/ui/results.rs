@@ -53,6 +53,7 @@ pub struct ResultsUI {
     /// Populated externally via `Action::Custom(FmSetYankPaths(...))`.
     pub yank_paths: HashSet<String>,
     pub cut_paths: HashSet<String>,
+    pub pin_paths: HashSet<String>,
 }
 
 impl ResultsUI {
@@ -83,6 +84,7 @@ impl ResultsUI {
             cursor_above: 0,
             yank_paths: HashSet::new(),
             cut_paths: HashSet::new(),
+            pin_paths: HashSet::new(),
         }
     }
 

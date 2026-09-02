@@ -85,6 +85,7 @@ pub enum MMAction {
     FmRemoveYankPaths(String),
     FmSetCutPaths(String),
     FmRemoveCutPaths(String),
+    FmSetPinPaths(String),
 
     /// File-manager action-box operations.
     FmCreateStart,
@@ -100,6 +101,7 @@ pub enum MMAction {
     FmUndo,
     FmRedo,
     FmDragDrop,
+    FmTogglePin,
     ReloadReady(Vec<String>),
     Confirm(String),
     Prompt(String),
@@ -253,8 +255,13 @@ pub fn action_handler(
                 }
                 Some(x) => {
                     if x < additional_commands.0.len() {
-                        additional_commands.1 = x;
-                        x
+                        let target = if additional_commands.1 == x && x != 0 {
+                            0
+                        } else {
+                            x
+                        };
+                        additional_commands.1 = target;
+                        target
                     } else {
                         error!("Index {x} is out of bounds for ReloadNext");
                         return;
@@ -554,6 +561,22 @@ pub fn action_handler(
                 })
                 .collect();
         }
+        MMAction::FmSetPinPaths(raw) => {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            state.picker_ui.results.pin_paths = raw
+                .split('\n')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    let path = PathBuf::from(&s);
+                    if path.is_absolute() {
+                        s
+                    } else {
+                        cwd.join(path).to_string_lossy().to_string()
+                    }
+                })
+                .collect();
+        }
         MMAction::FmCreateStart => {
             *fm_action = Some(FmActionMode::Create);
             show_action_box(state, " ", "");
@@ -765,6 +788,10 @@ pub fn action_handler(
                     }
                 }
                 if !had_error {
+                    // Record paste destination directory in frecency store
+                    let store = matchmaker::frecency::FrecencyStore::open();
+                    let _ = store.add(&cwd.to_string_lossy());
+
                     if let Ok(mut cb) = clipboard.lock() {
                         *cb = None;
                     }
@@ -852,6 +879,40 @@ pub fn action_handler(
                 }
             }
         }
+        MMAction::FmTogglePin => {
+            let mut paths = fm_current_items(state);
+            if paths.is_empty() {
+                if let Ok(cwd) = std::env::current_dir() {
+                    paths.push(cwd.to_string_lossy().to_string());
+                }
+            }
+            if !paths.is_empty() {
+                let store = matchmaker::frecency::FrecencyStore::open();
+                let mut last_state = false;
+                for p in &paths {
+                    if let Ok(pinned) = store.toggle_pin(p) {
+                        last_state = pinned;
+                        let key_str = matchmaker::frecency::normalize_path(p);
+                        if pinned {
+                            state.picker_ui.results.pin_paths.insert(key_str.clone());
+                            state.picker_ui.results.pin_paths.insert(p.clone());
+                        } else {
+                            state.picker_ui.results.pin_paths.remove(&key_str);
+                            state.picker_ui.results.pin_paths.remove(p);
+                        }
+                    }
+                }
+                if *fm_notify {
+                    let verb = if last_state { "Pinned" } else { "Unpinned" };
+                    let color = if last_state { "{yellow:📌}" } else { "{darkgray}" };
+                    let msg = fm_notify_msg(verb, &paths, color);
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                        MMAction::SetStyledStatus(msg),
+                    )));
+                }
+                let _ = render_tx.send(RenderCommand::Refresh);
+            }
+        }
     }
 }
 
@@ -915,11 +976,11 @@ enum_from_str_display! {
     MMAction;
 
     units:
-    CycleSort, HistoryUp, HistoryDown, Accept, ReloadPrev, FmCreateStart, FmDeleteStart, FmRenameStart, FmUnzipStart, FmZipStart, FmYank, FmUnyank, FmCut, FmUncut, FmPaste, FmUndo, FmRedo, FmDragDrop;
+    CycleSort, HistoryUp, HistoryDown, Accept, ReloadPrev, FmCreateStart, FmDeleteStart, FmRenameStart, FmUnzipStart, FmZipStart, FmYank, FmUnyank, FmCut, FmUncut, FmPaste, FmUndo, FmRedo, FmDragDrop, FmTogglePin;
 
 
     tuples:
-    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, Confirm, Prompt;
+    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, FmSetPinPaths, Confirm, Prompt;
 
     defaults:
     ;
@@ -1412,5 +1473,82 @@ mod tests {
         action_handler(MMAction::ReloadPrev, &mut mm_state, &mut action_context);
         assert_eq!(action_context.additional_commands.1, 0);
         assert_eq!(mm_state.picker_ui.query.input, "normal_query");
+    }
+
+    #[test]
+    fn test_fm_toggle_pin() {
+        use matchmaker::config::*;
+        use matchmaker::nucleo::Worker;
+        use matchmaker::render::State;
+        use matchmaker::ui::{DisplayUI, PickerUI, UI};
+        use matchmaker::Selector;
+        use std::sync::{Arc, Mutex};
+
+        let (bind_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (render_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (controller_tx, _) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut matcher = matchmaker::nucleo::nucleo::Matcher::default();
+        let worker = Worker::<ConfigMMItem>::new_indexable(["col0"], None);
+        let selection_set: Selector<ConfigMMItem, ConfigMMInnerItem> =
+            Selector::new(matchmaker::nucleo::Indexed::identifier).disabled();
+
+        let mut picker_ui = PickerUI::new(
+            ResultsConfig::default(),
+            StatusConfig::default(),
+            QueryConfig::default(),
+            DisplayConfig::default(),
+            ActionBoxConfig::default(),
+            BreadcrumbConfig::default(),
+            &mut matcher,
+            worker,
+            selection_set,
+        );
+
+        let mut ui = UI {
+            layout: None,
+            area: ratatui::layout::Rect::default(),
+            config: UiConfig::default(),
+        };
+        let mut footer_ui = DisplayUI::new(DisplayConfig::default());
+        let mut preview_ui = None;
+        let mut state = State::new();
+
+        let mut action_context = ActionContext {
+            bind_tx,
+            render_tx,
+            additional_commands: (vec!["cmd0".to_string()], 0),
+            output_template: None,
+            print_handle: AppendOnly::new(),
+            output_separator: "\n".to_string(),
+            clipboard: Arc::new(Mutex::new(None)),
+            fm_notify: false,
+            undo_stack: Arc::new(Mutex::new(Vec::new())),
+            redo_stack: Arc::new(Mutex::new(Vec::new())),
+            fm_action: None,
+            query_history: std::collections::HashMap::new(),
+        };
+
+        let mut mm_state = state.dispatcher(
+            &mut ui,
+            &mut picker_ui,
+            &mut footer_ui,
+            &mut preview_ui,
+            &controller_tx,
+        );
+
+        let cwd = std::env::current_dir().unwrap().to_string_lossy().to_string();
+        let store = matchmaker::frecency::FrecencyStore::open();
+        let initial_state = store.is_pinned(&cwd);
+
+        // 1st Toggle
+        action_handler(MMAction::FmTogglePin, &mut mm_state, &mut action_context);
+        let after_1st = store.is_pinned(&cwd);
+        assert_eq!(after_1st, !initial_state);
+
+        // 2nd Toggle
+        action_handler(MMAction::FmTogglePin, &mut mm_state, &mut action_context);
+        let after_2nd = store.is_pinned(&cwd);
+        assert_eq!(after_2nd, initial_state);
     }
 }

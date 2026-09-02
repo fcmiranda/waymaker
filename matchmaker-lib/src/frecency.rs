@@ -8,6 +8,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 pub const FRECENCY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("frecency_v2");
+pub const PINS_TABLE: TableDefinition<&str, u64> = TableDefinition::new("pins_v1");
 
 #[inline]
 fn decode_record(bytes: &[u8]) -> Option<FrecencyRecord> {
@@ -240,10 +241,14 @@ pub fn clean_path(path: &str) -> &str {
     }
 }
 
+static FRECENCY_DB_INSTANCES: std::sync::Mutex<
+    Option<rustc_hash::FxHashMap<PathBuf, Arc<Database>>>,
+> = std::sync::Mutex::new(None);
+
 /// Main Frecency Store wrapping `redb::Database` with thread safety and resilient fallback.
 #[derive(Clone)]
 pub struct FrecencyStore {
-    db: Arc<Option<Database>>,
+    db: Option<Arc<Database>>,
     pub db_path: Option<PathBuf>,
 }
 
@@ -272,13 +277,13 @@ impl FrecencyStore {
             Self::open_at(&path).unwrap_or_else(|err| {
                 log::warn!("Failed to open frecency store at {path:?}: {err}. Falling back to in-memory mode.");
                 Self {
-                    db: Arc::new(None),
+                    db: None,
                     db_path: Some(path),
                 }
             })
         } else {
             Self {
-                db: Arc::new(None),
+                db: None,
                 db_path: None,
             }
         }
@@ -287,26 +292,41 @@ impl FrecencyStore {
     /// Opens or creates the frecency database at a specific path.
     pub fn open_at(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
+        let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+        let mut lock = FRECENCY_DB_INSTANCES.lock().unwrap();
+        let map = lock.get_or_insert_with(rustc_hash::FxHashMap::default);
+        if let Some(existing) = map.get(&canonical_path) {
+            return Ok(Self {
+                db: Some(existing.clone()),
+                db_path: Some(canonical_path),
+            });
+        }
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
 
         let db_res = Database::create(path);
         let db = match db_res {
-            Ok(database) => Some(database),
+            Ok(database) => Some(Arc::new(database)),
             Err(err) => {
                 log::error!("redb error opening {path:?}: {err}. Attempting recovery...");
                 // If database corrupt, attempt backup and recreate clean
                 let backup_path =
                     path.with_extension(format!("corrupt.{}.bak", current_unix_secs()));
                 let _ = fs::rename(path, &backup_path);
-                Database::create(path).ok()
+                Database::create(path).ok().map(Arc::new)
             }
         };
 
+        if let Some(ref d) = db {
+            map.insert(canonical_path.clone(), d.clone());
+        }
+
         Ok(Self {
-            db: Arc::new(db),
-            db_path: Some(path.to_path_buf()),
+            db,
+            db_path: Some(canonical_path),
         })
     }
 
@@ -562,6 +582,137 @@ impl FrecencyStore {
         write_txn.commit()?;
         Ok(removed)
     }
+
+    /// Pin / bookmark a path.
+    pub fn pin(&self, raw_path: &str) -> anyhow::Result<()> {
+        let Some(db) = self.db.as_ref() else {
+            return Ok(());
+        };
+
+        let key_str = normalize_path(raw_path);
+        if key_str.is_empty() {
+            return Ok(());
+        }
+        let now = current_unix_secs();
+        let write_txn = db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(PINS_TABLE)?;
+            table.insert(key_str.as_str(), now)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Unpin / remove bookmark for a path. Returns true if key was present.
+    pub fn unpin(&self, raw_path: &str) -> anyhow::Result<bool> {
+        let Some(db) = self.db.as_ref() else {
+            return Ok(false);
+        };
+
+        let key_str = normalize_path(raw_path);
+        if key_str.is_empty() {
+            return Ok(false);
+        }
+        let clean = clean_path(raw_path);
+        let write_txn = db.begin_write()?;
+        let removed = {
+            let mut table = write_txn.open_table(PINS_TABLE)?;
+            let r1 = table.remove(key_str.as_str())?.is_some();
+            let r2 = if clean != key_str.as_str() {
+                table.remove(clean)?.is_some()
+            } else {
+                false
+            };
+            r1 || r2
+        };
+        write_txn.commit()?;
+        Ok(removed)
+    }
+
+    /// Toggle pin / bookmark for a path. Returns `true` if now pinned, `false` if unpinned.
+    pub fn toggle_pin(&self, raw_path: &str) -> anyhow::Result<bool> {
+        let key_str = normalize_path(raw_path);
+        if key_str.is_empty() {
+            return Ok(false);
+        }
+
+        if self.is_pinned(&key_str) {
+            self.unpin(&key_str)?;
+            Ok(false)
+        } else {
+            self.pin(&key_str)?;
+            Ok(true)
+        }
+    }
+
+    /// Check if a path is pinned / bookmarked.
+    pub fn is_pinned(&self, raw_path: &str) -> bool {
+        let Some(db) = self.db.as_ref() else {
+            return false;
+        };
+
+        let key_str = normalize_path(raw_path);
+        if key_str.is_empty() {
+            return false;
+        }
+
+        let read_txn = match db.begin_read() {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+
+        let table = match read_txn.open_table(PINS_TABLE) {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+
+        match table.get(key_str.as_str()) {
+            Ok(Some(_)) => true,
+            _ => {
+                let clean = clean_path(raw_path);
+                if clean != key_str.as_str() {
+                    table.get(clean).map(|g| g.is_some()).unwrap_or(false)
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Return all pinned paths.
+    pub fn list_pins(&self) -> Vec<String> {
+        let Some(db) = self.db.as_ref() else {
+            return Vec::new();
+        };
+
+        let read_txn = match db.begin_read() {
+            Ok(t) => t,
+            Err(_) => return Vec::new(),
+        };
+
+        let table = match read_txn.open_table(PINS_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut pins: Vec<(String, u64)> = Vec::new();
+        if let Ok(iter) = table.iter() {
+            for item in iter.flatten() {
+                let path = item.0.value().to_string();
+                let timestamp = item.1.value();
+                pins.push((path, timestamp));
+            }
+        }
+
+        // Sort by timestamp ascending
+        pins.sort_by_key(|p| p.1);
+        pins.into_iter().map(|p| p.0).collect()
+    }
+
+    /// Get all pinned paths as a `std::collections::HashSet<String>`.
+    pub fn get_pins_set(&self) -> std::collections::HashSet<String> {
+        self.list_pins().into_iter().collect()
+    }
 }
 
 fn current_unix_secs() -> u64 {
@@ -808,5 +959,50 @@ mod tests {
         // 2 hours ago -> weight 80 in legacy mode
         rec.timestamps.push(now - 7200);
         assert_eq!(rec.calculate_score_with_half_life(now, 0), 180);
+    }
+
+    #[test]
+    fn test_pins_crud_and_toggle() -> anyhow::Result<()> {
+        let temp_dir = std::env::temp_dir().join("mm_test_pins_crud");
+        let _ = fs::remove_dir_all(&temp_dir);
+        let db_path = temp_dir.join("test_pins.redb");
+
+        let store = FrecencyStore::open_at(&db_path)?;
+        let path1 = "/home/user/projects/alpha";
+        let path2 = "/home/user/projects/beta";
+
+        assert!(!store.is_pinned(path1));
+        assert!(store.list_pins().is_empty());
+
+        // Pin path1
+        store.pin(path1)?;
+        assert!(store.is_pinned(path1));
+        assert_eq!(store.list_pins().len(), 1);
+
+        // Pin path2
+        store.pin(path2)?;
+        assert!(store.is_pinned(path2));
+        assert_eq!(store.list_pins().len(), 2);
+
+        // Toggle path1 (should unpin)
+        let pinned = store.toggle_pin(path1)?;
+        assert!(!pinned);
+        assert!(!store.is_pinned(path1));
+        assert_eq!(store.list_pins().len(), 1);
+
+        // Toggle path1 again (should pin)
+        let pinned = store.toggle_pin(path1)?;
+        assert!(pinned);
+        assert!(store.is_pinned(path1));
+        assert_eq!(store.list_pins().len(), 2);
+
+        // Unpin path2
+        let removed = store.unpin(path2)?;
+        assert!(removed);
+        assert!(!store.is_pinned(path2));
+        assert_eq!(store.list_pins().len(), 1);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
     }
 }

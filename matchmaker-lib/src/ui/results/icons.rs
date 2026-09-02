@@ -229,6 +229,7 @@ pub(super) fn insert_icon_span(
     uncolor_current: bool,
     invert_current: bool,
     current_icon_style: StyleSetting,
+    is_pinned: bool,
 ) {
     let (icon, color) = icon_for_name(name);
     let style = if is_current_row {
@@ -247,7 +248,11 @@ pub(super) fn insert_icon_span(
     } else {
         ratatui::style::Style::default().fg(color)
     };
-    let icon_span = ratatui::text::Span::styled(format!("{icon}"), style);
+    let icon_span = if is_pinned {
+        ratatui::text::Span::raw("📌")
+    } else {
+        ratatui::text::Span::styled(format!("{icon}"), style)
+    };
     let index = if has_nav_bar { 2 } else { 1 };
     for line in col.lines.iter_mut() {
         let at = index.min(line.spans.len());

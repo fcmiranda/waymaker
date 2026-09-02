@@ -176,6 +176,9 @@ ansi = false # don't set to true here
 "@next" = "ReloadNext"
 "@prev" = "ReloadPrev"
 "@cycle" = "ReloadNext"
+"@pin" = "FmTogglePin"
+"@bookmark" = "FmTogglePin"
+"*" = "@pin"
 "@help" = "Help"
 "@break" = "Redraw" # invalid unicode or unsupported emoji can break rendering
 

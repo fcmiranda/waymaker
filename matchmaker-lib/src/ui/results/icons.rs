@@ -24,19 +24,34 @@ impl ResultsUI {
         if set.contains(col0_name) {
             return true;
         }
-        let path = std::path::Path::new(col0_name);
+        let trimmed = col0_name.trim().trim_end_matches('/').trim_end_matches('\\');
+        if set.contains(trimmed) {
+            return true;
+        }
+        let path = std::path::Path::new(trimmed);
         if path.is_absolute() {
-            set.contains(col0_name)
+            set.contains(trimmed)
         } else {
             let abs_path = cwd.join(path);
             let s = abs_path.to_string_lossy();
-            set.contains(s.as_ref())
+            let s_trimmed = s.trim_end_matches('/').trim_end_matches('\\');
+            if set.contains(s_trimmed) || set.contains(s.as_ref()) {
+                return true;
+            }
+            if let Ok(canon) = abs_path.canonicalize() {
+                let c = canon.to_string_lossy();
+                let c_trimmed = c.trim_end_matches('/').trim_end_matches('\\');
+                if set.contains(c_trimmed) || set.contains(c.as_ref()) {
+                    return true;
+                }
+            }
+            false
         }
     }
 
     /// Return the correct inactive prefix style for a given row.
     ///
-    /// Priority: yank (highest) > selected > default.
+    /// Priority: cut > yank > pin > selected > default.
     #[inline]
     pub(super) fn inactive_prefix_style(
         &self,
@@ -48,7 +63,7 @@ impl ResultsUI {
         if is_spinner {
             return self.config.spinner_style;
         }
-        if self.cut_paths.is_empty() && self.yank_paths.is_empty() {
+        if self.cut_paths.is_empty() && self.yank_paths.is_empty() && self.pin_paths.is_empty() {
             return if is_selected {
                 self.config.selected_prefix_style
             } else {
@@ -60,6 +75,12 @@ impl ResultsUI {
             self.config.cut_prefix_style
         } else if Self::is_path_in_set(&self.yank_paths, col0_name, cwd) {
             self.config.yank_prefix_style
+        } else if Self::is_path_in_set(&self.pin_paths, col0_name, cwd) {
+            StyleSetting {
+                fg: Some(Color::Yellow),
+                bg: None,
+                modifier: ratatui::style::Modifier::BOLD,
+            }
         } else if is_selected {
             self.config.selected_prefix_style
         } else {
@@ -78,7 +99,7 @@ impl ResultsUI {
         if is_spinner {
             return self.config.spinner_style;
         }
-        if self.cut_paths.is_empty() && self.yank_paths.is_empty() {
+        if self.cut_paths.is_empty() && self.yank_paths.is_empty() && self.pin_paths.is_empty() {
             return if is_selected {
                 self.config.selected_prefix_style
             } else {
@@ -90,6 +111,12 @@ impl ResultsUI {
             self.config.cut_prefix_style
         } else if Self::is_path_in_set(&self.yank_paths, col0_name, cwd) {
             self.config.yank_prefix_style
+        } else if Self::is_path_in_set(&self.pin_paths, col0_name, cwd) {
+            StyleSetting {
+                fg: Some(Color::Yellow),
+                bg: None,
+                modifier: ratatui::style::Modifier::BOLD,
+            }
         } else if is_selected {
             self.config.selected_prefix_style
         } else {
@@ -256,9 +283,14 @@ pub(super) fn insert_icon_span(
     let index = if has_nav_bar { 2 } else { 1 };
     for line in col.lines.iter_mut() {
         let at = index.min(line.spans.len());
-        line.spans.insert(at, ratatui::text::Span::raw(" "));
-        line.spans.insert(at + 1, icon_span.clone());
-        line.spans.insert(at + 2, ratatui::text::Span::raw(" "));
+        if is_pinned {
+            line.spans.insert(at, ratatui::text::Span::raw(" "));
+            line.spans.insert(at + 1, ratatui::text::Span::raw("📌"));
+        } else {
+            line.spans.insert(at, ratatui::text::Span::raw(" "));
+            line.spans.insert(at + 1, icon_span.clone());
+            line.spans.insert(at + 2, ratatui::text::Span::raw(" "));
+        }
     }
 }
 

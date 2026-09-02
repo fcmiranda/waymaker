@@ -359,7 +359,6 @@ pub fn action_handler(
             state.picker_ui.update();
             state.picker_ui.results.cursor_jump(0);
             let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
-            let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
             state.needs_redraw = true;
         }
 

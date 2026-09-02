@@ -936,6 +936,7 @@ pub async fn start(
     let spec_cache_reload = speculative_cache.clone();
 
     let chdir_formatter = cli_formatter.clone();
+    let chdir_render_tx = render_tx.clone();
     let mut history: std::collections::HashMap<std::path::PathBuf, String> =
         std::collections::HashMap::new();
     mm.register_interrupt_handler(Interrupt::ChDir, move |state| {
@@ -960,9 +961,17 @@ pub async fn start(
 
         let target_path = Path::new(&path);
         let target_dir = if target_path.is_file() {
-            target_path.parent().unwrap_or(target_path)
+            target_path.parent().unwrap_or(target_path).to_path_buf()
+        } else if target_path.is_relative() {
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            let p = current_dir.join(target_path);
+            if p.exists() {
+                p
+            } else {
+                target_path.to_path_buf()
+            }
         } else {
-            target_path
+            target_path.to_path_buf()
         };
 
         let mut target_to_select = None;
@@ -1000,7 +1009,7 @@ pub async fn start(
         }
 
         log::debug!("ChDir: {}", target_dir.display());
-        if let Err(e) = std::env::set_current_dir(target_dir) {
+        if let Err(e) = std::env::set_current_dir(&target_dir) {
             log::warn!("ChDir({}) failed: {e}", target_dir.display());
         } else {
             if let Some(t) = target_to_select {
@@ -1017,6 +1026,9 @@ pub async fn start(
                 let store = matchmaker::frecency::FrecencyStore::open();
                 let _ = store.add(&new_cwd.to_string_lossy());
                 if state.ui.config.nav_mode {
+                    let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
+                        matchmaker::action::Action::FocusNav,
+                    ));
                     let is_parent = old_cwd
                         .as_ref()
                         .map_or(false, |old| old.starts_with(&new_cwd) && old != &new_cwd);

@@ -406,6 +406,18 @@ impl Default for UiConfig {
         nav_binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
         nav_binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
         nav_binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
+        nav_binds.insert(
+            "f".to_string(),
+            Actions::from([Action::Semantic("reloadnext".to_string())]),
+        );
+        nav_binds.insert(
+            "b".to_string(),
+            Actions::from([Action::Semantic("pins".to_string())]),
+        );
+        nav_binds.insert(
+            "*".to_string(),
+            Actions::from([Action::Semantic("pin".to_string())]),
+        );
 
         Self {
             border: BorderSetting::default(),

@@ -306,6 +306,9 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             matchmaker::acs![Action::Semantic("fm_dragdrop".into())],
         );
         nb(",", matchmaker::acs![Action::SortMenu]);
+        nb("f", matchmaker::acs![Action::Semantic("reloadnext".into())]);
+        nb("b", matchmaker::acs![Action::Semantic("pins".into())]);
+        nb("*", matchmaker::acs![Action::Semantic("pin".into())]);
     }
 
     if cli.dump_config {

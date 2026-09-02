@@ -20,6 +20,11 @@ match_indent = false
 [query]
 status_inline = true
 
+[query.border]
+type = "Plain"
+sides = "BOTTOM"
+color = "DarkGray"
+
 [matcher]
 sort = "smart"
 sort_cap = 2000

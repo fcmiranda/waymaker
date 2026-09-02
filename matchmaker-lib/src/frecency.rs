@@ -521,6 +521,78 @@ impl FrecencyStore {
         Ok(())
     }
 
+    /// Check if the frecency table has 0 entries.
+    pub fn is_empty(&self) -> bool {
+        let Some(db) = self.db.as_ref() else {
+            return true;
+        };
+        if let Ok(read_txn) = db.begin_read() {
+            if let Ok(table) = read_txn.open_table(FRECENCY_TABLE) {
+                if let Ok(mut iter) = table.iter() {
+                    return iter.next().is_none();
+                }
+            }
+        }
+        true
+    }
+
+    /// Automatically import directory history from zoxide if the frecency database is currently empty.
+    pub fn auto_import_from_zoxide_if_empty(&self) {
+        if self.is_empty() {
+            let _ = self.import_from_zoxide();
+        }
+    }
+
+    /// Import directory rankings from zoxide CLI (`zoxide query -l`) or `~/.local/share/zoxide/db.zo`.
+    pub fn import_from_zoxide(&self) -> usize {
+        let mut count = 0;
+        // 1. Try running `zoxide query -l`
+        if let Ok(output) = std::process::Command::new("zoxide")
+            .arg("query")
+            .arg("-l")
+            .output()
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                let lines: Vec<&str> = text.lines().collect();
+                let total = lines.len();
+                for (i, line) in lines.iter().enumerate() {
+                    let path = line.trim();
+                    if !path.is_empty() && Path::new(path).is_dir() {
+                        let weight = (total.saturating_sub(i) as u64).clamp(1, 20);
+                        if self.import_entry(path, weight).is_ok() {
+                            count += 1;
+                        }
+                    }
+                }
+                if count > 0 {
+                    return count;
+                }
+            }
+        }
+
+        // 2. Fallback: Parse ~/.local/share/zoxide/db.zo directly
+        if let Some(data_dir) = dirs::data_dir().or_else(dirs::data_local_dir) {
+            let db_zo = data_dir.join("zoxide").join("db.zo");
+            if db_zo.exists() {
+                if let Ok(content) = std::fs::read_to_string(&db_zo) {
+                    for line in content.lines() {
+                        if let Some((path, _)) = line.split_once('|') {
+                            let path = path.trim();
+                            if !path.is_empty() && Path::new(path).is_dir() {
+                                if self.import_entry(path, 5).is_ok() {
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        count
+    }
+
     /// Purges all entries whose file/directory path is not absolute or no longer exists on disk.
     pub fn clean_stale(&self) -> anyhow::Result<usize> {
         let Some(db) = self.db.as_ref() else {

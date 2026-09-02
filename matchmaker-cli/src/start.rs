@@ -755,6 +755,12 @@ pub async fn start(
     }
     let envs = process_envs(envs);
 
+    if let Ok(cwd) = std::env::current_dir() {
+        let store = matchmaker::frecency::FrecencyStore::open();
+        store.auto_import_from_zoxide_if_empty();
+        let _ = store.add(&cwd.to_string_lossy());
+    }
+
     if !directory.value.is_empty() {
         let EnvValue { value, force, exec } = directory;
 
@@ -1004,8 +1010,10 @@ pub async fn start(
                 }
             }
 
-            if state.ui.config.nav_mode {
-                if let Ok(new_cwd) = std::env::current_dir() {
+            if let Ok(new_cwd) = std::env::current_dir() {
+                let store = matchmaker::frecency::FrecencyStore::open();
+                let _ = store.add(&new_cwd.to_string_lossy());
+                if state.ui.config.nav_mode {
                     let is_parent = old_cwd
                         .as_ref()
                         .map_or(false, |old| old.starts_with(&new_cwd) && old != &new_cwd);

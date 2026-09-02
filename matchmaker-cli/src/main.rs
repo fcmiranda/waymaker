@@ -262,6 +262,12 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             }
             true
         }
+        "import-zoxide" | "sync-zoxide" => {
+            let store = matchmaker::frecency::FrecencyStore::open();
+            let count = store.import_from_zoxide();
+            println!("Imported {count} directory records from zoxide.");
+            true
+        }
         "list" | "query" => {
             let dirs_only = args
                 .iter()
@@ -294,6 +300,12 @@ fn handle_frecency_cli(args: &[String]) -> bool {
 
             let full_query = keywords.join(" ");
             let store = matchmaker::frecency::FrecencyStore::open();
+            if dirs_only && !pins_only {
+                store.auto_import_from_zoxide_if_empty();
+                if let Ok(cwd) = std::env::current_dir() {
+                    let _ = store.add(&cwd.to_string_lossy());
+                }
+            }
             let pinned_paths = store.list_pins();
             let pins_set: std::collections::HashSet<String> = pinned_paths.iter().cloned().collect();
 

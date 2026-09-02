@@ -408,15 +408,15 @@ impl Default for UiConfig {
         nav_binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
         nav_binds.insert(
             "f".to_string(),
-            Actions::from([Action::Semantic("reloadnext".to_string())]),
+            Actions::from([Action::Semantic("frecency".to_string())]),
         );
         nav_binds.insert(
             "b".to_string(),
-            Actions::from([Action::Semantic("pins".to_string())]),
+            Actions::from([Action::Semantic("bookmarks".to_string())]),
         );
         nav_binds.insert(
             "*".to_string(),
-            Actions::from([Action::Semantic("pin".to_string())]),
+            Actions::from([Action::Semantic("bookmark".to_string())]),
         );
 
         Self {

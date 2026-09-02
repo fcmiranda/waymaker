@@ -60,7 +60,7 @@ percentage = 50
 "@bookmarks" = "ReloadNext(2)"
 "@dirs" = "ReloadNext(1)"
 "@bookmark" = "FmTogglePin"
-"ctrl-f" = "@reloadnext"
+"ctrl-f" = "@dirs"
 "ctrl-b" = "@bookmarks"
 "*" = "@bookmark"
 "ctrl-j" = "Down"
@@ -71,7 +71,7 @@ percentage = 50
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
 [ui.nav_binds]
-"f" = "@reloadnext"
+"f" = "@dirs"
 "b" = "@bookmarks"
 "*" = "@bookmark"
 "l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]

@@ -2424,7 +2424,7 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             ("[Tab]", "Filter", Color::Cyan),
             ("[Space]", "Sel/Unsel", Color::Yellow),
             ("[,]", "Sort", Color::Yellow),
-            ("[f]", "Cycle", Color::Cyan),
+            ("[f]", "Frecency", Color::Cyan),
             ("[b]", "Bookmarks", Color::Magenta),
             ("[*]", "Bookmark", Color::Yellow),
             ("[a]", "Add", Color::Green),

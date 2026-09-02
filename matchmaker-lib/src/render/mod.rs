@@ -1073,6 +1073,15 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             state.set_interrupt(Interrupt::Reload, payload);
                         }
                         Action::ChDir(payload) => {
+                            if ui.config.nav_mode {
+                                state.focus = Focus::Results;
+                                state.focus_blink = true;
+                                state.focus_tick = 0;
+                                let prompt = &ui.config.nav_prompt;
+                                if !prompt.is_empty() {
+                                    picker_ui.query.set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
+                                }
+                            }
                             state.set_interrupt(Interrupt::ChDir, payload);
                         }
                         Action::Print(payload) => {

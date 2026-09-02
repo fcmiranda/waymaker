@@ -335,6 +335,23 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             ],
         );
     }
+
+    let mut def_sem = |trigger_str: &str, action: Action<MMAction>| {
+        if let Ok(t) = trigger_str.parse() {
+            config.binds.entry(t).or_insert(matchmaker::acs![action]);
+        }
+    };
+    def_sem("@dirs", Action::Custom(MMAction::ReloadNext(Some(1))));
+    def_sem("@frecency", Action::Custom(MMAction::ReloadNext(Some(1))));
+    def_sem("@bookmarks", Action::Custom(MMAction::ReloadNext(Some(2))));
+    def_sem("@bookmark", Action::Custom(MMAction::FmTogglePin));
+    def_sem("@pin", Action::Custom(MMAction::FmTogglePin));
+    def_sem("@pins", Action::Custom(MMAction::ReloadNext(Some(2))));
+    def_sem("@local", Action::Custom(MMAction::ReloadNext(Some(0))));
+    def_sem("@reloadnext", Action::Custom(MMAction::ReloadNext(None)));
+    def_sem("@reloadprev", Action::Custom(MMAction::ReloadPrev));
+    def_sem("@cycle", Action::Custom(MMAction::ReloadNext(None)));
+
     config.binds.check_cycles().map_err(anyhow::Error::msg)?;
     config.binds.retain(|_, actions| !actions.is_empty());
     config.binds.resolve_semantics();

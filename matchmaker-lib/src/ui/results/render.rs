@@ -13,7 +13,10 @@ use crate::{
     render::Click,
     ui::results::{
         ResultsUI,
-        icons::{extract_col0_name, insert_icon_span, maybe_append_symlink_target},
+        icons::{
+            apply_bookmark_text_style, bookmark_color, extract_col0_name, insert_icon_span,
+            maybe_append_symlink_target,
+        },
     },
     utils::{
         string::{fit_width, substitute_escaped},
@@ -465,6 +468,12 @@ impl ResultsUI {
                     let nav_bar_span = get_nav_bar_span(is_first, is_last, is_current_row);
                     let (prefix, icon_name, is_spinner, spinner_col_idx, is_yanked, is_cut) =
                         get_prefix!(row, is_selected, 0, item, columns, is_first, is_last);
+                    let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
+                    let b_color = if is_pinned || self.mode_index == 2 {
+                        Some(bookmark_color(&self.config, &icon_name))
+                    } else {
+                        None
+                    };
 
                     total_height += remaining_height;
 
@@ -500,6 +509,9 @@ impl ResultsUI {
                             .enumerate()
                             .map(|(x, mut t)| {
                                 t = style_text(t, x, is_current_row);
+                                if let Some(color) = b_color {
+                                    apply_bookmark_text_style(&mut t, color);
+                                }
                                 if x == target_prefix_col {
                                     prefix_span(
                                         &mut t,
@@ -526,8 +538,6 @@ impl ResultsUI {
                                         self.config.current_nav_bar_style,
                                     );
                                     if self.config.icons {
-                                        let is_pinned =
-                                            Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                         insert_icon_span(
                                             &mut t,
                                             &icon_name,
@@ -588,6 +598,10 @@ impl ResultsUI {
                             }
                             remaining_height -= height;
 
+                            if let Some(color) = b_color {
+                                apply_bookmark_text_style(&mut col, color);
+                            }
+
                             prefix_span(
                                 &mut col,
                                 prefix.clone(),
@@ -608,8 +622,6 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons && col_idx == 0 {
-                                let is_pinned =
-                                    Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                 insert_icon_span(
                                     &mut col,
                                     &icon_name,
@@ -674,6 +686,12 @@ impl ResultsUI {
             let nav_bar_span = get_nav_bar_span(is_first, is_last, is_current_row);
             let (prefix, icon_name, is_spinner, spinner_col_idx, is_yanked, is_cut) =
                 get_prefix!(row, is_selected, 0, item, columns, is_first, is_last);
+            let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
+            let b_color = if is_pinned || self.mode_index == 2 {
+                Some(bookmark_color(&self.config, &icon_name))
+            } else {
+                None
+            };
 
             total_height += remaining_height;
 
@@ -705,6 +723,9 @@ impl ResultsUI {
                     .enumerate()
                     .map(|(x, mut t)| {
                         t = style_text(t, x, is_current_row);
+                        if let Some(color) = b_color {
+                            apply_bookmark_text_style(&mut t, color);
+                        }
                         if x == target_prefix_col {
                             prefix_span(
                                 &mut t,
@@ -726,8 +747,6 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons {
-                                let is_pinned =
-                                    Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                 insert_icon_span(
                                     &mut t,
                                     &icon_name,
@@ -809,6 +828,10 @@ impl ResultsUI {
                     }
                     remaining_height -= height;
 
+                    if let Some(color) = b_color {
+                        apply_bookmark_text_style(&mut col, color);
+                    }
+
                     prefix_span(
                         &mut col,
                         prefix.clone(),
@@ -824,8 +847,6 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && col_idx == 0 {
-                        let is_pinned =
-                            Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name,
@@ -1019,6 +1040,12 @@ impl ResultsUI {
             let nav_bar_span = get_nav_bar_span(is_first, is_last, is_current_row);
             let (prefix, icon_name_hz, is_spinner, spinner_col_idx, is_yanked, is_cut) =
                 get_prefix!(row, is_selected, i, item, columns, is_first, is_last);
+            let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
+            let b_color = if is_pinned || self.mode_index == 2 {
+                Some(bookmark_color(&self.config, &icon_name_hz))
+            } else {
+                None
+            };
 
             if as_cols {
                 // scroll down
@@ -1074,6 +1101,9 @@ impl ResultsUI {
                     .enumerate()
                     .map(|(x, mut t)| {
                         t = style_text(t, x, self.is_current(i));
+                        if let Some(color) = b_color {
+                            apply_bookmark_text_style(&mut t, color);
+                        }
 
                         // prefix after hscroll
                         if x == target_prefix_col {
@@ -1102,8 +1132,6 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons {
-                                let is_pinned =
-                                    Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
                                 insert_icon_span(
                                     &mut t,
                                     &icon_name_hz,
@@ -1210,6 +1238,10 @@ impl ResultsUI {
                     }
                     remaining_height -= height;
 
+                    if let Some(color) = b_color {
+                        apply_bookmark_text_style(&mut col, color);
+                    }
+
                     let is_current_row = self.is_current(i);
                     prefix_span(
                         &mut col,
@@ -1231,8 +1263,6 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && x == 0 {
-                        let is_pinned =
-                            Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name_hz,

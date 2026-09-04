@@ -137,3 +137,196 @@ fn test_results_ui_renders_tier_separator_underline() {
     let row1_text: String = (0..30).map(|x| buf[(x, 1)].symbol()).collect();
     assert!(row1_text.contains("file.txt"));
 }
+
+#[test]
+fn test_results_ui_bookmark_styling_focused_and_unfocused() {
+    let bookmark_color = Color::Rgb(249, 226, 175);
+    let mut results_config = ResultsConfig::default();
+    results_config.icons = true;
+    results_config.uncolor_current_icon = true;
+    results_config.bookmark_icon_style = StyleSetting {
+        fg: Some(bookmark_color),
+        ..Default::default()
+    };
+    results_config.current_style = StyleSetting {
+        fg: Some(Color::Black),
+        bg: Some(Color::DarkGray),
+        modifier: Modifier::BOLD,
+    };
+
+    let status_config = StatusConfig::default();
+    let mut results_ui = ResultsUI::new(results_config, status_config);
+    let area = ratatui::layout::Rect::new(0, 0, 40, 10);
+    results_ui.update_dimensions(&area);
+    results_ui.pin_paths.insert("bookmarked.txt".to_string());
+
+    let mut worker = Worker::<String>::new_single_column();
+    let injector = worker.nucleo.injector();
+    injector.push("bookmarked.txt".to_string(), |item, cols| {
+        cols[0] = item.clone().into()
+    });
+    injector.push("regular.txt".to_string(), |item, cols| {
+        cols[0] = item.clone().into()
+    });
+    worker.nucleo.tick(10);
+
+    let mut selector = crate::selector::Selector::new(|_s: &String| (0u32, ())).disabled();
+    let mut matcher = nucleo::Matcher::default();
+    let mut click = Click::None;
+
+    use ratatui::widgets::Widget;
+    let render_area = ratatui::layout::Rect::new(0, 0, 40, 5);
+
+    // 1. When cursor is at 1: bookmarked.txt (row 1) is focused, regular.txt (row 0) is unfocused
+    results_ui.cursor = 1;
+    let table = results_ui.make_table(
+        0,
+        &mut worker,
+        &mut selector,
+        &mut matcher,
+        &mut click,
+        None,
+        false,
+    );
+    let mut buf = ratatui::buffer::Buffer::empty(render_area);
+    table.render(render_area, &mut buf);
+
+    // Row 0 has "regular.txt", Row 1 has "bookmarked.txt"
+    let row0_text: String = (0..40).map(|x| buf[(x, 0)].symbol()).collect();
+    let row1_text: String = (0..40).map(|x| buf[(x, 1)].symbol()).collect();
+    assert!(row0_text.contains("regular.txt"));
+    assert!(row1_text.contains("bookmarked.txt"));
+
+    // Row 1 (bookmarked.txt, focused):
+    // It should have foreground = bookmark_color (NOT black!), background = DarkGray, modifier = BOLD!
+    let b_x = (0..40).find(|&x| buf[(x, 1)].symbol() == "b").unwrap();
+    let cell_b_focused = &buf[(b_x, 1)];
+    assert_eq!(cell_b_focused.fg, bookmark_color);
+    assert_eq!(cell_b_focused.bg, Color::DarkGray);
+    assert!(cell_b_focused.modifier.contains(Modifier::BOLD));
+
+    // Also verify the bookmark icon glyph has foreground = bookmark_color even on focus!
+    let icon_x = (0..40).find(|&x| buf[(x, 1)].symbol() == "󱀻").unwrap();
+    let icon_cell = &buf[(icon_x, 1)];
+    assert_eq!(icon_cell.fg, bookmark_color);
+    assert_eq!(icon_cell.bg, Color::DarkGray);
+
+    // Row 0 (regular.txt, unfocused):
+    let r_x = (0..40).find(|&x| buf[(x, 0)].symbol() == "r").unwrap();
+    let cell_r_unfocused = &buf[(r_x, 0)];
+    assert_ne!(cell_r_unfocused.fg, bookmark_color);
+    assert_ne!(cell_r_unfocused.bg, Color::DarkGray);
+
+    // 2. When cursor is at 0: regular.txt (row 0) is focused, bookmarked.txt (row 1) is unfocused
+    results_ui.cursor = 0;
+    let table = results_ui.make_table(
+        0,
+        &mut worker,
+        &mut selector,
+        &mut matcher,
+        &mut click,
+        None,
+        false,
+    );
+    let mut buf = ratatui::buffer::Buffer::empty(render_area);
+    table.render(render_area, &mut buf);
+
+    // Row 1 (bookmarked.txt, unfocused):
+    // Should still have foreground = bookmark_color!
+    let b_x = (0..40).find(|&x| buf[(x, 1)].symbol() == "b").unwrap();
+    let cell_b_unfocused = &buf[(b_x, 1)];
+    assert_eq!(cell_b_unfocused.fg, bookmark_color);
+    assert_ne!(cell_b_unfocused.bg, Color::DarkGray);
+
+    // Row 0 (regular.txt, focused):
+    // Foreground should be black, background DarkGray, modifier BOLD
+    let r_x = (0..40).find(|&x| buf[(x, 0)].symbol() == "r").unwrap();
+    let cell_r_focused = &buf[(r_x, 0)];
+    assert_eq!(cell_r_focused.fg, Color::Black);
+    assert_eq!(cell_r_focused.bg, Color::DarkGray);
+    assert!(cell_r_focused.modifier.contains(Modifier::BOLD));
+}
+
+#[test]
+fn test_results_ui_mode_2_bookmarks_and_folders_styling() {
+    let bookmark_color = Color::Rgb(249, 226, 175);
+    let mut results_config = ResultsConfig::default();
+    results_config.icons = true;
+    results_config.uncolor_current_icon = true;
+    results_config.bookmark_icon_style = StyleSetting {
+        fg: Some(bookmark_color),
+        ..Default::default()
+    };
+    results_config.current_style = StyleSetting {
+        fg: Some(Color::Black),
+        bg: Some(Color::DarkGray),
+        modifier: Modifier::BOLD,
+    };
+
+    let status_config = StatusConfig::default();
+    let mut results_ui = ResultsUI::new(results_config, status_config);
+    let area = ratatui::layout::Rect::new(0, 0, 40, 10);
+    results_ui.update_dimensions(&area);
+    results_ui.set_mode_index(2); // bookmarks mode
+
+    let mut worker = Worker::<String>::new_single_column();
+    worker.dir_first = true;
+    let injector = worker.nucleo.injector();
+    injector.push("my_folder/".to_string(), |item, cols| {
+        cols[0] = item.clone().into()
+    });
+    injector.push("my_file.rs".to_string(), |item, cols| {
+        cols[0] = item.clone().into()
+    });
+    worker.nucleo.tick(10);
+
+    let mut selector = crate::selector::Selector::new(|_s: &String| (0u32, ())).disabled();
+    let mut matcher = nucleo::Matcher::default();
+    let mut click = Click::None;
+
+    use ratatui::widgets::Widget;
+    let render_area = ratatui::layout::Rect::new(0, 0, 40, 5);
+
+    // Focus on my_folder/ (cursor = 0)
+    results_ui.cursor = 0;
+    let table = results_ui.make_table(
+        0,
+        &mut worker,
+        &mut selector,
+        &mut matcher,
+        &mut click,
+        None,
+        false,
+    );
+    let mut buf = ratatui::buffer::Buffer::empty(render_area);
+    table.render(render_area, &mut buf);
+
+    // Folder on row 0:
+    // Icon glyph is folder bookmark icon: "󰮟"
+    let icon_folder_x = (0..40).find(|&x| buf[(x, 0)].symbol() == "󰮟").unwrap();
+    let icon_folder_cell = &buf[(icon_folder_x, 0)];
+    assert_eq!(icon_folder_cell.fg, bookmark_color);
+    assert_eq!(icon_folder_cell.bg, Color::DarkGray);
+
+    // Folder text on row 0: yellow fg, DarkGray bg, BOLD
+    let f_x = (0..40).find(|&x| buf[(x, 0)].symbol() == "m").unwrap();
+    let cell_f = &buf[(f_x, 0)];
+    assert_eq!(cell_f.fg, bookmark_color);
+    assert_eq!(cell_f.bg, Color::DarkGray);
+    assert!(cell_f.modifier.contains(Modifier::BOLD));
+
+    // File on row 2 (unfocused):
+    // Icon glyph is file bookmark icon: "󱀻"
+    let icon_file_x = (0..40).find(|&x| buf[(x, 2)].symbol() == "󱀻").unwrap();
+    let icon_file_cell = &buf[(icon_file_x, 2)];
+    assert_eq!(icon_file_cell.fg, bookmark_color);
+    assert_ne!(icon_file_cell.bg, Color::DarkGray);
+
+    // File text on row 2: yellow fg, transparent bg
+    let file_m_x = (0..40).find(|&x| buf[(x, 2)].symbol() == "m").unwrap();
+    let cell_file = &buf[(file_m_x, 2)];
+    assert_eq!(cell_file.fg, bookmark_color);
+    assert_ne!(cell_file.bg, Color::DarkGray);
+}
+
+

@@ -1264,14 +1264,8 @@ impl Default for ResultsConfig {
                 fg: Some(Color::Yellow),
                 ..Default::default()
             },
-            bookmark_file_icon_style: StyleSetting {
-                fg: Some(Color::Yellow),
-                ..Default::default()
-            },
-            bookmark_folder_icon_style: StyleSetting {
-                fg: Some(Color::Yellow),
-                ..Default::default()
-            },
+            bookmark_file_icon_style: Default::default(),
+            bookmark_folder_icon_style: Default::default(),
             frecency_folder_icon: Some("󰪻".to_string()),
             frecency_folder_icon_style: StyleSetting {
                 fg: Some(Color::Blue),

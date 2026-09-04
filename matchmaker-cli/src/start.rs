@@ -318,12 +318,27 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     // check binds
+    let tab_trigger = "tab".parse().expect("tab trigger should parse");
+    let user_has_tab = config.binds.contains_key(&tab_trigger);
+    let user_has_focus_action = config.binds.values().any(|actions| {
+        actions.iter().any(|a| {
+            matches!(
+                a,
+                matchmaker::Action::ToggleFocus
+                    | matchmaker::Action::FocusNav
+                    | matchmaker::Action::FocusFilter
+            )
+        })
+    });
+
     config.binds = BindMap::default_binds().modify(|x| x.extend(config.binds));
     if config.render.ui.nav_mode {
-        config.binds.insert(
-            "tab".parse().expect("tab trigger should parse"),
-            matchmaker::acs![matchmaker::Action::ToggleFocus],
-        );
+        if !user_has_tab && !user_has_focus_action {
+            config.binds.insert(
+                tab_trigger,
+                matchmaker::acs![matchmaker::Action::ToggleFocus],
+            );
+        }
         config.binds.insert(
             "shift-enter".parse().expect("shift-enter should parse"),
             matchmaker::acs![

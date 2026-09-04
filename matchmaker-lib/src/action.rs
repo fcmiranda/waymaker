@@ -39,6 +39,10 @@ pub enum Action<A: ActionExt = NullActionExt> {
     ToggleActionBox,
     /// Toggle keyboard focus between input and results when navigation mode is enabled
     ToggleFocus,
+    /// Set keyboard focus to input bar (filter)
+    FocusFilter,
+    /// Set keyboard focus to results list (nav mode)
+    FocusNav,
     /// Toggle parent directory peek 3-pane layout
     ToggleParentPeek,
     /// Toggle footer visibility
@@ -482,7 +486,7 @@ enum_from_str_display!(
 
     HalfPageDown, HalfPageUp,
 
-    ToggleWrap, TogglePreviewWrap, ToggleActionBox, ToggleFocus, ToggleParentPeek, ToggleFooter, ToggleHeader, CyclePreview, PreviewJump,
+    ToggleWrap, TogglePreviewWrap, ToggleActionBox, ToggleFocus, FocusFilter, FocusNav, ToggleParentPeek, ToggleFooter, ToggleHeader, CyclePreview, PreviewJump,
     PreviewZoomIn, PreviewZoomOut,
 
     PreviewHalfPageUp, PreviewHalfPageDown,

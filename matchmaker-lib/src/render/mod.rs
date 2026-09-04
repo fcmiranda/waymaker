@@ -42,6 +42,8 @@ fn action_from_null<A: ActionExt>(action: Action<NullActionExt>) -> Option<Actio
         Action::ToggleWrap => Action::ToggleWrap,
         Action::ToggleActionBox => Action::ToggleActionBox,
         Action::ToggleFocus => Action::ToggleFocus,
+        Action::FocusFilter => Action::FocusFilter,
+        Action::FocusNav => Action::FocusNav,
         Action::ToggleParentPeek => Action::ToggleParentPeek,
         Action::ToggleFooter => Action::ToggleFooter,
         Action::ToggleHeader => Action::ToggleHeader,
@@ -214,11 +216,39 @@ fn apply_focus_binds<A: ActionExt>(
                 out.push(RenderCommand::Tick);
             }
             RenderCommand::Action(Action::ToggleFocus) => {
+                if sim_focus == Focus::Results {
+                    if let Some(actions) = focus_binds.get("esc") {
+                        for action in actions.iter().cloned() {
+                            if let Some(action) = action_from_null::<A>(action) {
+                                out.push(RenderCommand::Action(action));
+                            }
+                        }
+                        continue;
+                    }
+                }
                 sim_focus = match sim_focus {
                     Focus::Input => Focus::Results,
                     Focus::Results => Focus::Input,
                 };
                 out.push(RenderCommand::Action(Action::ToggleFocus));
+            }
+            RenderCommand::Action(Action::FocusFilter) => {
+                sim_focus = Focus::Input;
+                out.push(RenderCommand::Action(Action::FocusFilter));
+            }
+            RenderCommand::Action(Action::FocusNav) => {
+                if sim_focus == Focus::Results {
+                    if let Some(actions) = focus_binds.get("esc") {
+                        for action in actions.iter().cloned() {
+                            if let Some(action) = action_from_null::<A>(action) {
+                                out.push(RenderCommand::Action(action));
+                            }
+                        }
+                        continue;
+                    }
+                }
+                sim_focus = Focus::Results;
+                out.push(RenderCommand::Action(Action::FocusNav));
             }
             RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
                 if c == ',' {
@@ -267,6 +297,11 @@ fn apply_focus_binds<A: ActionExt>(
                             if let Some(actions) = focus_binds.get(&key) {
                                 for action in actions.iter().cloned() {
                                     if let Some(action) = action_from_null::<A>(action) {
+                                        if matches!(action, Action::FocusFilter) {
+                                            sim_focus = Focus::Input;
+                                        } else if matches!(action, Action::FocusNav) {
+                                            sim_focus = Focus::Results;
+                                        }
                                         out.push(RenderCommand::Action(action));
                                     }
                                 }
@@ -281,10 +316,47 @@ fn apply_focus_binds<A: ActionExt>(
                             if let Some(actions) = focus_binds.get(&key) {
                                 for action in actions.iter().cloned() {
                                     if let Some(action) = action_from_null::<A>(action) {
+                                        if matches!(action, Action::FocusFilter) {
+                                            sim_focus = Focus::Input;
+                                        } else if matches!(action, Action::FocusNav) {
+                                            sim_focus = Focus::Results;
+                                        }
                                         out.push(RenderCommand::Action(action));
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            RenderCommand::Action(Action::DeleteChar) if sim_focus == Focus::Results => {
+                if let Some(actions) = focus_binds.get("backspace") {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            if matches!(action, Action::FocusFilter) {
+                                sim_focus = Focus::Input;
+                            } else if matches!(action, Action::FocusNav) {
+                                sim_focus = Focus::Results;
+                            }
+                            out.push(RenderCommand::Action(action));
+                        }
+                    }
+                }
+            }
+            RenderCommand::Action(Action::BackwardChar) if sim_focus == Focus::Results => {
+                if let Some(actions) = focus_binds.get("left") {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            out.push(RenderCommand::Action(action));
+                        }
+                    }
+                }
+            }
+            RenderCommand::Action(Action::ForwardChar) if sim_focus == Focus::Results => {
+                if let Some(actions) = focus_binds.get("right") {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            out.push(RenderCommand::Action(action));
                         }
                     }
                 }
@@ -1260,6 +1332,29 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         Focus::Input => None,
                                     };
                                     picker_ui.query.set_prompt(prompt);
+                                }
+                            }
+                        }
+                        Action::FocusFilter => {
+                            if ui.config.nav_mode {
+                                state.focus = Focus::Input;
+                                state.focus_blink = true;
+                                state.focus_tick = 0;
+
+                                if !ui.config.nav_prompt.is_empty() {
+                                    picker_ui.query.set_prompt(None);
+                                }
+                            }
+                        }
+                        Action::FocusNav => {
+                            if ui.config.nav_mode {
+                                state.focus = Focus::Results;
+                                state.focus_blink = true;
+                                state.focus_tick = 0;
+
+                                let prompt = &ui.config.nav_prompt;
+                                if !prompt.is_empty() {
+                                    picker_ui.query.set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
                                 }
                             }
                         }
@@ -2752,6 +2847,84 @@ mod test {
         );
         assert_eq!(buffer.len(), 0);
         assert!(!sort_menu_active);
+    }
+
+    #[test]
+    fn test_apply_focus_binds_esc_and_nav() {
+        use crate::action::Actions;
+        let mut focus_binds = std::collections::HashMap::new();
+        focus_binds.insert("esc".to_string(), Actions::from([Action::Quit(0)]));
+        focus_binds.insert("q".to_string(), Actions::from([Action::Quit(0)]));
+        focus_binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
+        focus_binds.insert("backspace".to_string(), Actions::from([Action::Pos(0)]));
+
+        let mut pending = None;
+        let mut sort_menu_active = false;
+
+        // 1. In Input mode, ToggleFocus passes through
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::ToggleFocus)];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleFocus)));
+
+        // 2. In Results mode, ToggleFocus is intercepted and replaced by nav_binds["esc"] (Quit)
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::ToggleFocus)];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(0))));
+
+        // 3. In Results mode, 'q' triggers Quit
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('q'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(0))));
+
+        // 4. In Results mode, '/' triggers FocusFilter
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('/'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::FocusFilter)));
+
+        // 5. In Results mode, DeleteChar triggers 'backspace' bind
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::DeleteChar)];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(0))));
     }
 }
 

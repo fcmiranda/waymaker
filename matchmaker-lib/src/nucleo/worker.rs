@@ -621,7 +621,7 @@ impl<T: SSS> Worker<T> {
     }
 
     pub fn new_snapshot(nucleo: &mut nucleo::Nucleo<T>) -> (&nucleo::Snapshot<T>, Status) {
-        let nucleo::Status { changed, running } = nucleo.tick(0);
+        let nucleo::Status { changed, running } = nucleo.tick(10);
         let snapshot = nucleo.snapshot();
         (
             snapshot,

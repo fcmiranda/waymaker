@@ -1019,7 +1019,7 @@ pub async fn start(
                     .raw_results()
                     .map(|item| state.picker_ui.worker.columns[0].raw(item).into_owned())
                     .collect();
-                if !items.is_empty() {
+                if state.picker_ui.results.mode_index == 0 && !items.is_empty() {
                     if let Ok(mut c) = spec_cache_chdir.lock() {
                         if c.len() >= 64 {
                             c.clear();
@@ -1198,49 +1198,24 @@ pub async fn start(
     mm.register_interrupt_handler(Interrupt::Reload, move |state| {
         let current_dir = std::env::current_dir().unwrap_or_default();
 
-        if let Ok(mut cache) = spec_cache_reload.lock() {
-            if let Some(lines) = cache.remove(&current_dir) {
-                debug!("Speculative Cache HIT for {current_dir:?}");
-                state.picker_ui.worker.restart(false);
-                state.reloading = true;
-
-                let injector = state.injector();
-                let injector = IndexedInjector::new_globally_indexed(injector);
-                let injector = SegmentedInjector::new(injector, splitter.clone());
-                let injector = AnsiInjector::new(injector, preprocess.clone());
-
-                let mut push_fn = inject_line(
-                    state.picker_ui.header.config.header_lines,
-                    reload_render_tx.clone(),
-                    injector,
-                    group_prefix.clone(),
-                );
-
-                state.picker_ui.selector.clear();
-                for line in lines {
-                    let _ = push_fn(line);
-                }
-
-                let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
-                    matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
-                        vec![],
-                    )),
-                ));
-                return;
-            }
-        }
-
         let cmd = if !state.payload().is_empty() {
             use_formatter(&reload_formatter, state, state.payload(), None)
         } else {
             get_active_cmd(&current_dir)
         };
 
-        let is_bookmarks = cmd.contains("--bookmarks") || cmd.contains("--pins");
-        let is_dirs = !is_bookmarks && (cmd.contains("--dirs") || cmd.starts_with("mm list -d"));
+        let is_bookmarks = state.picker_ui.results.mode_index == 2
+            || cmd.contains("--bookmarks")
+            || cmd.contains("--pins")
+            || cmd.contains("bookmarks");
+        let is_dirs = !is_bookmarks
+            && (state.picker_ui.results.mode_index == 1
+                || cmd.contains("--dirs")
+                || cmd.starts_with("mm list -d")
+                || cmd.contains("frecency"));
 
         if is_bookmarks {
-            state.picker_ui.worker.restart(false);
+            state.picker_ui.worker.restart(true);
             state.reloading = true;
 
             let injector = state.injector();
@@ -1268,7 +1243,7 @@ pub async fn start(
                 )),
             ));
         } else if is_dirs {
-            state.picker_ui.worker.restart(false);
+            state.picker_ui.worker.restart(true);
             state.reloading = true;
 
             let injector = state.injector();
@@ -1303,6 +1278,41 @@ pub async fn start(
             ));
         } else if is_default_file_walker_command(&cmd) {
             let cwd_str = current_dir.to_string_lossy().to_string();
+
+            if state.payload().is_empty() {
+                if let Ok(mut cache) = spec_cache_reload.lock() {
+                    if let Some(lines) = cache.remove(&current_dir) {
+                        debug!("Speculative Cache HIT for {current_dir:?}");
+                        state.picker_ui.worker.restart(false);
+                        state.reloading = true;
+
+                        let injector = state.injector();
+                        let injector = IndexedInjector::new_globally_indexed(injector);
+                        let injector = SegmentedInjector::new(injector, splitter.clone());
+                        let injector = AnsiInjector::new(injector, preprocess.clone());
+
+                        let mut push_fn = inject_line(
+                            state.picker_ui.header.config.header_lines,
+                            reload_render_tx.clone(),
+                            injector,
+                            group_prefix.clone(),
+                        );
+
+                        state.picker_ui.selector.clear();
+                        for line in lines {
+                            let _ = push_fn(line);
+                        }
+
+                        let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
+                            matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
+                                vec![],
+                            )),
+                        ));
+                        return;
+                    }
+                }
+            }
+
             let cache_store = matchmaker::cache::DirCacheStore::open();
 
             if let Some(cached_rec) = cache_store.get_valid(&cwd_str)

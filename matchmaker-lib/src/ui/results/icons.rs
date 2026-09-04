@@ -260,7 +260,7 @@ pub(super) fn insert_icon_span(
     mode_index: usize,
     results_config: &crate::config::ResultsConfig,
 ) {
-    let (icon_str, color): (std::borrow::Cow<'_, str>, Color) = if is_pinned {
+    let (icon_str, color): (std::borrow::Cow<'_, str>, Color) = if is_pinned || mode_index == 2 {
         let trimmed = name.trim();
         let is_dir = trimmed.ends_with('/')
             || trimmed.ends_with('\\')

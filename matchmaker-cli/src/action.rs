@@ -287,6 +287,7 @@ pub fn action_handler(
                 } else {
                     state.picker_ui.query.set(Some(String::new()), 0);
                 }
+                state.picker_ui.update();
             }
 
             let payload = &additional_commands.0[index];
@@ -300,7 +301,7 @@ pub fn action_handler(
                 MMAction::SetModeIndex(index),
             )));
             let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
-            if index == 0 && state.ui.config.nav_mode {
+            if state.ui.config.nav_mode {
                 let _ = render_tx.send(RenderCommand::Action(Action::FocusNav));
             } else {
                 let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
@@ -335,6 +336,7 @@ pub fn action_handler(
                 } else {
                     state.picker_ui.query.set(Some(String::new()), 0);
                 }
+                state.picker_ui.update();
             }
 
             let payload = &additional_commands.0[index];
@@ -350,7 +352,7 @@ pub fn action_handler(
                 MMAction::SetModeIndex(index),
             )));
             let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
-            if index == 0 && state.ui.config.nav_mode {
+            if state.ui.config.nav_mode {
                 let _ = render_tx.send(RenderCommand::Action(Action::FocusNav));
             } else {
                 let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));

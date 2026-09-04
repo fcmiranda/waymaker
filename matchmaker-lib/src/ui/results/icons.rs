@@ -257,11 +257,45 @@ pub(super) fn insert_icon_span(
     invert_current: bool,
     current_icon_style: StyleSetting,
     is_pinned: bool,
+    mode_index: usize,
+    results_config: &crate::config::ResultsConfig,
 ) {
-    let (icon, color) = if is_pinned {
-        ('', Color::Yellow)
+    let (icon_str, color): (std::borrow::Cow<'_, str>, Color) = if is_pinned {
+        let icon = results_config
+            .bookmark_icon
+            .as_deref()
+            .unwrap_or("");
+        let color = results_config.bookmark_icon_style.fg.unwrap_or(Color::Yellow);
+        (icon.into(), color)
+    } else if mode_index == 1 {
+        let trimmed = name.trim();
+        let is_dir = trimmed.ends_with('/')
+            || trimmed.ends_with('\\')
+            || std::path::Path::new(trimmed).is_dir();
+        if is_dir {
+            let icon = results_config
+                .frecency_folder_icon
+                .as_deref()
+                .unwrap_or("󰪻");
+            let color = results_config
+                .frecency_folder_icon_style
+                .fg
+                .unwrap_or(Color::Blue);
+            (icon.into(), color)
+        } else {
+            let icon = results_config
+                .frecency_icon
+                .as_deref()
+                .unwrap_or("󱋢");
+            let color = results_config
+                .frecency_icon_style
+                .fg
+                .unwrap_or(Color::Blue);
+            (icon.into(), color)
+        }
     } else {
-        icon_for_name(name)
+        let (ch, c) = icon_for_name(name);
+        (ch.to_string().into(), c)
     };
     let style = if is_current_row {
         if current_icon_style.fg.is_some()
@@ -279,7 +313,7 @@ pub(super) fn insert_icon_span(
     } else {
         ratatui::style::Style::default().fg(color)
     };
-    let icon_span = ratatui::text::Span::styled(format!("{icon}"), style);
+    let icon_span = ratatui::text::Span::styled(icon_str.into_owned(), style);
     let index = if has_nav_bar { 2 } else { 1 };
     for line in col.lines.iter_mut() {
         let at = index.min(line.spans.len());

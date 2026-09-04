@@ -540,6 +540,8 @@ impl ResultsUI {
                                             self.config.invert_current_icon,
                                             self.config.current_icon_style,
                                             is_pinned,
+                                            self.mode_index,
+                                            &self.config,
                                         );
                                     }
                                     if self.config.symlink_target {
@@ -617,6 +619,8 @@ impl ResultsUI {
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
                                     is_pinned,
+                                    self.mode_index,
+                                    &self.config,
                                 );
                             }
                             if self.config.symlink_target && col_idx == 0 {
@@ -733,6 +737,8 @@ impl ResultsUI {
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
                                     is_pinned,
+                                    self.mode_index,
+                                    &self.config,
                                 );
                             }
                             if self.config.symlink_target {
@@ -829,6 +835,8 @@ impl ResultsUI {
                             self.config.invert_current_icon,
                             self.config.current_icon_style,
                             is_pinned,
+                            self.mode_index,
+                            &self.config,
                         );
                     }
                     if self.config.symlink_target && col_idx == 0 {
@@ -1105,6 +1113,8 @@ impl ResultsUI {
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
                                     is_pinned,
+                                    self.mode_index,
+                                    &self.config,
                                 );
                             }
                             if self.config.symlink_target {
@@ -1232,6 +1242,8 @@ impl ResultsUI {
                             self.config.invert_current_icon,
                             self.config.current_icon_style,
                             is_pinned,
+                            self.mode_index,
+                            &self.config,
                         );
                     }
                     if self.config.symlink_target && x == 0 {

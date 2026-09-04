@@ -230,7 +230,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 };
                 let store = matchmaker::frecency::FrecencyStore::open();
                 match store.pin(target) {
-                    Ok(_) => println!(" Bookmarked '{target}'"),
+                    Ok(_) => println!(" Bookmarked '{target}'"),
                     Err(e) => eprintln!("Failed to bookmark '{target}': {e}"),
                 }
             } else {

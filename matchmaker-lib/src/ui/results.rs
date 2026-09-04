@@ -54,6 +54,7 @@ pub struct ResultsUI {
     pub yank_paths: HashSet<String>,
     pub cut_paths: HashSet<String>,
     pub pin_paths: HashSet<String>,
+    pub mode_index: usize,
 }
 
 impl ResultsUI {
@@ -85,7 +86,12 @@ impl ResultsUI {
             yank_paths: HashSet::new(),
             cut_paths: HashSet::new(),
             pin_paths: HashSet::new(),
+            mode_index: 0,
         }
+    }
+
+    pub fn set_mode_index(&mut self, index: usize) {
+        self.mode_index = index;
     }
 
     pub fn hidden_columns(&mut self, hidden_columns: Vec<bool>) {

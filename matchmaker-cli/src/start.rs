@@ -899,9 +899,16 @@ pub async fn start(
         .hidden_columns(hidden_columns)
         .initializer(move |s| {
             s.envs.extend(envs_);
+            s.picker_ui.query.set_mode_index(initial_index);
+            s.picker_ui.results.set_mode_index(initial_index);
         });
 
     let render_tx = options.render_tx();
+    if initial_index > 0 {
+        let _ = render_tx.send(matchmaker::message::RenderCommand::Action(
+            matchmaker::action::Action::Custom(crate::action::MMAction::SetModeIndex(initial_index)),
+        ));
+    }
     let push_fn = inject_line(
         header_lines,
         render_tx.clone(),

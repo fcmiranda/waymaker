@@ -22,6 +22,18 @@ status_inline = true
 filter_underline = true
 filter_underline_style.fg = "DarkGray"
 
+local_prompt = "> "
+local_prompt_style.fg = "cyan"
+local_underline_style.fg = "cyan"
+
+frecency_prompt = "󱅤 "
+frecency_prompt_style.fg = "blue"
+frecency_underline_style.fg = "blue"
+
+bookmarks_prompt = "󰺅 "
+bookmarks_prompt_style.fg = "yellow"
+bookmarks_underline_style.fg = "yellow"
+
 [matcher]
 sort = "smart"
 sort_cap = 2000
@@ -35,6 +47,12 @@ dir_first = true
 max = 15
 reverse = false
 icons = true
+bookmark_icon = ""
+bookmark_icon_style.fg = "yellow"
+frecency_folder_icon = "󰪻"
+frecency_folder_icon_style.fg = "blue"
+frecency_icon = "󱋢"
+frecency_icon_style.fg = "blue"
 symlink_target = true
 symlink_target_style.fg = "cyan"
 

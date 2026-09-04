@@ -57,6 +57,8 @@ pub enum MMAction {
     SetStatus(Option<String>),
     /// Set status
     SetStyledStatus(String),
+    /// Set current mode index (0 = local, 1 = frecency, 2 = bookmarks)
+    SetModeIndex(usize),
     /// Run a command and display output in preview window (TODO)
     RunPreview(String),
 
@@ -289,16 +291,13 @@ pub fn action_handler(
 
             let payload = &additional_commands.0[index];
             state.envs.set("MM_INDEX", index);
+            state.picker_ui.query.set_mode_index(index);
+            state.picker_ui.results.set_mode_index(index);
+            state.picker_ui.results.set_status_line(None);
             state.set_interrupt(Interrupt::Reload, payload.clone());
 
-            let mode_label = match index {
-                0 => "{cyan:Mode: Local}",
-                1 => "{blue:Mode: Frecency}",
-                2 => "{yellow:Mode:  Bookmarks}",
-                _ => "{magenta:Mode: Custom}",
-            };
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                MMAction::SetStyledStatus(mode_label.to_string()),
+                MMAction::SetModeIndex(index),
             )));
             let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
             if index == 0 && state.ui.config.nav_mode {
@@ -341,17 +340,14 @@ pub fn action_handler(
             let payload = &additional_commands.0[index];
 
             state.envs.set("MM_INDEX", index);
+            state.picker_ui.query.set_mode_index(index);
+            state.picker_ui.results.set_mode_index(index);
+            state.picker_ui.results.set_status_line(None);
 
             state.set_interrupt(Interrupt::Reload, payload.clone());
 
-            let mode_label = match index {
-                0 => "{cyan:Mode: Local}",
-                1 => "{blue:Mode: Frecency}",
-                2 => "{yellow:Mode:  Bookmarks}",
-                _ => "{magenta:Mode: Custom}",
-            };
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                MMAction::SetStyledStatus(mode_label.to_string()),
+                MMAction::SetModeIndex(index),
             )));
             let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
             if index == 0 && state.ui.config.nav_mode {
@@ -427,6 +423,11 @@ pub fn action_handler(
                 .picker_ui
                 .results
                 .set_status_line(Some(StatusUI::parse_template_to_status_line(&s)));
+        }
+        MMAction::SetModeIndex(index) => {
+            state.picker_ui.query.set_mode_index(index);
+            state.picker_ui.results.set_mode_index(index);
+            state.picker_ui.results.set_status_line(None);
         }
         MMAction::SetStatus(s) => {
             state.picker_ui.results.set_status_line(s.map(Line::raw));
@@ -939,7 +940,7 @@ pub fn action_handler(
                     }
                 }
                 let verb = if last_state { "Bookmarked" } else { "Unbookmarked" };
-                let color = if last_state { "{yellow:}" } else { "{darkgray}" };
+                let color = if last_state { "{yellow:}" } else { "{darkgray}" };
                 let msg = fm_notify_msg(verb, &paths, color);
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                     MMAction::SetStyledStatus(msg),
@@ -1015,7 +1016,7 @@ enum_from_str_display! {
 
 
     tuples:
-    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, FmSetPinPaths, Confirm, Prompt;
+    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, SetModeIndex, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, FmSetPinPaths, Confirm, Prompt;
 
     defaults:
     ;

@@ -576,7 +576,7 @@ impl Default for QueryConfig {
             },
             frecency_underline_style: Default::default(),
 
-            bookmarks_prompt: Some(" ".to_string()),
+            bookmarks_prompt: Some(" ".to_string()),
             bookmarks_prompt_style: StyleSetting {
                 fg: Some(Color::Yellow),
                 ..Default::default()

@@ -30,7 +30,7 @@ frecency_prompt = "󱅤 "
 frecency_prompt_style.fg = "blue"
 frecency_underline_style.fg = "blue"
 
-bookmarks_prompt = " "
+bookmarks_prompt = " "
 bookmarks_prompt_style.fg = "yellow"
 bookmarks_underline_style.fg = "yellow"
 

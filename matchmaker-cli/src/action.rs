@@ -940,7 +940,12 @@ pub fn action_handler(
                     }
                 }
                 let verb = if last_state { "Bookmarked" } else { "Unbookmarked" };
-                let color = if last_state { "{yellow:}" } else { "{darkgray}" };
+                let is_dir = paths
+                    .first()
+                    .map(|p| std::path::Path::new(p).is_dir())
+                    .unwrap_or(false);
+                let icon_str = if is_dir { "{yellow:󰮟}" } else { "{yellow:󱀻}" };
+                let color = if last_state { icon_str } else { "{darkgray}" };
                 let msg = fm_notify_msg(verb, &paths, color);
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                     MMAction::SetStyledStatus(msg),

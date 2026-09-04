@@ -30,7 +30,7 @@ frecency_prompt = "󱅤 "
 frecency_prompt_style.fg = "blue"
 frecency_underline_style.fg = "blue"
 
-bookmarks_prompt = "󰺅 "
+bookmarks_prompt = " "
 bookmarks_prompt_style.fg = "yellow"
 bookmarks_underline_style.fg = "yellow"
 
@@ -47,7 +47,8 @@ dir_first = true
 max = 15
 reverse = false
 icons = true
-bookmark_icon = ""
+bookmark_folder_icon = "󰮟"
+bookmark_file_icon = "󱀻"
 bookmark_icon_style.fg = "yellow"
 frecency_folder_icon = "󰪻"
 frecency_folder_icon_style.fg = "blue"

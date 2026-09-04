@@ -229,8 +229,10 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     path_str
                 };
                 let store = matchmaker::frecency::FrecencyStore::open();
+                let is_dir = std::path::Path::new(target).is_dir();
+                let icon = if is_dir { "󰮟" } else { "󱀻" };
                 match store.pin(target) {
-                    Ok(_) => println!(" Bookmarked '{target}'"),
+                    Ok(_) => println!("{icon} Bookmarked '{target}'"),
                     Err(e) => eprintln!("Failed to bookmark '{target}': {e}"),
                 }
             } else {

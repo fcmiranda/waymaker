@@ -389,7 +389,7 @@ impl QueryUI {
                         .config
                         .bookmarks_prompt
                         .as_deref()
-                        .unwrap_or("󰺅 ");
+                        .unwrap_or(" ");
                     let st = if !self.config.bookmarks_prompt_style.is_empty() {
                         self.config.bookmarks_prompt_style
                     } else {

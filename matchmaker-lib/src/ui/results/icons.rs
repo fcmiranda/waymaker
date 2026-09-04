@@ -261,11 +261,36 @@ pub(super) fn insert_icon_span(
     results_config: &crate::config::ResultsConfig,
 ) {
     let (icon_str, color): (std::borrow::Cow<'_, str>, Color) = if is_pinned {
-        let icon = results_config
-            .bookmark_icon
-            .as_deref()
-            .unwrap_or("");
-        let color = results_config.bookmark_icon_style.fg.unwrap_or(Color::Yellow);
+        let trimmed = name.trim();
+        let is_dir = trimmed.ends_with('/')
+            || trimmed.ends_with('\\')
+            || std::path::Path::new(trimmed).is_dir();
+        let icon = if is_dir {
+            results_config
+                .bookmark_folder_icon
+                .as_deref()
+                .or(results_config.bookmark_icon.as_deref())
+                .unwrap_or("󰮟")
+        } else {
+            results_config
+                .bookmark_file_icon
+                .as_deref()
+                .or(results_config.bookmark_icon.as_deref())
+                .unwrap_or("󱀻")
+        };
+        let color = if is_dir {
+            results_config
+                .bookmark_folder_icon_style
+                .fg
+                .or(results_config.bookmark_icon_style.fg)
+                .unwrap_or(Color::Yellow)
+        } else {
+            results_config
+                .bookmark_file_icon_style
+                .fg
+                .or(results_config.bookmark_icon_style.fg)
+                .unwrap_or(Color::Yellow)
+        };
         (icon.into(), color)
     } else if mode_index == 1 {
         let trimmed = name.trim();

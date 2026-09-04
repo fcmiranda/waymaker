@@ -576,7 +576,7 @@ impl Default for QueryConfig {
             },
             frecency_underline_style: Default::default(),
 
-            bookmarks_prompt: Some("󰺅 ".to_string()),
+            bookmarks_prompt: Some(" ".to_string()),
             bookmarks_prompt_style: StyleSetting {
                 fg: Some(Color::Yellow),
                 ..Default::default()
@@ -1128,11 +1128,21 @@ pub struct ResultsConfig {
     /// Initial cursor position (0-based index or negative for from-the-end).
     pub pos: Option<i32>,
 
-    /// Icon for pinned / bookmarked items. Defaults to Some("".to_string()).
+    /// Icon for pinned / bookmarked items.
     pub bookmark_icon: Option<String>,
+    /// Icon for pinned / bookmarked file items. Defaults to Some("󱀻".to_string()).
+    pub bookmark_file_icon: Option<String>,
+    /// Icon for pinned / bookmarked folder items. Defaults to Some("󰮟".to_string()).
+    pub bookmark_folder_icon: Option<String>,
     /// Style / color for the bookmark icon. Defaults to Yellow.
     #[partial(recurse)]
     pub bookmark_icon_style: StyleSetting,
+    /// Style / color for the bookmark file icon. Defaults to Yellow.
+    #[partial(recurse)]
+    pub bookmark_file_icon_style: StyleSetting,
+    /// Style / color for the bookmark folder icon. Defaults to Yellow.
+    #[partial(recurse)]
+    pub bookmark_folder_icon_style: StyleSetting,
 
     /// Icon for frecency folder items. Defaults to Some("󰪻".to_string()).
     pub frecency_folder_icon: Option<String>,
@@ -1247,8 +1257,18 @@ impl Default for ResultsConfig {
                 fg: Some(Color::DarkGray),
                 ..Default::default()
             },
-            bookmark_icon: Some("".to_string()),
+            bookmark_icon: None,
+            bookmark_file_icon: Some("󱀻".to_string()),
+            bookmark_folder_icon: Some("󰮟".to_string()),
             bookmark_icon_style: StyleSetting {
+                fg: Some(Color::Yellow),
+                ..Default::default()
+            },
+            bookmark_file_icon_style: StyleSetting {
+                fg: Some(Color::Yellow),
+                ..Default::default()
+            },
+            bookmark_folder_icon_style: StyleSetting {
                 fg: Some(Color::Yellow),
                 ..Default::default()
             },

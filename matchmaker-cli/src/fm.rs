@@ -257,7 +257,11 @@ impl Overlay for DeleteOverlay {
     fn handle_action(&mut self, action: &Action<MMAction>) -> OverlayEffect {
         match action {
             Action::Accept | Action::Custom(MMAction::Accept) => self.do_delete(),
-            Action::Quit(_) | Action::Cancel => OverlayEffect::Disable,
+            Action::Quit(_)
+            | Action::Cancel
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }
@@ -373,7 +377,11 @@ impl Overlay for CreateOverlay {
                 self.input.truncate(last_space);
                 OverlayEffect::None
             }
-            Action::Cancel | Action::Quit(_) => OverlayEffect::Disable,
+            Action::Cancel
+            | Action::Quit(_)
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }
@@ -504,7 +512,11 @@ impl Overlay for RenameOverlay {
                 self.input.truncate(last_space);
                 OverlayEffect::None
             }
-            Action::Cancel | Action::Quit(_) => OverlayEffect::Disable,
+            Action::Cancel
+            | Action::Quit(_)
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }
@@ -628,7 +640,11 @@ impl Overlay for UnzipOverlay {
                 self.dest.truncate(last_space);
                 OverlayEffect::None
             }
-            Action::Cancel | Action::Quit(_) => OverlayEffect::Disable,
+            Action::Cancel
+            | Action::Quit(_)
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }

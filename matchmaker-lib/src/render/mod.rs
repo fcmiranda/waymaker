@@ -1314,6 +1314,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 action_input.cancel();
                                 crate::ACTION_BOX_ACTIVE
                                     .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
                             } else {
                                 query.cancel()
                             }
@@ -1324,6 +1325,14 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             tui.redraw();
                         }
                         Action::ToggleFocus => {
+                            if *action_visible {
+                                *action_visible = false;
+                                action_input.cancel();
+                                crate::ACTION_BOX_ACTIVE
+                                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
+                                continue;
+                            }
                             if ui.config.nav_mode {
                                 state.focus = match state.focus {
                                     Focus::Input => Focus::Results,
@@ -1345,6 +1354,14 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             }
                         }
                         Action::FocusFilter => {
+                            if *action_visible {
+                                *action_visible = false;
+                                action_input.cancel();
+                                crate::ACTION_BOX_ACTIVE
+                                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
+                                continue;
+                            }
                             if ui.config.nav_mode {
                                 state.focus = Focus::Input;
                                 state.focus_blink = true;
@@ -1357,6 +1374,14 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             }
                         }
                         Action::FocusNav => {
+                            if *action_visible {
+                                *action_visible = false;
+                                action_input.cancel();
+                                crate::ACTION_BOX_ACTIVE
+                                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
+                                continue;
+                            }
                             if ui.config.nav_mode {
                                 state.focus = Focus::Results;
                                 state.focus_blink = true;

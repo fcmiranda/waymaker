@@ -39,9 +39,9 @@ pub enum Action<A: ActionExt = NullActionExt> {
     ToggleActionBox,
     /// Toggle keyboard focus between input and results when navigation mode is enabled
     ToggleFocus,
-    /// Set keyboard focus to input bar (filter)
+    /// Explicitly focus the filter query input in navigation mode
     FocusFilter,
-    /// Set keyboard focus to results list (nav mode)
+    /// Explicitly focus the results navigation list in navigation mode
     FocusNav,
     /// Toggle parent directory peek 3-pane layout
     ToggleParentPeek,

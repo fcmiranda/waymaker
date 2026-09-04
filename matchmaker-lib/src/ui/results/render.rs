@@ -526,6 +526,8 @@ impl ResultsUI {
                                         self.config.current_nav_bar_style,
                                     );
                                     if self.config.icons {
+                                        let is_pinned =
+                                            Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                         insert_icon_span(
                                             &mut t,
                                             &icon_name,
@@ -537,6 +539,9 @@ impl ResultsUI {
                                             self.config.uncolor_current_icon,
                                             self.config.invert_current_icon,
                                             self.config.current_icon_style,
+                                            is_pinned,
+                                            self.mode_index,
+                                            &self.config,
                                         );
                                     }
                                     if self.config.symlink_target {
@@ -603,6 +608,8 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons && col_idx == 0 {
+                                let is_pinned =
+                                    Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                 insert_icon_span(
                                     &mut col,
                                     &icon_name,
@@ -611,6 +618,9 @@ impl ResultsUI {
                                     self.config.uncolor_current_icon,
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
+                                    is_pinned,
+                                    self.mode_index,
+                                    &self.config,
                                 );
                             }
                             if self.config.symlink_target && col_idx == 0 {
@@ -716,6 +726,8 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons {
+                                let is_pinned =
+                                    Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                 insert_icon_span(
                                     &mut t,
                                     &icon_name,
@@ -724,6 +736,9 @@ impl ResultsUI {
                                     self.config.uncolor_current_icon,
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
+                                    is_pinned,
+                                    self.mode_index,
+                                    &self.config,
                                 );
                             }
                             if self.config.symlink_target {
@@ -809,6 +824,8 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && col_idx == 0 {
+                        let is_pinned =
+                            Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name,
@@ -817,6 +834,9 @@ impl ResultsUI {
                             self.config.uncolor_current_icon,
                             self.config.invert_current_icon,
                             self.config.current_icon_style,
+                            is_pinned,
+                            self.mode_index,
+                            &self.config,
                         );
                     }
                     if self.config.symlink_target && col_idx == 0 {
@@ -1082,6 +1102,8 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons {
+                                let is_pinned =
+                                    Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
                                 insert_icon_span(
                                     &mut t,
                                     &icon_name_hz,
@@ -1090,6 +1112,9 @@ impl ResultsUI {
                                     self.config.uncolor_current_icon,
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
+                                    is_pinned,
+                                    self.mode_index,
+                                    &self.config,
                                 );
                             }
                             if self.config.symlink_target {
@@ -1206,6 +1231,8 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && x == 0 {
+                        let is_pinned =
+                            Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name_hz,
@@ -1214,6 +1241,9 @@ impl ResultsUI {
                             self.config.uncolor_current_icon,
                             self.config.invert_current_icon,
                             self.config.current_icon_style,
+                            is_pinned,
+                            self.mode_index,
+                            &self.config,
                         );
                     }
                     if self.config.symlink_target && x == 0 {

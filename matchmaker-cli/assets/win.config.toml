@@ -184,6 +184,7 @@ if (Get-Command fd -ErrorAction SilentlyContinue) {
 "@next" = "ReloadNext"
 "@prev" = "ReloadPrev"
 "@cycle" = "ReloadNext"
+"*" = "@bookmark"
 "@help" = "Help"
 "@break" = "Redraw" # invalid unicode or unsupported emoji can break rendering
 

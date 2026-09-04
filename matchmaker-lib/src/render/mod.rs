@@ -1135,6 +1135,15 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             state.set_interrupt(Interrupt::Reload, payload);
                         }
                         Action::ChDir(payload) => {
+                            if ui.config.nav_mode {
+                                state.focus = Focus::Results;
+                                state.focus_blink = true;
+                                state.focus_tick = 0;
+                                let prompt = &ui.config.nav_prompt;
+                                if !prompt.is_empty() {
+                                    picker_ui.query.set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
+                                }
+                            }
                             state.set_interrupt(Interrupt::ChDir, payload);
                         }
                         Action::Print(payload) => {
@@ -1340,10 +1349,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 state.focus = Focus::Input;
                                 state.focus_blink = true;
                                 state.focus_tick = 0;
-
-                                if !ui.config.nav_prompt.is_empty() {
+                                let prompt = &ui.config.nav_prompt;
+                                if !prompt.is_empty() {
                                     picker_ui.query.set_prompt(None);
                                 }
+                                tui.redraw();
                             }
                         }
                         Action::FocusNav => {
@@ -1351,11 +1361,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 state.focus = Focus::Results;
                                 state.focus_blink = true;
                                 state.focus_tick = 0;
-
                                 let prompt = &ui.config.nav_prompt;
                                 if !prompt.is_empty() {
                                     picker_ui.query.set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
                                 }
+                                tui.redraw();
                             }
                         }
                         Action::Overlay(index) => {
@@ -2308,7 +2318,7 @@ fn render_input(
     let widget = if let Some(label) = status {
         ui.make_input_with_status_focused(label, area.width, focused, nav_prompt)
     } else {
-        ui.make_input_focused(focused, nav_prompt)
+        ui.make_input_focused(area.width, focused, nav_prompt)
     };
     let p = ui.cursor_offset_for_prompt(&area, &active_prompt);
 
@@ -2485,7 +2495,9 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             ("[Tab]", "Filter", Color::Cyan),
             ("[Space]", "Sel/Unsel", Color::Yellow),
             ("[,]", "Sort", Color::Yellow),
-            ("[f]", "Cycle", Color::Cyan),
+            ("[f]", "Frecency", Color::Cyan),
+            ("[b]", "Bookmarks", Color::Magenta),
+            ("[*]", "Bookmark", Color::Yellow),
             ("[a]", "Add", Color::Green),
             ("[r]", "Rename", Color::Yellow),
             ("[d]", "Trash", Color::Red),

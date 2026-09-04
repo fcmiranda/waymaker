@@ -125,6 +125,7 @@ max = 120
 "@next" = "ReloadNext"
 "@prev" = "ReloadPrev"
 "@cycle" = "ReloadNext"
+"*" = "@bookmark"
 
 # Printing
 "alt-p" = "@print"

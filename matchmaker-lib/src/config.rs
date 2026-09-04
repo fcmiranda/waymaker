@@ -406,6 +406,18 @@ impl Default for UiConfig {
         nav_binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
         nav_binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
         nav_binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
+        nav_binds.insert(
+            "f".to_string(),
+            Actions::from([Action::Semantic("frecency".to_string())]),
+        );
+        nav_binds.insert(
+            "b".to_string(),
+            Actions::from([Action::Semantic("bookmarks".to_string())]),
+        );
+        nav_binds.insert(
+            "*".to_string(),
+            Actions::from([Action::Semantic("bookmark".to_string())]),
+        );
 
         Self {
             border: BorderSetting::default(),
@@ -479,6 +491,42 @@ pub struct QueryConfig {
 
     /// Whether to show the filter input bar.
     pub show: bool,
+
+    /// Underline separator drawn directly across the query filter row (0 extra vertical lines).
+    pub underline: bool,
+
+    /// Style and color of the query underline separator.
+    #[partial(recurse)]
+    pub underline_style: StyleSetting,
+
+    /// Whether the underline separator is shown when in filter mode (focused).
+    /// If None, inherits from `underline`.
+    pub filter_underline: Option<bool>,
+
+    /// Style and color of the query underline separator when in filter mode (focused).
+    #[partial(recurse)]
+    pub filter_underline_style: StyleSetting,
+
+    /// Prompt query for local mode (index 0).
+    pub local_prompt: Option<String>,
+    #[partial(recurse)]
+    pub local_prompt_style: StyleSetting,
+    #[partial(recurse)]
+    pub local_underline_style: StyleSetting,
+
+    /// Prompt query for frecency mode (index 1).
+    pub frecency_prompt: Option<String>,
+    #[partial(recurse)]
+    pub frecency_prompt_style: StyleSetting,
+    #[partial(recurse)]
+    pub frecency_underline_style: StyleSetting,
+
+    /// Prompt query for bookmarks mode (index 2).
+    pub bookmarks_prompt: Option<String>,
+    #[partial(recurse)]
+    pub bookmarks_prompt_style: StyleSetting,
+    #[partial(recurse)]
+    pub bookmarks_underline_style: StyleSetting,
 }
 
 impl Default for QueryConfig {
@@ -506,6 +554,34 @@ impl Default for QueryConfig {
             scroll_padding: true,
             status_inline: false,
             show: true,
+            underline: false,
+            underline_style: StyleSetting {
+                modifier: Modifier::empty(),
+                ..Default::default()
+            },
+            filter_underline: None,
+            filter_underline_style: StyleSetting {
+                modifier: Modifier::empty(),
+                ..Default::default()
+            },
+
+            local_prompt: None,
+            local_prompt_style: Default::default(),
+            local_underline_style: Default::default(),
+
+            frecency_prompt: Some("󱅤 ".to_string()),
+            frecency_prompt_style: StyleSetting {
+                fg: Some(Color::Blue),
+                ..Default::default()
+            },
+            frecency_underline_style: Default::default(),
+
+            bookmarks_prompt: Some(" ".to_string()),
+            bookmarks_prompt_style: StyleSetting {
+                fg: Some(Color::Yellow),
+                ..Default::default()
+            },
+            bookmarks_underline_style: Default::default(),
         }
     }
 }
@@ -1051,6 +1127,34 @@ pub struct ResultsConfig {
 
     /// Initial cursor position (0-based index or negative for from-the-end).
     pub pos: Option<i32>,
+
+    /// Icon for pinned / bookmarked items.
+    pub bookmark_icon: Option<String>,
+    /// Icon for pinned / bookmarked file items. Defaults to Some("󱀻".to_string()).
+    pub bookmark_file_icon: Option<String>,
+    /// Icon for pinned / bookmarked folder items. Defaults to Some("󰮟".to_string()).
+    pub bookmark_folder_icon: Option<String>,
+    /// Style / color for the bookmark icon. Defaults to Yellow.
+    #[partial(recurse)]
+    pub bookmark_icon_style: StyleSetting,
+    /// Style / color for the bookmark file icon. Defaults to Yellow.
+    #[partial(recurse)]
+    pub bookmark_file_icon_style: StyleSetting,
+    /// Style / color for the bookmark folder icon. Defaults to Yellow.
+    #[partial(recurse)]
+    pub bookmark_folder_icon_style: StyleSetting,
+
+    /// Icon for frecency folder items. Defaults to Some("󰪻".to_string()).
+    pub frecency_folder_icon: Option<String>,
+    /// Style / color for the frecency folder icon. Defaults to Blue.
+    #[partial(recurse)]
+    pub frecency_folder_icon_style: StyleSetting,
+
+    /// Icon for frecency general / file items. Defaults to Some("󱋢".to_string()).
+    pub frecency_icon: Option<String>,
+    /// Style / color for the frecency item icon. Defaults to Blue.
+    #[partial(recurse)]
+    pub frecency_icon_style: StyleSetting,
 }
 
 impl Default for ResultsConfig {
@@ -1151,6 +1255,31 @@ impl Default for ResultsConfig {
             tier_separator: HorizontalSeparator::Top,
             tier_separator_style: StyleSetting {
                 fg: Some(Color::DarkGray),
+                ..Default::default()
+            },
+            bookmark_icon: None,
+            bookmark_file_icon: Some("󱀻".to_string()),
+            bookmark_folder_icon: Some("󰮟".to_string()),
+            bookmark_icon_style: StyleSetting {
+                fg: Some(Color::Yellow),
+                ..Default::default()
+            },
+            bookmark_file_icon_style: StyleSetting {
+                fg: Some(Color::Yellow),
+                ..Default::default()
+            },
+            bookmark_folder_icon_style: StyleSetting {
+                fg: Some(Color::Yellow),
+                ..Default::default()
+            },
+            frecency_folder_icon: Some("󰪻".to_string()),
+            frecency_folder_icon_style: StyleSetting {
+                fg: Some(Color::Blue),
+                ..Default::default()
+            },
+            frecency_icon: Some("󱋢".to_string()),
+            frecency_icon_style: StyleSetting {
+                fg: Some(Color::Blue),
                 ..Default::default()
             },
         }

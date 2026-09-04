@@ -306,6 +306,9 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             matchmaker::acs![Action::Semantic("fm_dragdrop".into())],
         );
         nb(",", matchmaker::acs![Action::SortMenu]);
+        nb("f", matchmaker::acs![Action::Semantic("reloadnext".into())]);
+        nb("b", matchmaker::acs![Action::Semantic("pins".into())]);
+        nb("*", matchmaker::acs![Action::Semantic("pin".into())]);
     }
 
     if cli.dump_config {
@@ -347,6 +350,23 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             ],
         );
     }
+
+    let mut def_sem = |trigger_str: &str, action: Action<MMAction>| {
+        if let Ok(t) = trigger_str.parse() {
+            config.binds.entry(t).or_insert(matchmaker::acs![action]);
+        }
+    };
+    def_sem("@dirs", Action::Custom(MMAction::ReloadNext(Some(1))));
+    def_sem("@frecency", Action::Custom(MMAction::ReloadNext(Some(1))));
+    def_sem("@bookmarks", Action::Custom(MMAction::ReloadNext(Some(2))));
+    def_sem("@bookmark", Action::Custom(MMAction::FmTogglePin));
+    def_sem("@pin", Action::Custom(MMAction::FmTogglePin));
+    def_sem("@pins", Action::Custom(MMAction::ReloadNext(Some(2))));
+    def_sem("@local", Action::Custom(MMAction::ReloadNext(Some(0))));
+    def_sem("@reloadnext", Action::Custom(MMAction::ReloadNext(None)));
+    def_sem("@reloadprev", Action::Custom(MMAction::ReloadPrev));
+    def_sem("@cycle", Action::Custom(MMAction::ReloadNext(None)));
+
     config.binds.check_cycles().map_err(anyhow::Error::msg)?;
     config.binds.retain(|_, actions| !actions.is_empty());
     config.binds.resolve_semantics();
@@ -770,6 +790,12 @@ pub async fn start(
     }
     let envs = process_envs(envs);
 
+    if let Ok(cwd) = std::env::current_dir() {
+        let store = matchmaker::frecency::FrecencyStore::open();
+        store.auto_import_from_zoxide_if_empty();
+        let _ = store.add(&cwd.to_string_lossy());
+    }
+
     if !directory.value.is_empty() {
         let EnvValue { value, force, exec } = directory;
 
@@ -888,9 +914,16 @@ pub async fn start(
         .hidden_columns(hidden_columns)
         .initializer(move |s| {
             s.envs.extend(envs_);
+            s.picker_ui.query.set_mode_index(initial_index);
+            s.picker_ui.results.set_mode_index(initial_index);
         });
 
     let render_tx = options.render_tx();
+    if initial_index > 0 {
+        let _ = render_tx.send(matchmaker::message::RenderCommand::Action(
+            matchmaker::action::Action::Custom(crate::action::MMAction::SetModeIndex(initial_index)),
+        ));
+    }
     let push_fn = inject_line(
         header_lines,
         render_tx.clone(),
@@ -942,6 +975,7 @@ pub async fn start(
     let spec_cache_reload = speculative_cache.clone();
 
     let chdir_formatter = cli_formatter.clone();
+    let chdir_render_tx = render_tx.clone();
     let mut history: std::collections::HashMap<std::path::PathBuf, String> =
         std::collections::HashMap::new();
     mm.register_interrupt_handler(Interrupt::ChDir, move |state| {
@@ -966,9 +1000,17 @@ pub async fn start(
 
         let target_path = Path::new(&path);
         let target_dir = if target_path.is_file() {
-            target_path.parent().unwrap_or(target_path)
+            target_path.parent().unwrap_or(target_path).to_path_buf()
+        } else if target_path.is_relative() {
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            let p = current_dir.join(target_path);
+            if p.exists() {
+                p
+            } else {
+                target_path.to_path_buf()
+            }
         } else {
-            target_path
+            target_path.to_path_buf()
         };
 
         let mut target_to_select = None;
@@ -1006,7 +1048,7 @@ pub async fn start(
         }
 
         log::debug!("ChDir: {}", target_dir.display());
-        if let Err(e) = std::env::set_current_dir(target_dir) {
+        if let Err(e) = std::env::set_current_dir(&target_dir) {
             log::warn!("ChDir({}) failed: {e}", target_dir.display());
         } else {
             if let Some(t) = target_to_select {
@@ -1019,8 +1061,17 @@ pub async fn start(
                 }
             }
 
-            if state.ui.config.nav_mode {
-                if let Ok(new_cwd) = std::env::current_dir() {
+            if let Ok(new_cwd) = std::env::current_dir() {
+                let store = matchmaker::frecency::FrecencyStore::open();
+                let _ = store.add(&new_cwd.to_string_lossy());
+                if state.ui.config.nav_mode {
+                    // Reset view to local mode (index 0) and nav mode upon entering/changing directory
+                    let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
+                        matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(Some(0))),
+                    ));
+                    let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
+                        matchmaker::action::Action::FocusNav,
+                    ));
                     let is_parent = old_cwd
                         .as_ref()
                         .map_or(false, |old| old.starts_with(&new_cwd) && old != &new_cwd);
@@ -1200,7 +1251,72 @@ pub async fn start(
             get_active_cmd(&current_dir)
         };
 
-        if is_default_file_walker_command(&cmd) {
+        let is_bookmarks = cmd.contains("--bookmarks") || cmd.contains("--pins");
+        let is_dirs = !is_bookmarks && (cmd.contains("--dirs") || cmd.starts_with("mm list -d"));
+
+        if is_bookmarks {
+            state.picker_ui.worker.restart(false);
+            state.reloading = true;
+
+            let injector = state.injector();
+            let injector = IndexedInjector::new_globally_indexed(injector);
+            let injector = SegmentedInjector::new(injector, splitter.clone());
+            let injector = AnsiInjector::new(injector, preprocess.clone());
+
+            let mut push_fn = inject_line(
+                state.picker_ui.header.config.header_lines,
+                reload_render_tx.clone(),
+                injector,
+                group_prefix.clone(),
+            );
+
+            state.picker_ui.selector.clear();
+            let store = matchmaker::frecency::FrecencyStore::open();
+            let pins = store.list_pins();
+            for pin in pins {
+                let _ = push_fn(pin);
+            }
+
+            let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
+                    vec![],
+                )),
+            ));
+        } else if is_dirs {
+            state.picker_ui.worker.restart(false);
+            state.reloading = true;
+
+            let injector = state.injector();
+            let injector = IndexedInjector::new_globally_indexed(injector);
+            let injector = SegmentedInjector::new(injector, splitter.clone());
+            let injector = AnsiInjector::new(injector, preprocess.clone());
+
+            let mut push_fn = inject_line(
+                state.picker_ui.header.config.header_lines,
+                reload_render_tx.clone(),
+                injector,
+                group_prefix.clone(),
+            );
+
+            state.picker_ui.selector.clear();
+            let store = matchmaker::frecency::FrecencyStore::open();
+            store.auto_import_from_zoxide_if_empty();
+            if let Ok(cwd) = std::env::current_dir() {
+                let _ = store.add(&cwd.to_string_lossy());
+            }
+            let snapshot = store.get_snapshot_with_half_life(30);
+            let mut items: Vec<(String, u32)> = snapshot.scores.into_iter().collect();
+            items.sort_by(|a, b| b.1.cmp(&a.1));
+            for (path, _) in items {
+                let _ = push_fn(path);
+            }
+
+            let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
+                    vec![],
+                )),
+            ));
+        } else if is_default_file_walker_command(&cmd) {
             let cwd_str = current_dir.to_string_lossy().to_string();
             let cache_store = matchmaker::cache::DirCacheStore::open();
 
@@ -1409,10 +1525,25 @@ pub async fn start(
             Action::Semantic(ref s) if s == "fm_undo" => acs![MMAction::FmUndo],
             Action::Semantic(ref s) if s == "fm_redo" => acs![MMAction::FmRedo],
             Action::Semantic(ref s) if s == "fm_dragdrop" => acs![MMAction::FmDragDrop],
+            Action::Semantic(ref s)
+                if s == "fm_pin" || s == "fm_bookmark" || s == "pin" || s == "bookmark" =>
+            {
+                acs![MMAction::FmTogglePin]
+            }
+            Action::Semantic(ref s)
+                if s == "pins" || s == "bookmarks" || s == "reload_pins" || s == "reload_bookmarks" =>
+            {
+                acs![MMAction::ReloadNext(Some(2))]
+            }
+            Action::Semantic(ref s)
+                if s == "dirs" || s == "frecency" || s == "reload_dirs" || s == "reload_frecency" =>
+            {
+                acs![MMAction::ReloadNext(Some(1))]
+            }
             Action::Semantic(ref s) if s == "cycle" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadnext" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadprev" => acs![MMAction::ReloadPrev],
-            Action::Semantic(ref s) if s == "reload_local" => acs![MMAction::ReloadNext(Some(0))],
+            Action::Semantic(ref s) if s == "reload_local" || s == "local" => acs![MMAction::ReloadNext(Some(0))],
             _ => acs![a],
         });
 

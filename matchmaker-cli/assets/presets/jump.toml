@@ -19,6 +19,20 @@ match_indent = false
 
 [query]
 status_inline = true
+filter_underline = true
+filter_underline_style.fg = "DarkGray"
+
+local_prompt = "> "
+local_prompt_style.fg = "cyan"
+local_underline_style.fg = "cyan"
+
+frecency_prompt = "󱅤 "
+frecency_prompt_style.fg = "blue"
+frecency_underline_style.fg = "blue"
+
+bookmarks_prompt = " "
+bookmarks_prompt_style.fg = "yellow"
+bookmarks_underline_style.fg = "yellow"
 
 [matcher]
 sort = "smart"
@@ -33,6 +47,13 @@ dir_first = true
 max = 15
 reverse = false
 icons = true
+bookmark_folder_icon = "󰮟"
+bookmark_file_icon = "󱀻"
+bookmark_icon_style.fg = "yellow"
+frecency_folder_icon = "󰪻"
+frecency_folder_icon_style.fg = "blue"
+frecency_icon = "󱋢"
+frecency_icon_style.fg = "blue"
 symlink_target = true
 symlink_target_style.fg = "cyan"
 
@@ -54,8 +75,9 @@ side = "right"
 percentage = 50
 
 [binds]
-"@reloadnext" = "ReloadNext"
-"ctrl-f" = "@reloadnext"
+"ctrl-f" = "@dirs"
+"ctrl-b" = "@bookmarks"
+"*" = "@bookmark"
 "ctrl-j" = "Down"
 "ctrl-k" = "Up"
 "ctrl-p" = "SwitchPreview"
@@ -64,7 +86,9 @@ percentage = 50
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
 [ui.nav_binds]
-"f" = "@reloadnext"
+"f" = "@dirs"
+"b" = "@bookmarks"
+"*" = "@bookmark"
 "l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
 "h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
 "ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
@@ -84,7 +108,8 @@ separator_style.fg = "Blue"
 [start]
 additional_commands = [
     "",
-    "mm list --dirs 2>/dev/null"
+    "mm list --dirs 2>/dev/null",
+    "mm list --bookmarks 2>/dev/null"
 ]
 
 [start.command]

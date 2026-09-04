@@ -213,10 +213,74 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             }
             true
         }
+        "pin" | "bookmark" => {
+            let path_arg = args.get(1).map(|s| s.as_str());
+            if let Some(path_str) = path_arg {
+                if path_str == "list" || path_str == "-l" || path_str == "--list" {
+                    let store = matchmaker::frecency::FrecencyStore::open();
+                    for pin in store.list_pins() {
+                        println!("{pin}");
+                    }
+                    return true;
+                }
+                let target = if path_str == "add" {
+                    args.get(2).map(|s| s.as_str()).unwrap_or(".")
+                } else {
+                    path_str
+                };
+                let store = matchmaker::frecency::FrecencyStore::open();
+                let is_dir = std::path::Path::new(target).is_dir();
+                let icon = if is_dir { "󰮟" } else { "󱀻" };
+                match store.pin(target) {
+                    Ok(_) => println!("{icon} Bookmarked '{target}'"),
+                    Err(e) => eprintln!("Failed to bookmark '{target}': {e}"),
+                }
+            } else {
+                let store = matchmaker::frecency::FrecencyStore::open();
+                for pin in store.list_pins() {
+                    println!("{pin}");
+                }
+            }
+            true
+        }
+        "unpin" | "unbookmark" => {
+            if let Some(path) = args.get(1) {
+                let store = matchmaker::frecency::FrecencyStore::open();
+                match store.unpin(path) {
+                    Ok(true) => println!("󰤭 Unbookmarked '{path}'"),
+                    Ok(false) => println!("Path '{path}' was not bookmarked"),
+                    Err(e) => eprintln!("Failed to unbookmark '{path}': {e}"),
+                }
+            } else {
+                eprintln!("Usage: mm unbookmark <path>");
+                exit(1);
+            }
+            true
+        }
+        "pins" | "bookmarks" => {
+            let store = matchmaker::frecency::FrecencyStore::open();
+            for pin in store.list_pins() {
+                println!("{pin}");
+            }
+            true
+        }
+        "import-zoxide" | "sync-zoxide" => {
+            let store = matchmaker::frecency::FrecencyStore::open();
+            let count = store.import_from_zoxide();
+            println!("Imported {count} directory records from zoxide.");
+            true
+        }
         "list" | "query" => {
             let dirs_only = args
                 .iter()
                 .any(|a| a == "-d" || a == "--dirs" || a == "--dirs-only");
+            let pins_only = args.iter().any(|a| {
+                a == "-p"
+                    || a == "--pins"
+                    || a == "--pins-only"
+                    || a == "--bookmarks"
+                    || a == "--bookmarks-only"
+            });
             let keywords: Vec<String> = args
                 .iter()
                 .skip(1)
@@ -226,6 +290,11 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                         && *a != "-d"
                         && *a != "--dirs"
                         && *a != "--dirs-only"
+                        && *a != "-p"
+                        && *a != "--pins"
+                        && *a != "--pins-only"
+                        && *a != "--bookmarks"
+                        && *a != "--bookmarks-only"
                         && !a.starts_with('-')
                 })
                 .map(|a| a.to_lowercase())
@@ -233,10 +302,59 @@ fn handle_frecency_cli(args: &[String]) -> bool {
 
             let full_query = keywords.join(" ");
             let store = matchmaker::frecency::FrecencyStore::open();
+            if dirs_only && !pins_only {
+                store.auto_import_from_zoxide_if_empty();
+                if let Ok(cwd) = std::env::current_dir() {
+                    let _ = store.add(&cwd.to_string_lossy());
+                }
+            }
+            let pinned_paths = store.list_pins();
+            let pins_set: std::collections::HashSet<String> = pinned_paths.iter().cloned().collect();
+
+            if pins_only {
+                for path in pinned_paths {
+                    let path_obj = std::path::Path::new(&path);
+                    if dirs_only && !path_obj.is_dir() {
+                        continue;
+                    }
+                    let lower_path = path.to_lowercase();
+                    let matches_all = keywords.iter().all(|kw| lower_path.contains(kw));
+                    if matches_all {
+                        println!("{path}");
+                    }
+                }
+                return true;
+            }
+
+            let mut pinned_matches: Vec<(String, usize, bool)> = Vec::new();
+            for path in &pinned_paths {
+                let path_obj = std::path::Path::new(path);
+                if dirs_only && !path_obj.is_dir() {
+                    continue;
+                }
+                let lower_path = path.to_lowercase();
+                let matches_all = keywords.iter().all(|kw| lower_path.contains(kw));
+                if matches_all {
+                    let ends_with_query = !full_query.is_empty()
+                        && (lower_path.ends_with(&full_query)
+                            || keywords.last().map_or(false, |lk| lower_path.ends_with(lk)));
+                    let path_depth = path_obj.components().count();
+                    pinned_matches.push((path.clone(), path_depth, ends_with_query));
+                }
+            }
+
+            pinned_matches.sort_by(|a, b| {
+                b.2.cmp(&a.2)
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+
             let snapshot = store.get_snapshot();
             let mut matches: Vec<(String, u32, usize, bool)> = Vec::new();
 
             for (path, score) in snapshot.scores {
+                if pins_set.contains(&path) {
+                    continue;
+                }
                 let path_obj = std::path::Path::new(&path);
                 if dirs_only && !path_obj.is_dir() {
                     continue;
@@ -263,6 +381,10 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     .then_with(|| a.2.cmp(&b.2))
             });
 
+            // Output pins first (Tier 0), then frecency matches (Tier 1)
+            for (path, _, _) in pinned_matches {
+                println!("{path}");
+            }
             for (path, _, _, _) in matches {
                 println!("{path}");
             }

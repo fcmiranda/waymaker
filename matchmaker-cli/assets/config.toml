@@ -176,6 +176,7 @@ ansi = false # don't set to true here
 "@next" = "ReloadNext"
 "@prev" = "ReloadPrev"
 "@cycle" = "ReloadNext"
+"*" = "@bookmark"
 "@help" = "Help"
 "@break" = "Redraw" # invalid unicode or unsupported emoji can break rendering
 

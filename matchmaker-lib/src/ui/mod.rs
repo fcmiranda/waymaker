@@ -84,6 +84,8 @@ impl UI {
             selection_set,
         );
         picker.results.hidden_columns(hidden_columns);
+        let store = crate::frecency::FrecencyStore::open();
+        picker.results.pin_paths = store.get_pins_set();
 
         let preview = if let Some(view) = view {
             Some(PreviewUI::new(view, config.preview, ui_area))

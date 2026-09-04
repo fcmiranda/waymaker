@@ -2,14 +2,14 @@ use std::ops::{Deref, DerefMut};
 
 use ratatui::{
     layout::{Position, Rect},
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::config::QueryConfig;
+use crate::config::{QueryConfig, StyleSetting};
 
 #[derive(Debug, Default, Clone)]
 pub struct InputUI {
@@ -321,6 +321,7 @@ pub struct QueryUI {
     prompt: Line<'static>,
     pub custom_prompt: Option<Line<'static>>,
     pub config: QueryConfig,
+    pub mode_index: usize,
 }
 
 impl Deref for QueryUI {
@@ -344,6 +345,7 @@ impl QueryUI {
             prompt,
             custom_prompt: None,
             config,
+            mode_index: 0,
         };
 
         if !ui.config.initial.is_empty() {
@@ -355,34 +357,76 @@ impl QueryUI {
         ui
     }
 
+    pub fn set_mode_index(&mut self, index: usize) {
+        self.mode_index = index;
+    }
+
     pub fn active_prompt(&self, focused: bool, nav_prompt: Option<&str>) -> Line<'static> {
         if let Some(ref custom) = self.custom_prompt {
             return custom.clone();
         }
 
-        if focused {
-            let prompt_text = self
-                .config
-                .filter_prompt
-                .as_deref()
-                .unwrap_or(&self.config.prompt);
-            let style = if !self.config.filter_prompt_style.is_empty() {
-                self.config.filter_prompt_style
-            } else {
-                self.config.prompt_style
+        if focused || nav_prompt.is_none() || nav_prompt.unwrap().is_empty() {
+            let (prompt_text, style) = match self.mode_index {
+                1 => {
+                    let text = self
+                        .config
+                        .frecency_prompt
+                        .as_deref()
+                        .unwrap_or("󱅤 ");
+                    let st = if !self.config.frecency_prompt_style.is_empty() {
+                        self.config.frecency_prompt_style
+                    } else {
+                        StyleSetting {
+                            fg: Some(Color::Blue),
+                            ..Default::default()
+                        }
+                    };
+                    (text, st)
+                }
+                2 => {
+                    let text = self
+                        .config
+                        .bookmarks_prompt
+                        .as_deref()
+                        .unwrap_or(" ");
+                    let st = if !self.config.bookmarks_prompt_style.is_empty() {
+                        self.config.bookmarks_prompt_style
+                    } else {
+                        StyleSetting {
+                            fg: Some(Color::Yellow),
+                            ..Default::default()
+                        }
+                    };
+                    (text, st)
+                }
+                _ => {
+                    let text = if focused {
+                        self.config
+                            .local_prompt
+                            .as_deref()
+                            .or(self.config.filter_prompt.as_deref())
+                            .unwrap_or(&self.config.prompt)
+                    } else {
+                        self.config
+                            .local_prompt
+                            .as_deref()
+                            .unwrap_or(&self.config.prompt)
+                    };
+                    let st = if !self.config.local_prompt_style.is_empty() {
+                        self.config.local_prompt_style
+                    } else if focused && !self.config.filter_prompt_style.is_empty() {
+                        self.config.filter_prompt_style
+                    } else {
+                        self.config.prompt_style
+                    };
+                    (text, st)
+                }
             };
             Line::styled(prompt_text.to_string(), style)
         } else {
-            let prompt_text = if let Some(np) = nav_prompt {
-                if !np.is_empty() {
-                    np
-                } else {
-                    &self.config.prompt
-                }
-            } else {
-                &self.config.prompt
-            };
-            Line::styled(prompt_text.to_string(), self.config.prompt_style)
+            let np = nav_prompt.unwrap();
+            Line::styled(np.to_string(), self.config.prompt_style)
         }
     }
 
@@ -391,6 +435,60 @@ impl QueryUI {
             self.config.filter_style.r#override(Style::reset())
         } else {
             self.config.style.r#override(Style::reset())
+        }
+    }
+
+    pub fn active_underline_style(&self, focused: bool) -> (bool, StyleSetting) {
+        if focused {
+            let active = self.config.filter_underline.unwrap_or(self.config.underline)
+                || !self.config.filter_underline_style.is_empty()
+                || !self.config.frecency_underline_style.is_empty()
+                || !self.config.bookmarks_underline_style.is_empty()
+                || !self.config.local_underline_style.is_empty();
+
+            let style = match self.mode_index {
+                1 => {
+                    if !self.config.frecency_underline_style.is_empty() {
+                        self.config.frecency_underline_style
+                    } else if !self.config.frecency_prompt_style.is_empty() {
+                        self.config.frecency_prompt_style
+                    } else if !self.config.filter_underline_style.is_empty() {
+                        self.config.filter_underline_style
+                    } else {
+                        StyleSetting {
+                            fg: Some(Color::Blue),
+                            ..Default::default()
+                        }
+                    }
+                }
+                2 => {
+                    if !self.config.bookmarks_underline_style.is_empty() {
+                        self.config.bookmarks_underline_style
+                    } else if !self.config.bookmarks_prompt_style.is_empty() {
+                        self.config.bookmarks_prompt_style
+                    } else if !self.config.filter_underline_style.is_empty() {
+                        self.config.filter_underline_style
+                    } else {
+                        StyleSetting {
+                            fg: Some(Color::Yellow),
+                            ..Default::default()
+                        }
+                    }
+                }
+                _ => {
+                    if !self.config.local_underline_style.is_empty() {
+                        self.config.local_underline_style
+                    } else if !self.config.filter_underline_style.is_empty() {
+                        self.config.filter_underline_style
+                    } else {
+                        self.config.underline_style
+                    }
+                }
+            };
+            (active, style)
+        } else {
+            let active = self.config.underline && self.config.filter_underline != Some(true);
+            (active, self.config.underline_style)
         }
     }
 
@@ -438,15 +536,39 @@ impl QueryUI {
     // remember to call scroll_to_cursor beforehand
 
     pub fn make_input(&self) -> Paragraph<'_> {
-        self.make_input_focused(true, None)
+        self.make_input_focused(0, true, None)
     }
 
-    pub fn make_input_focused(&self, focused: bool, nav_prompt: Option<&str>) -> Paragraph<'_> {
+    pub fn make_input_focused(
+        &self,
+        area_width: u16,
+        focused: bool,
+        nav_prompt: Option<&str>,
+    ) -> Paragraph<'_> {
+        use unicode_width::UnicodeWidthStr;
+
         let mut line = self.active_prompt(focused, nav_prompt);
         line.push_span(Span::styled(
             self.state.render(),
             self.active_text_style(focused),
         ));
+
+        let (should_underline, u_style) = self.active_underline_style(focused);
+
+        if should_underline && area_width > 0 {
+            let cur_w = line.spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
+            let pad = area_width.saturating_sub(cur_w);
+            if pad > 0 {
+                line.push_span(Span::raw(" ".repeat(pad as usize)));
+            }
+            let u_fg = u_style.fg;
+            for span in line.spans.iter_mut() {
+                span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+                if let Some(fg) = u_fg {
+                    span.style = span.style.underline_color(fg);
+                }
+            }
+        }
 
         Paragraph::new(line).block(self.config.border.as_block())
     }
@@ -497,6 +619,23 @@ impl QueryUI {
             line.push_span(Span::raw(" ".repeat(padding as usize)));
             for span in right_label.spans {
                 line.push_span(span);
+            }
+        }
+
+        let (should_underline, u_style) = self.active_underline_style(focused);
+
+        if should_underline && area_width > 0 {
+            let cur_w = line.spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
+            let pad = area_width.saturating_sub(cur_w);
+            if pad > 0 {
+                line.push_span(Span::raw(" ".repeat(pad as usize)));
+            }
+            let u_fg = u_style.fg;
+            for span in line.spans.iter_mut() {
+                span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+                if let Some(fg) = u_fg {
+                    span.style = span.style.underline_color(fg);
+                }
             }
         }
 

@@ -237,18 +237,12 @@ fn apply_focus_binds<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::FocusFilter));
             }
             RenderCommand::Action(Action::FocusNav) => {
-                if sim_focus == Focus::Results {
-                    if let Some(actions) = focus_binds.get("esc") {
-                        for action in actions.iter().cloned() {
-                            if let Some(action) = action_from_null::<A>(action) {
-                                out.push(RenderCommand::Action(action));
-                            }
-                        }
-                        continue;
-                    }
-                }
                 sim_focus = Focus::Results;
                 out.push(RenderCommand::Action(Action::FocusNav));
+            }
+            RenderCommand::Action(Action::ChDir(payload)) => {
+                sim_focus = Focus::Results;
+                out.push(RenderCommand::Action(Action::ChDir(payload)));
             }
             RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
                 if c == ',' {
@@ -1468,7 +1462,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     state.synced = [false; 2];
                     did_reload = true;
                 }
-                Interrupt::ChDir => {}
+                Interrupt::ChDir => {
+                    state.synced = [false; 2];
+                }
                 Interrupt::Become => {
                     tui.exit(None);
                 }
@@ -1491,7 +1487,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                 }
 
                 if matches!(interrupt, Interrupt::ChDir) {
-                    picker_ui.results.cursor_jump(0);
                     if let Ok(cwd) = std::env::current_dir() {
                         if let Some(sort_order) = ui.config.resolve_sort_for_dir(&cwd) {
                             picker_ui.worker.set_sort_order(Some(sort_order));

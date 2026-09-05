@@ -81,18 +81,27 @@ percentage = 50
 "ctrl-j" = "Down"
 "ctrl-k" = "Up"
 "ctrl-p" = "SwitchPreview"
-"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
-"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
+"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
 [ui.nav_binds]
+"j" = "Down"
+"k" = "Up"
 "f" = "@dirs"
 "b" = "@bookmarks"
 "*" = "@bookmark"
-"l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
-"h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
-"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
-"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
+"l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"backspace" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "p" = "SwitchPreview"
 "ctrl-p" = "SwitchPreview"
 "u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]

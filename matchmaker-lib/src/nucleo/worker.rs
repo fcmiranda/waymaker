@@ -28,14 +28,27 @@ fn get_item_tier_and_clean_path<'a>(raw_str: &'a str, dir_first: bool) -> (u8, &
     }
 
     let trimmed = raw_str.strip_prefix("./").unwrap_or(raw_str);
+    if trimmed.starts_with('/') || trimmed.starts_with('\\') {
+        let clean = if trimmed == "/" || trimmed == "\\" {
+            trimmed
+        } else {
+            trimmed.trim_end_matches(|c| c == '/' || c == '\\')
+        };
+        return (2, clean);
+    }
+
     let clean = trimmed.trim_end_matches(|c| c == '/' || c == '\\');
     let slash_count = clean.bytes().filter(|&b| b == b'/' || b == b'\\').count();
 
-    if slash_count == 0 {
+    if slash_count == 0 && !clean.is_empty() {
         let is_dir = raw_str.ends_with('/')
             || raw_str.ends_with('\\')
             || std::path::Path::new(clean).is_dir();
-        if is_dir { (0, clean) } else { (1, clean) }
+        if is_dir {
+            (0, clean)
+        } else {
+            (1, clean)
+        }
     } else {
         (2, clean)
     }
@@ -89,7 +102,9 @@ fn compute_item_score(
     } else {
         0
     };
-    let effective_penalty = if penalty > 0 && query_len > 0 && query_len <= 2 {
+    let effective_penalty = if is_query_empty || penalty == 0 {
+        0
+    } else if query_len <= 2 {
         penalty.saturating_mul(2)
     } else {
         penalty
@@ -191,6 +206,7 @@ where
     pub typo_tolerance: bool,
     pub dir_first: bool,
     pub sort_order: Option<crate::action::SortOrder>,
+    pub mode_index: usize,
     pub matcher_dirty: Arc<AtomicBool>,
     notify_callback: Arc<arc_swap::ArcSwapOption<NotifyFn>>,
 
@@ -261,8 +277,13 @@ impl<T: SSS> Worker<T> {
             typo_tolerance: false,
             dir_first: false,
             sort_order: None,
+            mode_index: 0,
             version: Arc::new(AtomicU32::new(0)),
         }
+    }
+
+    pub fn set_mode_index(&mut self, mode_index: usize) {
+        self.mode_index = mode_index;
     }
 
     pub fn set_sort_order(&mut self, order: Option<crate::action::SortOrder>) {
@@ -372,10 +393,12 @@ impl<T: SSS> Worker<T> {
         let is_query_empty = query_str.is_empty();
         let query_len = query_str.len();
 
+        let effective_dir_first = self.dir_first && self.mode_index == 0;
         let should_sort = self.sort_order.is_some()
             || (!is_query_empty
-                && ((self.frecency && self.frecency_snapshot.is_some()) || self.depth_penalty > 0))
-            || self.dir_first;
+                && ((self.frecency && self.frecency_snapshot.is_some())
+                    || (self.depth_penalty > 0 && self.mode_index == 0)))
+            || effective_dir_first;
 
         if should_sort {
             let total_sort = if self.sort_order.is_some() {
@@ -386,7 +409,11 @@ impl<T: SSS> Worker<T> {
                 total
             };
             let mut items: Vec<_> = snapshot.matched_items(0..total_sort).enumerate().collect();
-            let penalty = self.depth_penalty;
+            let penalty = if is_query_empty || self.mode_index != 0 {
+                0
+            } else {
+                self.depth_penalty
+            };
             let frec_weight = self.frecency_weight;
             let snapshot_ref = if self.frecency {
                 self.frecency_snapshot.as_ref()
@@ -400,7 +427,7 @@ impl<T: SSS> Worker<T> {
                     let raw_path = col0.raw(item.data);
                     let has_frecency =
                         snapshot_ref.map_or(false, |snap| snap.has_bonus_fast(raw_path.as_ref()));
-                    let is_direct = if self.dir_first {
+                    let is_direct = if effective_dir_first {
                         let (tier, _) = get_item_tier_and_clean_path(raw_path.as_ref(), true);
                         tier < 2
                     } else {
@@ -455,7 +482,7 @@ impl<T: SSS> Worker<T> {
                         penalty,
                     );
                     let (tier, clean) =
-                        get_item_tier_and_clean_path(raw_path.as_ref(), self.dir_first);
+                        get_item_tier_and_clean_path(raw_path.as_ref(), effective_dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
                     let (mtime, btime, size, ext_range) = match self.sort_order {
@@ -524,7 +551,7 @@ impl<T: SSS> Worker<T> {
             decorated.sort_unstable_by(|a, b| {
                 if let Some(sort_order) = self.sort_order {
                     use crate::action::SortOrder;
-                    if self.dir_first && a.tier != b.tier {
+                    if effective_dir_first && a.tier != b.tier {
                         return a.tier.cmp(&b.tier);
                     }
 
@@ -614,7 +641,15 @@ impl<T: SSS> Worker<T> {
             decorated
                 .get(n as usize)
                 .map(|d| d.item.data)
-                .or_else(|| snapshot.get_matched_item(n).map(|item| item.data))
+                .or_else(|| {
+                    if is_query_empty && self.mode_index != 0 {
+                        snapshot.get_item(n).map(|item| item.data)
+                    } else {
+                        snapshot.get_matched_item(n).map(|item| item.data)
+                    }
+                })
+        } else if is_query_empty && self.mode_index != 0 {
+            snapshot.get_item(n).map(|item| item.data)
         } else {
             snapshot.get_matched_item(n).map(|item| item.data)
         }
@@ -731,10 +766,12 @@ impl<T: SSS> Worker<T> {
         let query_str = self.query.primary_column_query().unwrap_or_default();
         let is_query_empty = query_str.is_empty();
         let query_len = query_str.len();
+        let effective_dir_first = self.dir_first && self.mode_index == 0;
         let should_sort = self.sort_order.is_some()
             || (!is_query_empty
-                && ((self.frecency && self.frecency_snapshot.is_some()) || self.depth_penalty > 0))
-            || self.dir_first;
+                && ((self.frecency && self.frecency_snapshot.is_some())
+                    || (self.depth_penalty > 0 && self.mode_index == 0)))
+            || effective_dir_first;
 
         let (items_buf, initial_prev_tier) = if should_sort {
             let total = status.matched_count;
@@ -746,7 +783,11 @@ impl<T: SSS> Worker<T> {
                 total
             };
             let mut items: Vec<_> = snapshot.matched_items(0..total_sort).enumerate().collect();
-            let penalty = self.depth_penalty;
+            let penalty = if is_query_empty || self.mode_index != 0 {
+                0
+            } else {
+                self.depth_penalty
+            };
             let frec_weight = self.frecency_weight;
             let snapshot_ref = if self.frecency {
                 self.frecency_snapshot.as_ref()
@@ -760,7 +801,7 @@ impl<T: SSS> Worker<T> {
                     let raw_path = col0.raw(item.data);
                     let has_frecency =
                         snapshot_ref.map_or(false, |snap| snap.has_bonus_fast(raw_path.as_ref()));
-                    let is_direct = if self.dir_first {
+                    let is_direct = if effective_dir_first {
                         let (tier, _) = get_item_tier_and_clean_path(raw_path.as_ref(), true);
                         tier < 2
                     } else {
@@ -815,7 +856,7 @@ impl<T: SSS> Worker<T> {
                         penalty,
                     );
                     let (tier, clean) =
-                        get_item_tier_and_clean_path(raw_path.as_ref(), self.dir_first);
+                        get_item_tier_and_clean_path(raw_path.as_ref(), effective_dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
                     let (mtime, btime, size, ext_range) = match self.sort_order {
@@ -884,7 +925,7 @@ impl<T: SSS> Worker<T> {
             decorated.sort_unstable_by(|a, b| {
                 if let Some(sort_order) = self.sort_order {
                     use crate::action::SortOrder;
-                    if self.dir_first && a.tier != b.tier {
+                    if effective_dir_first && a.tier != b.tier {
                         return a.tier.cmp(&b.tier);
                     }
 
@@ -990,7 +1031,7 @@ impl<T: SSS> Worker<T> {
                 snapshot
                     .matched_items(start.min(status.matched_count)..end.min(status.matched_count))
                     .map(|item| {
-                        let tier = if self.dir_first {
+                        let tier = if effective_dir_first {
                             let raw_path = col0.raw(item.data);
                             let (tier, _) = get_item_tier_and_clean_path(raw_path.as_ref(), true);
                             tier
@@ -1002,12 +1043,17 @@ impl<T: SSS> Worker<T> {
                     .collect()
             };
             (items, prev_tier)
+        } else if is_query_empty && self.mode_index != 0 {
+            let items: Vec<_> = (start.min(status.matched_count)..end.min(status.matched_count))
+                .filter_map(|idx| snapshot.get_item(idx).map(|item| (item, 2u8)))
+                .collect();
+            (items, None)
         } else {
             let col0 = &self.columns[0];
             let items: Vec<_> = snapshot
                 .matched_items(start.min(status.matched_count)..end.min(status.matched_count))
                 .map(|item| {
-                    let tier = if self.dir_first {
+                    let tier = if effective_dir_first {
                         let raw_path = col0.raw(item.data);
                         let (tier, _) = get_item_tier_and_clean_path(raw_path.as_ref(), true);
                         tier
@@ -1130,7 +1176,7 @@ impl<T: SSS> Worker<T> {
                     header_to_emit = Some(GroupHeader::Named(group.clone()));
                     last_emitted_group = Some(group);
                 }
-            } else if self.dir_first {
+            } else if effective_dir_first {
                 if let Some(last) = last_tier {
                     if *item_tier != last {
                         header_to_emit = Some(GroupHeader::TierSeparator);
@@ -2237,5 +2283,58 @@ mod tests {
         assert_eq!(items[7], "\u{1b}[1;36m󰙨 test\u{1b}[0m");
         assert_eq!(items[8], "\u{1b}[1;33m󰏖 build\u{1b}[0m");
         assert_eq!(items[9], "\u{1b}[2m󰓹 custom\u{1b}[0m");
+    }
+
+    #[test]
+    fn test_frecency_mode_preserves_order_and_no_tier_separators() {
+        let mut worker = Worker::<String>::new_single_column();
+        worker.dir_first = true;
+        worker.depth_penalty = 15;
+        worker.set_mode_index(1);
+        worker.set_stability(crate::config::SortThreshold::SMART);
+
+        let paths = vec![
+            "/home/fecavmi/Downloads".to_string(),
+            "/home/fecavmi/.local/state/omarchy/current/theme/backgrounds".to_string(),
+            "/home/fecavmi/.dotfiles/main".to_string(),
+            "/home/fecavmi/dev/github/matchmaker/feat-bookmarks".to_string(),
+            "/home/fecavmi/.dotfiles/main/.agents".to_string(),
+            "/".to_string(),
+            "/home/fecavmi".to_string(),
+            "/tmp".to_string(),
+        ];
+
+        let injector = worker.nucleo.injector();
+        for p in &paths {
+            injector.push(p.clone(), |item, cols| {
+                cols[0] = item.clone().into();
+            });
+        }
+
+        worker.nucleo.tick(10);
+
+        let mut matcher = Matcher::default();
+        let (results, _, _, _) = worker.results(
+            0,
+            paths.len() as u32,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+
+        for (idx, (header, _, item_data)) in results.iter().enumerate() {
+            eprintln!("{idx}: {item_data} (header={header:?})");
+        }
+        for (idx, (header, _, item_data)) in results.iter().enumerate() {
+            assert_eq!(*header, None, "Expected no tier separator in mode 1");
+            assert_eq!(*item_data, &paths[idx], "Mismatch at position {idx}");
+        }
     }
 }

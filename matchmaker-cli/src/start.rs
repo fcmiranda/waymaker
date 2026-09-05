@@ -275,6 +275,13 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         }
     }
 
+    if config.render.ui.nav_mode {
+        let defaults = matchmaker::config::UiConfig::default().nav_binds;
+        for (k, v) in defaults {
+            config.render.ui.nav_binds.entry(k).or_insert(v);
+        }
+    }
+
     if config.render.ui.nav_mode && !config.render.ui.nav_basic {
         use matchmaker::action::Actions;
         let mut nb = |k: &str, actions: Actions<matchmaker::action::NullActionExt>| {
@@ -411,6 +418,7 @@ pub fn map_reader<E: SSS + std::fmt::Display>(
 }
 
 pub static COMMAND_ARGS: Mutex<Vec<std::ffi::OsString>> = Mutex::new(Vec::new());
+pub static TARGET_ITEM: Mutex<Option<String>> = Mutex::new(None);
 
 fn parse_border_type(s: &str) -> ratatui::widgets::BorderType {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -916,6 +924,7 @@ pub async fn start(
             s.envs.extend(envs_);
             s.picker_ui.query.set_mode_index(initial_index);
             s.picker_ui.results.set_mode_index(initial_index);
+            s.picker_ui.worker.set_mode_index(initial_index);
         });
 
     let render_tx = options.render_tx();
@@ -979,6 +988,7 @@ pub async fn start(
     let mut history: std::collections::HashMap<std::path::PathBuf, String> =
         std::collections::HashMap::new();
     mm.register_interrupt_handler(Interrupt::ChDir, move |state| {
+        state.picker_ui.worker.nucleo.tick(15);
         let template = state.payload().clone();
         if template.is_empty() {
             return;
@@ -1014,7 +1024,7 @@ pub async fn start(
         };
 
         let mut target_to_select = None;
-        if target_dir == Path::new("..") {
+        if target_path == Path::new("..") || path == ".." {
             if let Ok(cwd) = std::env::current_dir() {
                 if let Some(name) = cwd.file_name() {
                     target_to_select = Some(name.to_string_lossy().to_string());
@@ -1052,10 +1062,12 @@ pub async fn start(
             log::warn!("ChDir({}) failed: {e}", target_dir.display());
         } else {
             if let Some(t) = target_to_select {
+                *TARGET_ITEM.lock().unwrap() = Some(t.clone());
                 unsafe {
                     std::env::set_var("MM_TARGET_ITEM", t);
                 }
             } else {
+                TARGET_ITEM.lock().unwrap().take();
                 unsafe {
                     std::env::remove_var("MM_TARGET_ITEM");
                 }
@@ -1065,10 +1077,12 @@ pub async fn start(
                 let store = matchmaker::frecency::FrecencyStore::open();
                 let _ = store.add(&new_cwd.to_string_lossy());
                 if state.ui.config.nav_mode {
-                    // Reset view to local mode (index 0) and nav mode upon entering/changing directory
-                    let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
-                        matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(Some(0))),
-                    ));
+                    state.focus = matchmaker::render::Focus::Results;
+                    if state.picker_ui.query.mode_index() != 0 {
+                        let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
+                            matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(Some(0))),
+                        ));
+                    }
                     let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
                         matchmaker::action::Action::FocusNav,
                     ));
@@ -1089,26 +1103,67 @@ pub async fn start(
         }
     });
 
-    let sync_formatter = cli_formatter.clone();
-    mm.register_event_handler(Event::Synced, move |state, _| {
-        if let Ok(target) = std::env::var("MM_TARGET_ITEM") {
+    let sync_render_tx = render_tx.clone();
+    mm.register_event_handler(Event::Synced | Event::Resynced, move |state, _| {
+        let target_opt = TARGET_ITEM
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| std::env::var("MM_TARGET_ITEM").ok());
+
+        if let Some(target) = target_opt {
             let count = state.picker_ui.worker.counts().0;
+            if count == 0 {
+                return;
+            }
             let mut found = false;
+            let target_trimmed = target.trim_end_matches('/');
             for i in 0..count {
-                state.picker_ui.results.cursor_jump(i);
-                let val = use_formatter(&sync_formatter, state, "{=}", None);
-                let val_trimmed = val.trim_end_matches('/');
-                let target_trimmed = target.trim_end_matches('/');
-                if val_trimmed == target_trimmed {
-                    found = true;
-                    break;
+                if let Some(raw) = state.picker_ui.worker.get_nth(i) {
+                    let val = state.picker_ui.worker.columns[0].raw(raw);
+                    let val_trimmed = val.trim_end_matches('/');
+                    let val_is_abs = val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
+                    let target_is_abs = target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
+                    let is_match = if val_trimmed == target_trimmed {
+                        true
+                    } else if val_trimmed.trim_start_matches("./") == target_trimmed.trim_start_matches("./") {
+                        true
+                    } else if val_is_abs && target_is_abs {
+                        false
+                    } else if !val_is_abs && target_is_abs {
+                        target_trimmed.ends_with(&format!("/{}", val_trimmed))
+                    } else if val_is_abs && !target_is_abs {
+                        state.picker_ui.worker.mode_index == 0 && val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                    } else {
+                        val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                            || target_trimmed.ends_with(&format!("/{}", val_trimmed))
+                    };
+                    if is_match {
+                        state.picker_ui.results.cursor_jump(i);
+                        let _ = sync_render_tx.send(matchmaker::message::RenderCommand::Action(
+                            matchmaker::action::Action::Pos(i as i32),
+                        ));
+                        state.needs_redraw = true;
+                        found = true;
+                        break;
+                    }
                 }
             }
-            if !found && count > 0 {
+            if found {
+                TARGET_ITEM.lock().unwrap().take();
+                unsafe {
+                    std::env::remove_var("MM_TARGET_ITEM");
+                }
+            } else if !state.picker_ui.results.status.running {
+                TARGET_ITEM.lock().unwrap().take();
+                unsafe {
+                    std::env::remove_var("MM_TARGET_ITEM");
+                }
                 state.picker_ui.results.cursor_jump(0);
-            }
-            unsafe {
-                std::env::remove_var("MM_TARGET_ITEM");
+                let _ = sync_render_tx.send(matchmaker::message::RenderCommand::Action(
+                    matchmaker::action::Action::Pos(0),
+                ));
+                state.needs_redraw = true;
             }
         }
     });
@@ -1255,6 +1310,7 @@ pub async fn start(
         let is_dirs = !is_bookmarks && (cmd.contains("--dirs") || cmd.starts_with("mm list -d"));
 
         if is_bookmarks {
+            state.picker_ui.worker.set_mode_index(2);
             state.picker_ui.worker.restart(false);
             state.reloading = true;
 
@@ -1283,6 +1339,7 @@ pub async fn start(
                 )),
             ));
         } else if is_dirs {
+            state.picker_ui.worker.set_mode_index(1);
             state.picker_ui.worker.restart(false);
             state.reloading = true;
 
@@ -1304,10 +1361,29 @@ pub async fn start(
             if let Ok(cwd) = std::env::current_dir() {
                 let _ = store.add(&cwd.to_string_lossy());
             }
-            let snapshot = store.get_snapshot_with_half_life(30);
-            let mut items: Vec<(String, u32)> = snapshot.scores.into_iter().collect();
-            items.sort_by(|a, b| b.1.cmp(&a.1));
-            for (path, _) in items {
+            let pinned_paths = store.list_pins();
+            let pins_set: std::collections::HashSet<String> = pinned_paths.iter().cloned().collect();
+
+            for path in pinned_paths {
+                if std::path::Path::new(&path).is_dir() {
+                    let _ = push_fn(path);
+                }
+            }
+
+            let snapshot = store.get_snapshot();
+            let mut items: Vec<(String, u32, usize)> = Vec::new();
+            for (path, score) in snapshot.scores {
+                if pins_set.contains(&path) {
+                    continue;
+                }
+                let p = std::path::Path::new(&path);
+                if p.is_dir() {
+                    let depth = p.components().count();
+                    items.push((path, score, depth));
+                }
+            }
+            items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.cmp(&b.2)));
+            for (path, _, _) in items {
                 let _ = push_fn(path);
             }
 
@@ -1317,6 +1393,7 @@ pub async fn start(
                 )),
             ));
         } else if is_default_file_walker_command(&cmd) {
+            state.picker_ui.worker.set_mode_index(0);
             let cwd_str = current_dir.to_string_lossy().to_string();
             let cache_store = matchmaker::cache::DirCacheStore::open();
 
@@ -1505,7 +1582,8 @@ pub async fn start(
         undo_stack: Arc::new(Mutex::new(Vec::new())),
         redo_stack: Arc::new(Mutex::new(Vec::new())),
         fm_action: None,
-        query_history: std::collections::HashMap::new(),
+        mode_history: std::collections::HashMap::new(),
+        last_cwd: std::env::current_dir().ok(),
     };
 
     options = options

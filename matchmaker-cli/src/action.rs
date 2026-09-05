@@ -130,6 +130,15 @@ pub enum FmActionMode {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct ModeHistory {
+    pub query: String,
+    pub query_cursor: usize,
+    pub results_index: u32,
+    pub focused_item: Option<String>,
+    pub focus: matchmaker::render::Focus,
+}
+
 pub struct ActionContext {
     pub bind_tx: BindSender<MMAction>,
     pub render_tx: matchmaker::event::RenderSender<MMAction>,
@@ -142,7 +151,8 @@ pub struct ActionContext {
     pub undo_stack: crate::fm::UndoStack,
     pub redo_stack: crate::fm::UndoStack,
     pub fm_action: Option<FmActionMode>,
-    pub query_history: std::collections::HashMap<usize, (String, usize)>,
+    pub mode_history: std::collections::HashMap<usize, ModeHistory>,
+    pub last_cwd: Option<std::path::PathBuf>,
 }
 
 pub fn action_handler(
@@ -160,9 +170,16 @@ pub fn action_handler(
         undo_stack,
         redo_stack,
         fm_action,
-        query_history,
+        mode_history,
+        last_cwd,
     }: &mut ActionContext,
 ) {
+    if let Ok(cwd) = std::env::current_dir() {
+        if last_cwd.as_ref() != Some(&cwd) {
+            *last_cwd = Some(cwd);
+            mode_history.clear();
+        }
+    }
     match a {
         MMAction::Accept => {
             if state.picker_ui.action_visible {
@@ -272,20 +289,36 @@ pub fn action_handler(
             };
 
             if old_index != index {
-                query_history.insert(
+                let focused_item = state.current_raw().and_then(|item| {
+                    state.picker_ui.worker.columns.first().map(|c| c.raw(item).into_owned())
+                });
+                mode_history.insert(
                     old_index,
-                    (
-                        state.picker_ui.query.input.clone(),
-                        state.picker_ui.query.cursor,
-                    ),
+                    ModeHistory {
+                        query: state.picker_ui.query.input.clone(),
+                        query_cursor: state.picker_ui.query.cursor,
+                        results_index: state.picker_ui.results.index(),
+                        focused_item,
+                        focus: state.focus,
+                    },
                 );
-                if let Some((saved_input, saved_cursor)) = query_history.get(&index) {
+                if let Some(saved) = mode_history.get(&index) {
                     state
                         .picker_ui
                         .query
-                        .set(Some(saved_input.clone()), *saved_cursor as u16);
+                        .set(Some(saved.query.clone()), saved.query_cursor as u16);
+                    if let Some(ref target) = saved.focused_item {
+                        *crate::start::TARGET_ITEM.lock().unwrap() = Some(target.clone());
+                        unsafe {
+                            std::env::set_var("MM_TARGET_ITEM", target);
+                        }
+                    }
                 } else {
                     state.picker_ui.query.set(Some(String::new()), 0);
+                    *crate::start::TARGET_ITEM.lock().unwrap() = None;
+                    unsafe {
+                        std::env::remove_var("MM_TARGET_ITEM");
+                    }
                 }
             }
 
@@ -293,19 +326,49 @@ pub fn action_handler(
             state.envs.set("MM_INDEX", index);
             state.picker_ui.query.set_mode_index(index);
             state.picker_ui.results.set_mode_index(index);
+            state.picker_ui.worker.set_mode_index(index);
             state.picker_ui.results.set_status_line(None);
             state.set_interrupt(Interrupt::Reload, payload.clone());
 
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                 MMAction::SetModeIndex(index),
             )));
-            let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
-            if index == 0 && state.ui.config.nav_mode {
-                let _ = render_tx.send(RenderCommand::Action(Action::FocusNav));
+
+            if state.ui.config.nav_mode {
+                let focus_to_set = if index != 0 {
+                    matchmaker::render::Focus::Input
+                } else if let Some(saved) = mode_history.get(&index) {
+                    saved.focus
+                } else {
+                    matchmaker::render::Focus::Results
+                };
+                state.focus = focus_to_set;
+                match focus_to_set {
+                    matchmaker::render::Focus::Results => {
+                        let _ = render_tx.send(RenderCommand::Action(Action::FocusNav));
+                    }
+                    matchmaker::render::Focus::Input => {
+                        let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
+                    }
+                }
             } else {
+                state.focus = matchmaker::render::Focus::Input;
                 let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
             }
-            state.picker_ui.results.cursor_jump(0);
+
+            let has_target = mode_history
+                .get(&index)
+                .and_then(|s| s.focused_item.as_ref())
+                .is_some()
+                || crate::start::TARGET_ITEM.lock().unwrap().is_some();
+            if !has_target {
+                if let Some(pos) = mode_history.get(&index).map(|s| s.results_index) {
+                    if pos > 0 {
+                        let _ = render_tx.send(RenderCommand::Action(Action::Pos(pos as i32)));
+                        state.picker_ui.results.cursor_jump(pos);
+                    }
+                }
+            }
         }
 
         MMAction::ReloadPrev => {
@@ -320,20 +383,36 @@ pub fn action_handler(
             let index = additional_commands.1;
 
             if old_index != index {
-                query_history.insert(
+                let focused_item = state.current_raw().and_then(|item| {
+                    state.picker_ui.worker.columns.first().map(|c| c.raw(item).into_owned())
+                });
+                mode_history.insert(
                     old_index,
-                    (
-                        state.picker_ui.query.input.clone(),
-                        state.picker_ui.query.cursor,
-                    ),
+                    ModeHistory {
+                        query: state.picker_ui.query.input.clone(),
+                        query_cursor: state.picker_ui.query.cursor,
+                        results_index: state.picker_ui.results.index(),
+                        focused_item,
+                        focus: state.focus,
+                    },
                 );
-                if let Some((saved_input, saved_cursor)) = query_history.get(&index) {
+                if let Some(saved) = mode_history.get(&index) {
                     state
                         .picker_ui
                         .query
-                        .set(Some(saved_input.clone()), *saved_cursor as u16);
+                        .set(Some(saved.query.clone()), saved.query_cursor as u16);
+                    if let Some(ref target) = saved.focused_item {
+                        *crate::start::TARGET_ITEM.lock().unwrap() = Some(target.clone());
+                        unsafe {
+                            std::env::set_var("MM_TARGET_ITEM", target);
+                        }
+                    }
                 } else {
                     state.picker_ui.query.set(Some(String::new()), 0);
+                    *crate::start::TARGET_ITEM.lock().unwrap() = None;
+                    unsafe {
+                        std::env::remove_var("MM_TARGET_ITEM");
+                    }
                 }
             }
 
@@ -342,6 +421,7 @@ pub fn action_handler(
             state.envs.set("MM_INDEX", index);
             state.picker_ui.query.set_mode_index(index);
             state.picker_ui.results.set_mode_index(index);
+            state.picker_ui.worker.set_mode_index(index);
             state.picker_ui.results.set_status_line(None);
 
             state.set_interrupt(Interrupt::Reload, payload.clone());
@@ -349,20 +429,99 @@ pub fn action_handler(
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                 MMAction::SetModeIndex(index),
             )));
-            let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
-            if index == 0 && state.ui.config.nav_mode {
-                let _ = render_tx.send(RenderCommand::Action(Action::FocusNav));
+
+            if state.ui.config.nav_mode {
+                let focus_to_set = if index != 0 {
+                    matchmaker::render::Focus::Input
+                } else if let Some(saved) = mode_history.get(&index) {
+                    saved.focus
+                } else {
+                    matchmaker::render::Focus::Results
+                };
+                state.focus = focus_to_set;
+                match focus_to_set {
+                    matchmaker::render::Focus::Results => {
+                        let _ = render_tx.send(RenderCommand::Action(Action::FocusNav));
+                    }
+                    matchmaker::render::Focus::Input => {
+                        let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
+                    }
+                }
             } else {
+                state.focus = matchmaker::render::Focus::Input;
                 let _ = render_tx.send(RenderCommand::Action(Action::FocusFilter));
             }
-            state.picker_ui.results.cursor_jump(0);
+
+            let has_target = mode_history
+                .get(&index)
+                .and_then(|s| s.focused_item.as_ref())
+                .is_some()
+                || crate::start::TARGET_ITEM.lock().unwrap().is_some();
+            if !has_target {
+                if let Some(pos) = mode_history.get(&index).map(|s| s.results_index) {
+                    if pos > 0 {
+                        let _ = render_tx.send(RenderCommand::Action(Action::Pos(pos as i32)));
+                        state.picker_ui.results.cursor_jump(pos);
+                    }
+                }
+            }
         }
 
         MMAction::ReloadReady(_) => {
             state.reloading = false;
+            state.picker_ui.worker.nucleo.tick(20);
             state.picker_ui.update();
-            state.picker_ui.results.cursor_jump(0);
-            let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
+
+            let target_opt = crate::start::TARGET_ITEM
+                .lock()
+                .unwrap()
+                .clone()
+                .or_else(|| std::env::var("MM_TARGET_ITEM").ok());
+
+            let mut target_found = false;
+
+            if let Some(ref target) = target_opt {
+                let count = state.picker_ui.worker.counts().0;
+                let target_trimmed = target.trim_end_matches('/');
+                for i in 0..count {
+                    if let Some(raw) = state.picker_ui.worker.get_nth(i) {
+                        let val = state.picker_ui.worker.columns[0].raw(raw);
+                        let val_trimmed = val.trim_end_matches('/');
+                        let val_is_abs = val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
+                        let target_is_abs = target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
+                        let is_match = if val_trimmed == target_trimmed {
+                            true
+                        } else if val_trimmed.trim_start_matches("./") == target_trimmed.trim_start_matches("./") {
+                            true
+                        } else if val_is_abs && target_is_abs {
+                            false
+                        } else if !val_is_abs && target_is_abs {
+                            target_trimmed.ends_with(&format!("/{}", val_trimmed))
+                        } else if val_is_abs && !target_is_abs {
+                            state.picker_ui.worker.mode_index == 0 && val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                        } else {
+                            val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                                || target_trimmed.ends_with(&format!("/{}", val_trimmed))
+                        };
+                        if is_match {
+                            state.picker_ui.results.cursor_jump(i);
+                            let _ = render_tx.send(RenderCommand::Action(Action::Pos(i as i32)));
+                            target_found = true;
+                            crate::start::TARGET_ITEM.lock().unwrap().take();
+                            unsafe {
+                                std::env::remove_var("MM_TARGET_ITEM");
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !target_found && target_opt.is_none() {
+                state.picker_ui.results.cursor_jump(0);
+                let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
+            }
+
             state.needs_redraw = true;
         }
 
@@ -427,6 +586,7 @@ pub fn action_handler(
         MMAction::SetModeIndex(index) => {
             state.picker_ui.query.set_mode_index(index);
             state.picker_ui.results.set_mode_index(index);
+            state.picker_ui.worker.set_mode_index(index);
             state.picker_ui.results.set_status_line(None);
         }
         MMAction::SetStatus(s) => {
@@ -1450,7 +1610,8 @@ mod tests {
             undo_stack: Arc::new(Mutex::new(Vec::new())),
             redo_stack: Arc::new(Mutex::new(Vec::new())),
             fm_action: None,
-            query_history: std::collections::HashMap::new(),
+            mode_history: std::collections::HashMap::new(),
+            last_cwd: std::env::current_dir().ok(),
         };
 
         let mut mm_state = state.dispatcher(
@@ -1514,6 +1675,27 @@ mod tests {
         action_handler(MMAction::ReloadPrev, &mut mm_state, &mut action_context);
         assert_eq!(action_context.additional_commands.1, 0);
         assert_eq!(mm_state.picker_ui.query.input, "normal_query");
+
+        // 8. Test nav mode focus behavior
+        mm_state.ui.config.nav_mode = true;
+        mm_state.focus = matchmaker::render::Focus::Results;
+        action_handler(
+            MMAction::ReloadNext(None),
+            &mut mm_state,
+            &mut action_context,
+        );
+        let mode_0_hist = action_context.mode_history.get(&0).unwrap();
+        assert_eq!(mode_0_hist.focus, matchmaker::render::Focus::Results);
+        assert_eq!(mm_state.focus, matchmaker::render::Focus::Input);
+
+        // Switch back to mode 0 - should restore Nav mode (Focus::Results)
+        action_handler(
+            MMAction::ReloadNext(Some(0)),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(action_context.additional_commands.1, 0);
+        assert_eq!(mm_state.focus, matchmaker::render::Focus::Results);
     }
 
     #[test]
@@ -1567,7 +1749,8 @@ mod tests {
             undo_stack: Arc::new(Mutex::new(Vec::new())),
             redo_stack: Arc::new(Mutex::new(Vec::new())),
             fm_action: None,
-            query_history: std::collections::HashMap::new(),
+            mode_history: std::collections::HashMap::new(),
+            last_cwd: std::env::current_dir().ok(),
         };
 
         let mut mm_state = state.dispatcher(
@@ -1577,6 +1760,12 @@ mod tests {
             &mut preview_ui,
             &controller_tx,
         );
+
+        let db_file = std::env::temp_dir().join(format!("test_frecency_{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&db_file);
+        unsafe {
+            std::env::set_var("MM_FRECENCY_DB", db_file.to_str().unwrap());
+        }
 
         let cwd = std::env::current_dir().unwrap().to_string_lossy().to_string();
         let store = matchmaker::frecency::FrecencyStore::open();
@@ -1591,5 +1780,10 @@ mod tests {
         action_handler(MMAction::FmTogglePin, &mut mm_state, &mut action_context);
         let after_2nd = store.is_pinned(&cwd);
         assert_eq!(after_2nd, initial_state);
+
+        unsafe {
+            std::env::remove_var("MM_FRECENCY_DB");
+        }
+        let _ = std::fs::remove_file(&db_file);
     }
 }

@@ -309,7 +309,8 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 }
             }
             let pinned_paths = store.list_pins();
-            let pins_set: std::collections::HashSet<String> = pinned_paths.iter().cloned().collect();
+            let pins_set: std::collections::HashSet<String> =
+                pinned_paths.iter().cloned().collect();
 
             if pins_only {
                 for path in pinned_paths {
@@ -343,10 +344,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 }
             }
 
-            pinned_matches.sort_by(|a, b| {
-                b.2.cmp(&a.2)
-                    .then_with(|| a.1.cmp(&b.1))
-            });
+            pinned_matches.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.1.cmp(&b.1)));
 
             let snapshot = store.get_snapshot();
             let mut matches: Vec<(String, u32, usize, bool)> = Vec::new();

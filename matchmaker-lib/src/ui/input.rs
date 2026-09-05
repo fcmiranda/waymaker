@@ -369,11 +369,7 @@ impl QueryUI {
         if focused || nav_prompt.is_none() || nav_prompt.unwrap().is_empty() {
             let (prompt_text, style) = match self.mode_index {
                 1 => {
-                    let text = self
-                        .config
-                        .frecency_prompt
-                        .as_deref()
-                        .unwrap_or("󱅤 ");
+                    let text = self.config.frecency_prompt.as_deref().unwrap_or("󱅤 ");
                     let st = if !self.config.frecency_prompt_style.is_empty() {
                         self.config.frecency_prompt_style
                     } else {
@@ -385,11 +381,7 @@ impl QueryUI {
                     (text, st)
                 }
                 2 => {
-                    let text = self
-                        .config
-                        .bookmarks_prompt
-                        .as_deref()
-                        .unwrap_or(" ");
+                    let text = self.config.bookmarks_prompt.as_deref().unwrap_or(" ");
                     let st = if !self.config.bookmarks_prompt_style.is_empty() {
                         self.config.bookmarks_prompt_style
                     } else {
@@ -440,7 +432,10 @@ impl QueryUI {
 
     pub fn active_underline_style(&self, focused: bool) -> (bool, StyleSetting) {
         if focused {
-            let active = self.config.filter_underline.unwrap_or(self.config.underline)
+            let active = self
+                .config
+                .filter_underline
+                .unwrap_or(self.config.underline)
                 || !self.config.filter_underline_style.is_empty()
                 || !self.config.frecency_underline_style.is_empty()
                 || !self.config.bookmarks_underline_style.is_empty()
@@ -563,7 +558,9 @@ impl QueryUI {
             }
             let u_fg = u_style.fg;
             for span in line.spans.iter_mut() {
-                span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+                span.style = span
+                    .style
+                    .add_modifier(ratatui::style::Modifier::UNDERLINED);
                 if let Some(fg) = u_fg {
                     span.style = span.style.underline_color(fg);
                 }
@@ -632,7 +629,9 @@ impl QueryUI {
             }
             let u_fg = u_style.fg;
             for span in line.spans.iter_mut() {
-                span.style = span.style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+                span.style = span
+                    .style
+                    .add_modifier(ratatui::style::Modifier::UNDERLINED);
                 if let Some(fg) = u_fg {
                     span.style = span.style.underline_color(fg);
                 }

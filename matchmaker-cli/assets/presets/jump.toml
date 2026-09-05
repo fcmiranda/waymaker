@@ -75,6 +75,8 @@ side = "right"
 percentage = 50
 
 [binds]
+"tab" = []
+"esc" = "ToggleFocus"
 "ctrl-f" = "@dirs"
 "ctrl-b" = "@bookmarks"
 "*" = "@bookmark"
@@ -86,6 +88,14 @@ percentage = 50
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
 [ui.nav_binds]
+"tab" = []
+" " = "Toggle"
+"esc" = "Quit"
+"/" = "FocusFilter"
+"q" = "Quit"
+"j" = "Down"
+"k" = "Up"
+"backspace" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
 "f" = "@dirs"
 "b" = "@bookmarks"
 "*" = "@bookmark"

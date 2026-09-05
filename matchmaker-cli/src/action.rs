@@ -941,12 +941,20 @@ pub fn action_handler(
                         }
                     }
                 }
-                let verb = if last_state { "Bookmarked" } else { "Unbookmarked" };
+                let verb = if last_state {
+                    "Bookmarked"
+                } else {
+                    "Unbookmarked"
+                };
                 let is_dir = paths
                     .first()
                     .map(|p| std::path::Path::new(p).is_dir())
                     .unwrap_or(false);
-                let icon_str = if is_dir { "{yellow:󰮟}" } else { "{yellow:󱀻}" };
+                let icon_str = if is_dir {
+                    "{yellow:󰮟}"
+                } else {
+                    "{yellow:󱀻}"
+                };
                 let color = if last_state { icon_str } else { "{darkgray}" };
                 let msg = fm_notify_msg(verb, &paths, color);
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
@@ -1396,11 +1404,11 @@ mod tests {
 
     #[test]
     fn test_reload_next_and_prev_query_preservation() {
+        use matchmaker::Selector;
         use matchmaker::config::*;
         use matchmaker::nucleo::Worker;
         use matchmaker::render::State;
         use matchmaker::ui::{DisplayUI, PickerUI, UI};
-        use matchmaker::Selector;
         use std::sync::{Arc, Mutex};
 
         let (bind_tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -1437,11 +1445,7 @@ mod tests {
             bind_tx,
             render_tx,
             additional_commands: (
-                vec![
-                    "cmd0".to_string(),
-                    "cmd1".to_string(),
-                    "cmd2".to_string(),
-                ],
+                vec!["cmd0".to_string(), "cmd1".to_string(), "cmd2".to_string()],
                 0,
             ),
             output_template: None,
@@ -1520,11 +1524,11 @@ mod tests {
 
     #[test]
     fn test_fm_toggle_pin() {
+        use matchmaker::Selector;
         use matchmaker::config::*;
         use matchmaker::nucleo::Worker;
         use matchmaker::render::State;
         use matchmaker::ui::{DisplayUI, PickerUI, UI};
-        use matchmaker::Selector;
         use std::sync::{Arc, Mutex};
 
         let (bind_tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -1580,7 +1584,10 @@ mod tests {
             &controller_tx,
         );
 
-        let cwd = std::env::current_dir().unwrap().to_string_lossy().to_string();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let store = matchmaker::frecency::FrecencyStore::open();
         let initial_state = store.is_pinned(&cwd);
 

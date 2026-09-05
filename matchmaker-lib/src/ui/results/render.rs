@@ -824,8 +824,7 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && col_idx == 0 {
-                        let is_pinned =
-                            Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
+                        let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name,
@@ -1231,8 +1230,7 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && x == 0 {
-                        let is_pinned =
-                            Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
+                        let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name_hz,

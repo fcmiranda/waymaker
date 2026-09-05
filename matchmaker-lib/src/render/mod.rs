@@ -127,7 +127,11 @@ fn apply_sort_menu<A: ActionExt>(buffer: &mut Vec<RenderCommand<A>>, sort_menu_a
             RenderCommand::Tick => {
                 out.push(RenderCommand::Tick);
             }
-            RenderCommand::Action(Action::Char(c)) => {
+            RenderCommand::Action(Action::Char(c))
+            | RenderCommand::KeyAction {
+                action: Action::Char(c),
+                ..
+            } => {
                 *sort_menu_active = false;
                 match c {
                     'a' => out.push(RenderCommand::Action(Action::Sort(Some(
@@ -171,12 +175,29 @@ fn apply_sort_menu<A: ActionExt>(buffer: &mut Vec<RenderCommand<A>>, sort_menu_a
                     }
                 }
             }
-            RenderCommand::Action(Action::Quit(1)) | RenderCommand::Action(Action::Cancel) => {
+            RenderCommand::Action(Action::Quit(1))
+            | RenderCommand::Action(Action::Cancel)
+            | RenderCommand::KeyAction {
+                action: Action::Quit(1) | Action::Cancel,
+                ..
+            } => {
                 // Escape or Cancel closes sort menu without exiting the picker
                 *sort_menu_active = false;
             }
-            RenderCommand::Action(Action::SortMenu) => {
+            RenderCommand::KeyAction { key, .. } if key == "esc" => {
+                // Escape closes sort menu without exiting the picker
                 *sort_menu_active = false;
+            }
+            RenderCommand::Action(Action::SortMenu)
+            | RenderCommand::KeyAction {
+                action: Action::SortMenu,
+                ..
+            } => {
+                *sort_menu_active = false;
+            }
+            RenderCommand::Action(a) | RenderCommand::KeyAction { action: a, .. } => {
+                *sort_menu_active = false;
+                out.push(RenderCommand::Action(a));
             }
             other => {
                 *sort_menu_active = false;
@@ -186,6 +207,141 @@ fn apply_sort_menu<A: ActionExt>(buffer: &mut Vec<RenderCommand<A>>, sort_menu_a
     }
 
     *buffer = out;
+}
+
+fn get_nav_bind<'a>(
+    focus_binds: &'a std::collections::HashMap<String, crate::action::Actions<NullActionExt>>,
+    key: &str,
+) -> Option<&'a crate::action::Actions<NullActionExt>> {
+    focus_binds
+        .get(key)
+        .or_else(|| (key == "space").then(|| focus_binds.get(" ")).flatten())
+        .or_else(|| (key == " ").then(|| focus_binds.get("space")).flatten())
+}
+
+fn update_sim_focus<A: ActionExt>(action: &Action<A>, sim_focus: &mut Focus) {
+    match action {
+        Action::ToggleFocus => {
+            *sim_focus = match *sim_focus {
+                Focus::Input => Focus::Results,
+                Focus::Results => Focus::Input,
+            };
+        }
+        Action::FocusFilter => {
+            *sim_focus = Focus::Input;
+        }
+        Action::FocusNav => {
+            *sim_focus = Focus::Results;
+        }
+        _ => {}
+    }
+}
+
+fn process_results_nav_key<A: ActionExt>(
+    key: &str,
+    fallback_action: Option<Action<A>>,
+    focus_binds: &std::collections::HashMap<String, crate::action::Actions<NullActionExt>>,
+    pending_nav_key: &mut Option<char>,
+    sort_menu_active: &mut bool,
+    sim_focus: &mut Focus,
+    out: &mut Vec<RenderCommand<A>>,
+) {
+    if key == "," {
+        *pending_nav_key = None;
+        *sort_menu_active = true;
+        out.push(RenderCommand::Action(Action::SortMenu));
+        return;
+    }
+    match pending_nav_key.take() {
+        Some('g') => {
+            if key == "g" {
+                let seq = "gg".to_string();
+                if let Some(actions) = get_nav_bind(focus_binds, &seq) {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            update_sim_focus(&action, sim_focus);
+                            out.push(RenderCommand::Action(action));
+                        }
+                    }
+                } else {
+                    out.push(RenderCommand::Action(Action::PreviewUp(0)));
+                }
+            } else if key == "t" {
+                let seq = "gt".to_string();
+                if let Some(actions) = get_nav_bind(focus_binds, &seq) {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            update_sim_focus(&action, sim_focus);
+                            out.push(RenderCommand::Action(action));
+                        }
+                    }
+                } else {
+                    out.push(RenderCommand::Action(Action::Pos(0)));
+                }
+            } else if key == "b" {
+                let seq = "gb".to_string();
+                if let Some(actions) = get_nav_bind(focus_binds, &seq) {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            update_sim_focus(&action, sim_focus);
+                            out.push(RenderCommand::Action(action));
+                        }
+                    }
+                } else {
+                    out.push(RenderCommand::Action(Action::Pos(-1)));
+                }
+            } else if let Some(actions) = get_nav_bind(focus_binds, key) {
+                for action in actions.iter().cloned() {
+                    if let Some(action) = action_from_null::<A>(action) {
+                        update_sim_focus(&action, sim_focus);
+                        out.push(RenderCommand::Action(action));
+                    }
+                }
+            }
+        }
+        _ => {
+            if key == "g" {
+                *pending_nav_key = Some('g');
+            } else if let Some(actions) = get_nav_bind(focus_binds, key) {
+                for action in actions.iter().cloned() {
+                    if let Some(action) = action_from_null::<A>(action) {
+                        update_sim_focus(&action, sim_focus);
+                        out.push(RenderCommand::Action(action));
+                    }
+                }
+            } else if let Some(action) = fallback_action {
+                match &action {
+                    Action::ToggleFocus => {
+                        *sim_focus = Focus::Input;
+                        out.push(RenderCommand::Action(Action::ToggleFocus));
+                    }
+                    Action::FocusFilter => {
+                        *sim_focus = Focus::Input;
+                        out.push(RenderCommand::Action(Action::FocusFilter));
+                    }
+                    Action::FocusNav => {
+                        *sim_focus = Focus::Results;
+                        out.push(RenderCommand::Action(Action::FocusNav));
+                    }
+                    Action::Char(_) => {
+                        // Drop unbound plain characters in nav mode
+                    }
+                    Action::DeleteChar
+                    | Action::DeleteWord
+                    | Action::DeleteNextChar
+                    | Action::DeleteNextWord
+                    | Action::DeleteLineStart
+                    | Action::DeleteLineEnd => {
+                        // Drop unbound editing actions in nav mode
+                    }
+                    _ => {
+                        update_sim_focus(&action, sim_focus);
+                        out.push(RenderCommand::Action(action));
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Pre-process `buffer` for navigation mode: simulate `ToggleFocus` events encountered in the
@@ -199,6 +355,11 @@ fn apply_focus_binds<A: ActionExt>(
     sort_menu_active: &mut bool,
 ) {
     if overlay_active {
+        for cmd in buffer {
+            if let RenderCommand::KeyAction { action, .. } = cmd {
+                *cmd = RenderCommand::Action(action.clone());
+            }
+        }
         return;
     }
 
@@ -216,11 +377,22 @@ fn apply_focus_binds<A: ActionExt>(
                 out.push(RenderCommand::Tick);
             }
             RenderCommand::Action(Action::ToggleFocus) => {
-                sim_focus = match sim_focus {
-                    Focus::Input => Focus::Results,
-                    Focus::Results => Focus::Input,
-                };
-                out.push(RenderCommand::Action(Action::ToggleFocus));
+                if sim_focus == Focus::Results
+                    && let Some(actions) = get_nav_bind(focus_binds, "esc")
+                {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            update_sim_focus(&action, &mut sim_focus);
+                            out.push(RenderCommand::Action(action));
+                        }
+                    }
+                } else {
+                    sim_focus = match sim_focus {
+                        Focus::Input => Focus::Results,
+                        Focus::Results => Focus::Input,
+                    };
+                    out.push(RenderCommand::Action(Action::ToggleFocus));
+                }
             }
             RenderCommand::Action(Action::FocusFilter) => {
                 sim_focus = Focus::Input;
@@ -231,73 +403,32 @@ fn apply_focus_binds<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::FocusNav));
             }
             RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
-                if c == ',' {
-                    *pending_nav_key = None;
-                    *sort_menu_active = true;
-                    out.push(RenderCommand::Action(Action::SortMenu));
-                    continue;
-                }
-                match pending_nav_key.take() {
-                    Some('g') => {
-                        if c == 'g' {
-                            let seq = "gg".to_string();
-                            if let Some(actions) = focus_binds.get(&seq) {
-                                for action in actions.iter().cloned() {
-                                    if let Some(action) = action_from_null::<A>(action) {
-                                        out.push(RenderCommand::Action(action));
-                                    }
-                                }
-                            } else {
-                                out.push(RenderCommand::Action(Action::PreviewUp(0)));
-                            }
-                        } else if c == 't' {
-                            let seq = "gt".to_string();
-                            if let Some(actions) = focus_binds.get(&seq) {
-                                for action in actions.iter().cloned() {
-                                    if let Some(action) = action_from_null::<A>(action) {
-                                        out.push(RenderCommand::Action(action));
-                                    }
-                                }
-                            } else {
-                                out.push(RenderCommand::Action(Action::Pos(0)));
-                            }
-                        } else if c == 'b' {
-                            let seq = "gb".to_string();
-                            if let Some(actions) = focus_binds.get(&seq) {
-                                for action in actions.iter().cloned() {
-                                    if let Some(action) = action_from_null::<A>(action) {
-                                        out.push(RenderCommand::Action(action));
-                                    }
-                                }
-                            } else {
-                                out.push(RenderCommand::Action(Action::Pos(-1)));
-                            }
-                        } else {
-                            let key = c.to_string();
-                            if let Some(actions) = focus_binds.get(&key) {
-                                for action in actions.iter().cloned() {
-                                    if let Some(action) = action_from_null::<A>(action) {
-                                        out.push(RenderCommand::Action(action));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    _ => {
-                        if c == 'g' {
-                            *pending_nav_key = Some('g');
-                        } else {
-                            let key = c.to_string();
-                            if let Some(actions) = focus_binds.get(&key) {
-                                for action in actions.iter().cloned() {
-                                    if let Some(action) = action_from_null::<A>(action) {
-                                        out.push(RenderCommand::Action(action));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                let key = c.to_string();
+                process_results_nav_key(
+                    &key,
+                    Some(Action::Char(c)),
+                    focus_binds,
+                    pending_nav_key,
+                    sort_menu_active,
+                    &mut sim_focus,
+                    &mut out,
+                );
+            }
+            RenderCommand::KeyAction { key, action } if sim_focus == Focus::Results => {
+                process_results_nav_key(
+                    &key,
+                    Some(action),
+                    focus_binds,
+                    pending_nav_key,
+                    sort_menu_active,
+                    &mut sim_focus,
+                    &mut out,
+                );
+            }
+            RenderCommand::KeyAction { key: _, action } => {
+                // sim_focus == Focus::Input
+                update_sim_focus(&action, &mut sim_focus);
+                out.push(RenderCommand::Action(action));
             }
             other => out.push(other),
         }
@@ -320,6 +451,15 @@ fn apply_aliases<T: SSS, S: Selection, A: ActionExt>(
                     .into_iter()
                     .map(RenderCommand::Action),
             ),
+            RenderCommand::KeyAction { key, action } => {
+                let transformed = aliaser(action, dispatcher);
+                for a in transformed {
+                    out.push(RenderCommand::KeyAction {
+                        key: key.clone(),
+                        action: a,
+                    });
+                }
+            }
             other => out.push(other),
         }
     }
@@ -438,6 +578,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     ),
                 )
             };
+        } else {
+            for cmd in &mut buffer {
+                if let RenderCommand::KeyAction { action, .. } = cmd {
+                    *cmd = RenderCommand::Action(action.clone());
+                }
+            }
         }
 
         if state.should_quit {
@@ -724,7 +870,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                 RenderCommand::Empty => {
                     return Ok(vec![]);
                 }
-                RenderCommand::Action(action) => {
+                RenderCommand::Action(action) | RenderCommand::KeyAction { action, .. } => {
                     if let Some(x) = overlay_ui.as_mut() {
                         if match action {
                             Action::Char(c) => x.handle_input(c),
@@ -1044,7 +1190,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                             let mut remainder = crate::action::Actions::default();
                             for cmd in events.by_ref() {
-                                if let RenderCommand::Action(a) = cmd {
+                                if let RenderCommand::Action(a)
+                                | RenderCommand::KeyAction { action: a, .. } = cmd
+                                {
                                     remainder.push(a);
                                 }
                             }
@@ -1079,7 +1227,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 state.focus_tick = 0;
                                 let prompt = &ui.config.nav_prompt;
                                 if !prompt.is_empty() {
-                                    picker_ui.query.set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
+                                    picker_ui
+                                        .query
+                                        .set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
                                 }
                             }
                             state.set_interrupt(Interrupt::ChDir, payload);
@@ -1301,7 +1451,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 state.focus_tick = 0;
                                 let prompt = &ui.config.nav_prompt;
                                 if !prompt.is_empty() {
-                                    picker_ui.query.set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
+                                    picker_ui
+                                        .query
+                                        .set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
                                 }
                                 tui.redraw();
                             }
@@ -2797,6 +2949,124 @@ mod test {
         );
         assert_eq!(buffer.len(), 0);
         assert!(!sort_menu_active);
+    }
+
+    #[test]
+    fn test_apply_focus_binds_key_actions() {
+        use crate::action::NullActionExt;
+
+        let mut focus_binds = HashMap::new();
+        focus_binds.insert("esc".to_string(), Actions::from([Action::Quit(1)]));
+        focus_binds.insert("q".to_string(), Actions::from([Action::Quit(1)]));
+        focus_binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
+        focus_binds.insert(
+            "backspace".to_string(),
+            Actions::from([
+                Action::ChDir("..".to_string()),
+                Action::Cancel,
+                Action::Reload("".to_string()),
+                Action::FocusNav,
+            ]),
+        );
+
+        let mut pending = None;
+        let mut sort_menu_active = false;
+
+        // 1. Esc in Focus::Results with "esc" = "Quit" in nav_binds must emit Action::Quit(1), not ToggleFocus
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "esc".to_string(),
+            action: Action::ToggleFocus,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(1))));
+
+        // 2. Esc in Focus::Input must toggle focus to Results
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "esc".to_string(),
+            action: Action::ToggleFocus,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::ToggleFocus)
+        ));
+
+        // 3. Backspace in Focus::Results must run custom nav_binds (ChDir(..), Cancel, Reload, FocusNav)
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "backspace".to_string(),
+            action: Action::DeleteChar,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 4);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::ChDir(_))));
+        assert!(matches!(buffer[1], RenderCommand::Action(Action::Cancel)));
+        assert!(matches!(
+            buffer[2],
+            RenderCommand::Action(Action::Reload(_))
+        ));
+        assert!(matches!(buffer[3], RenderCommand::Action(Action::FocusNav)));
+
+        // 4. Backspace in Focus::Input must delete char
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "backspace".to_string(),
+            action: Action::DeleteChar,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::DeleteChar)
+        ));
+
+        // 5. Esc in Focus::Results WITHOUT "esc" in nav_binds toggles focus to Input
+        let empty_binds = HashMap::new();
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "esc".to_string(),
+            action: Action::ToggleFocus,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &empty_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::ToggleFocus)
+        ));
     }
 }
 

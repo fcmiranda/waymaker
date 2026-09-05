@@ -75,6 +75,10 @@ pub enum Interrupt {
 #[derive(Debug, strum_macros::Display, Clone)]
 pub enum RenderCommand<A: ActionExt> {
     Action(Action<A>),
+    KeyAction {
+        key: String,
+        action: Action<A>,
+    },
     Mouse(MouseEvent),
     Resize(Rect),
     #[cfg(feature = "bracketed-paste")]

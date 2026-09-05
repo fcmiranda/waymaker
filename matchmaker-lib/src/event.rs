@@ -139,6 +139,7 @@ impl<A: ActionExt> EventLoop<A> {
     }
 
     fn dispatch_fallback_key(&mut self, key: KeyCombination) {
+        let key_str = key.to_string();
         let mut matched = true;
         // a basic set of keys to ensure basic usability
         match key {
@@ -146,21 +147,21 @@ impl<A: ActionExt> EventLoop<A> {
                 self.send(RenderCommand::quit_with(130));
             }
             key!(esc) => {
-                self.send(RenderCommand::quit());
+                self.send_key_action(Action::Quit(1), key_str);
             }
-            key!(up) => self.send_action(Action::Up(1)),
-            key!(down) => self.send_action(Action::Down(1)),
-            key!(enter) => self.send_action(Action::Accept),
-            key!(right) => self.send_action(Action::ForwardChar),
-            key!(left) => self.send_action(Action::BackwardChar),
-            key!(ctrl - right) => self.send_action(Action::ForwardWord),
-            key!(ctrl - left) => self.send_action(Action::BackwardWord),
-            key!(backspace) => self.send_action(Action::DeleteChar),
-            key!(ctrl - h) => self.send_action(Action::DeleteWord),
-            key!(ctrl - u) => self.send_action(Action::Cancel),
-            key!(alt - h) => self.send_action(Action::Help("".to_string())),
-            key!(ctrl - '[') => self.send_action(Action::ToggleWrap),
-            key!(ctrl - ']') => self.send_action(Action::TogglePreviewWrap),
+            key!(up) => self.send_key_action(Action::Up(1), key_str),
+            key!(down) => self.send_key_action(Action::Down(1), key_str),
+            key!(enter) => self.send_key_action(Action::Accept, key_str),
+            key!(right) => self.send_key_action(Action::ForwardChar, key_str),
+            key!(left) => self.send_key_action(Action::BackwardChar, key_str),
+            key!(ctrl - right) => self.send_key_action(Action::ForwardWord, key_str),
+            key!(ctrl - left) => self.send_key_action(Action::BackwardWord, key_str),
+            key!(backspace) => self.send_key_action(Action::DeleteChar, key_str),
+            key!(ctrl - h) => self.send_key_action(Action::DeleteWord, key_str),
+            key!(ctrl - u) => self.send_key_action(Action::Cancel, key_str),
+            key!(alt - h) => self.send_key_action(Action::Help("".to_string()), key_str),
+            key!(ctrl - '[') => self.send_key_action(Action::ToggleWrap, key_str),
+            key!(ctrl - ']') => self.send_key_action(Action::TogglePreviewWrap, key_str),
             _ => {
                 matched = false;
             }
@@ -324,7 +325,10 @@ impl<A: ActionExt> EventLoop<A> {
                                                 self.record_key(key.to_string());
                                                 self.send_actions(actions, Some(key.to_string()));
                                             } else if let Some(c) = key_code_as_letter(key) {
-                                                self.send(RenderCommand::Action(Action::Char(c)));
+                                                self.send(RenderCommand::KeyAction {
+                                                    key: c.to_string(),
+                                                    action: Action::Char(c),
+                                                });
                                             } else {
                                                 self.dispatch_fallback_key(key);
                                             }
@@ -332,7 +336,10 @@ impl<A: ActionExt> EventLoop<A> {
                                             // Action box is active: plain chars always go to input.
                                             // Non-char keys (ctrl-c, esc, enter, editing keys) still
                                             // go through the normal bind/fallback path.
-                                            self.send(RenderCommand::Action(Action::Char(c)));
+                                            self.send(RenderCommand::KeyAction {
+                                                key: c.to_string(),
+                                                action: Action::Char(c),
+                                            });
                                         } else if let Some(actions) = self.get_bind(TriggerKind::Key(key)) {
                                             self.record_key(key.to_string());
                                             self.send_actions(actions, Some(key.to_string()));
@@ -417,7 +424,7 @@ impl<A: ActionExt> EventLoop<A> {
                 }
                 Action::Semantic(s) => {
                     if let Some(actions) = self.get_bind(TriggerKind::Semantic(s)) {
-                        self.send_actions(actions.clone(), None);
+                        self.send_actions(actions.clone(), key.clone());
                     }
                 }
                 Action::SetMode(m) => {
@@ -425,7 +432,16 @@ impl<A: ActionExt> EventLoop<A> {
                         *mode = m;
                     }
                 }
-                _ => self.send(action.into()),
+                _ => {
+                    if let Some(k) = &key {
+                        self.send(RenderCommand::KeyAction {
+                            key: k.clone(),
+                            action,
+                        });
+                    } else {
+                        self.send(action.into());
+                    }
+                }
             }
         }
     }
@@ -434,6 +450,11 @@ impl<A: ActionExt> EventLoop<A> {
         self.fmt.to_string(key_combination)
     }
 
+    fn send_key_action(&self, action: Action<A>, key: String) {
+        self.send(RenderCommand::KeyAction { key, action });
+    }
+
+    #[allow(dead_code)]
     fn send_action(&self, action: Action<A>) {
         self.send(RenderCommand::Action(action));
     }

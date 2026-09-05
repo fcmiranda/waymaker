@@ -906,7 +906,9 @@ pub async fn start(
     let render_tx = options.render_tx();
     if initial_index > 0 {
         let _ = render_tx.send(matchmaker::message::RenderCommand::Action(
-            matchmaker::action::Action::Custom(crate::action::MMAction::SetModeIndex(initial_index)),
+            matchmaker::action::Action::Custom(crate::action::MMAction::SetModeIndex(
+                initial_index,
+            )),
         ));
     }
     let push_fn = inject_line(
@@ -1052,7 +1054,9 @@ pub async fn start(
                 if state.ui.config.nav_mode {
                     // Reset view to local mode (index 0) and nav mode upon entering/changing directory
                     let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
-                        matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(Some(0))),
+                        matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(
+                            Some(0),
+                        )),
                     ));
                     let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
                         matchmaker::action::Action::FocusNav,
@@ -1238,9 +1242,7 @@ pub async fn start(
             }
 
             let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
-                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
-                    vec![],
-                )),
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(vec![])),
             ));
         } else if is_dirs {
             state.picker_ui.worker.restart(true);
@@ -1272,9 +1274,7 @@ pub async fn start(
             }
 
             let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
-                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
-                    vec![],
-                )),
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(vec![])),
             ));
         } else if is_default_file_walker_command(&cmd) {
             let cwd_str = current_dir.to_string_lossy().to_string();
@@ -1304,9 +1304,9 @@ pub async fn start(
                         }
 
                         let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
-                            matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
-                                vec![],
-                            )),
+                            matchmaker::action::Action::Custom(
+                                crate::action::MMAction::ReloadReady(vec![]),
+                            ),
                         ));
                         return;
                     }
@@ -1526,19 +1526,27 @@ pub async fn start(
                 acs![MMAction::FmTogglePin]
             }
             Action::Semantic(ref s)
-                if s == "pins" || s == "bookmarks" || s == "reload_pins" || s == "reload_bookmarks" =>
+                if s == "pins"
+                    || s == "bookmarks"
+                    || s == "reload_pins"
+                    || s == "reload_bookmarks" =>
             {
                 acs![MMAction::ReloadNext(Some(2))]
             }
             Action::Semantic(ref s)
-                if s == "dirs" || s == "frecency" || s == "reload_dirs" || s == "reload_frecency" =>
+                if s == "dirs"
+                    || s == "frecency"
+                    || s == "reload_dirs"
+                    || s == "reload_frecency" =>
             {
                 acs![MMAction::ReloadNext(Some(1))]
             }
             Action::Semantic(ref s) if s == "cycle" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadnext" => acs![MMAction::ReloadNext(None)],
             Action::Semantic(ref s) if s == "reloadprev" => acs![MMAction::ReloadPrev],
-            Action::Semantic(ref s) if s == "reload_local" || s == "local" => acs![MMAction::ReloadNext(Some(0))],
+            Action::Semantic(ref s) if s == "reload_local" || s == "local" => {
+                acs![MMAction::ReloadNext(Some(0))]
+            }
             _ => acs![a],
         });
 

@@ -24,7 +24,10 @@ impl ResultsUI {
         if set.contains(col0_name) {
             return true;
         }
-        let trimmed = col0_name.trim().trim_end_matches('/').trim_end_matches('\\');
+        let trimmed = col0_name
+            .trim()
+            .trim_end_matches('/')
+            .trim_end_matches('\\');
         if set.contains(trimmed) {
             return true;
         }
@@ -308,14 +311,8 @@ pub(super) fn insert_icon_span(
                 .unwrap_or(Color::Blue);
             (icon.into(), color)
         } else {
-            let icon = results_config
-                .frecency_icon
-                .as_deref()
-                .unwrap_or("󱋢");
-            let color = results_config
-                .frecency_icon_style
-                .fg
-                .unwrap_or(Color::Blue);
+            let icon = results_config.frecency_icon.as_deref().unwrap_or("󱋢");
+            let color = results_config.frecency_icon_style.fg.unwrap_or(Color::Blue);
             (icon.into(), color)
         }
     } else {

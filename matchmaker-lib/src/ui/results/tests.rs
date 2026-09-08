@@ -329,4 +329,122 @@ fn test_results_ui_mode_2_bookmarks_and_folders_styling() {
     assert_ne!(cell_file.bg, Color::DarkGray);
 }
 
+#[test]
+fn test_results_ui_cut_and_yanked_navbar_and_flash_icons() {
+    let mut results_config = ResultsConfig::default();
+    results_config.icons = true;
+    results_config.current_nav_bar_style = StyleSetting {
+        fg: Some(Color::Green),
+        bg: Some(Color::DarkGray),
+        ..Default::default()
+    };
+    results_config.current_style = StyleSetting {
+        bg: Some(Color::DarkGray),
+        ..Default::default()
+    };
+
+    let status_config = StatusConfig::default();
+    let mut results_ui = ResultsUI::new(results_config, status_config);
+    let area = ratatui::layout::Rect::new(0, 0, 40, 10);
+    results_ui.update_dimensions(&area);
+
+    let mut worker = Worker::<String>::new_single_column();
+    worker.dir_first = true;
+    let injector = worker.nucleo.injector();
+    injector.push("cut_folder/".to_string(), |item, cols| {
+        cols[0] = item.clone().into()
+    });
+    injector.push("yank_file.txt".to_string(), |item, cols| {
+        cols[0] = item.clone().into()
+    });
+    worker.nucleo.tick(10);
+
+    let mut selector = crate::selector::Selector::new(|_s: &String| (0u32, ())).disabled();
+    let mut matcher = nucleo::Matcher::default();
+    let mut click = Click::None;
+
+    results_ui.cut_paths.insert("cut_folder/".to_string());
+    results_ui.yank_paths.insert("yank_file.txt".to_string());
+    results_ui.set_flash_target("cut_folder/".to_string(), FlashOp::Cut);
+    results_ui.set_flash_target("yank_file.txt".to_string(), FlashOp::Copy);
+
+    let nav_bar_style = Some((
+        ratatui::widgets::BorderType::Thick,
+        ratatui::style::Style::default().fg(Color::Blue),
+    ));
+
+    // Focus row 0 (cut_folder/)
+    results_ui.cursor = 0;
+    let table = results_ui.make_table(
+        0,
+        &mut worker,
+        &mut selector,
+        &mut matcher,
+        &mut click,
+        nav_bar_style,
+        false,
+    );
+
+    use ratatui::widgets::Widget;
+    let render_area = ratatui::layout::Rect::new(0, 0, 40, 5);
+    let mut buf = ratatui::buffer::Buffer::empty(render_area);
+    table.render(render_area, &mut buf);
+
+    // Row 0 (cut_folder/) - Cut navbar is Red (even with current_nav_bar_style.fg = Green)
+    let row0_nav_cell = &buf[(0, 0)];
+    assert_eq!(row0_nav_cell.fg, Color::Red);
+    assert_eq!(row0_nav_cell.bg, Color::DarkGray);
+
+    // Row 0 Icon is Cut flash glyph: "󰆐" and Red
+    let cut_icon_x = (0..40).find(|&x| buf[(x, 0)].symbol() == "󰆐").unwrap();
+    let cut_icon_cell = &buf[(cut_icon_x, 0)];
+    assert_eq!(cut_icon_cell.fg, Color::Red);
+
+    // Row 2 (yank_file.txt) - Yanked navbar is Yellow
+    let row2_nav_cell = &buf[(0, 2)];
+    assert_eq!(row2_nav_cell.fg, Color::Yellow);
+
+    // Row 2 Icon is Copy flash glyph: "󰆏" and Yellow
+    let copy_icon_x = (0..40).find(|&x| buf[(x, 2)].symbol() == "󰆏").unwrap();
+    let copy_icon_cell = &buf[(copy_icon_x, 2)];
+    assert_eq!(copy_icon_cell.fg, Color::Yellow);
+
+    // --- After flash expiry (e.g. > 1.5s): flash_targets is cleared, but items remain cut/yanked ---
+    results_ui.flash_targets.clear();
+    let table_post_flash = results_ui.make_table(
+        0,
+        &mut worker,
+        &mut selector,
+        &mut matcher,
+        &mut click,
+        nav_bar_style,
+        false,
+    );
+    let mut buf_post_flash = ratatui::buffer::Buffer::empty(render_area);
+    table_post_flash.render(render_area, &mut buf_post_flash);
+
+    // Row 0 (cut_folder/) - Navbar REMAINS Red
+    let row0_post_nav = &buf_post_flash[(0, 0)];
+    assert_eq!(row0_post_nav.fg, Color::Red);
+    assert_eq!(row0_post_nav.bg, Color::DarkGray);
+
+    // Row 0 Icon returned to folder glyph "\u{f115}" (nf-fa-folder_open) BUT color REMAINS Red
+    let row0_icon_x = (0..40)
+        .find(|&x| buf_post_flash[(x, 0)].symbol() == "\u{f115}")
+        .unwrap();
+    let row0_icon_cell = &buf_post_flash[(row0_icon_x, 0)];
+    assert_eq!(row0_icon_cell.fg, Color::Red);
+
+    // Row 2 (yank_file.txt) - Navbar REMAINS Yellow
+    let row2_post_nav = &buf_post_flash[(0, 2)];
+    assert_eq!(row2_post_nav.fg, Color::Yellow);
+
+    // Row 2 Icon returned to text file glyph "\u{f15c}" BUT color REMAINS Yellow
+    let row2_icon_x = (0..40)
+        .find(|&x| buf_post_flash[(x, 2)].symbol() == "\u{f15c}")
+        .unwrap();
+    let row2_icon_cell = &buf_post_flash[(row2_icon_x, 2)];
+    assert_eq!(row2_icon_cell.fg, Color::Yellow);
+}
+
 

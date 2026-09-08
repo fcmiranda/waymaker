@@ -414,9 +414,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
     }
 
     if let Ok(cwd) = std::env::current_dir() {
-        if let Some(sort_order) = ui.config.resolve_sort_for_dir(&cwd) {
-            picker_ui.worker.set_sort_order(Some(sort_order));
-        }
+        let sort_order = ui.config.resolve_sort_for_dir(&cwd);
+        picker_ui.worker.set_sort_order(sort_order);
     }
 
     if let Some(handler) = initializer {
@@ -1226,77 +1225,110 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                         // Edit
                         Action::SetQuery(context) => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.set(context, u16::MAX);
                             } else {
                                 query.set(context, u16::MAX);
                             }
                         }
                         Action::ForwardChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.forward_char()
                             } else {
                                 query.forward_char()
                             }
                         }
                         Action::BackwardChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.backward_char()
                             } else {
                                 query.backward_char()
                             }
                         }
                         Action::ForwardWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.forward_word()
                             } else {
                                 query.forward_word()
                             }
                         }
                         Action::BackwardWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.backward_word()
                             } else {
                                 query.backward_word()
                             }
                         }
                         Action::DeleteChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete()
                             } else {
                                 query.delete()
                             }
                         }
                         Action::DeleteWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_word()
                             } else {
                                 query.delete_word()
                             }
                         }
                         Action::DeleteNextChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_next()
                             } else {
                                 query.delete_next()
                             }
                         }
                         Action::DeleteNextWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_next_word()
                             } else {
                                 query.delete_next_word()
                             }
                         }
                         Action::DeleteLineStart => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_line_start()
                             } else {
                                 query.delete_line_start()
                             }
                         }
                         Action::DeleteLineEnd => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_line_end()
                             } else {
                                 query.delete_line_end()
@@ -1409,13 +1441,24 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                         Action::Char(c) => {
                             if !c.is_ascii_control() {
-                                if *action_visible {
+                                let is_action_box_input = *action_visible
+                                    && crate::ACTION_BOX_ACTIVE
+                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                if is_action_box_input {
                                     action_input.push_char(c)
-                                } else if !(ui.config.nav_mode
-                                    && !ui.config.nav_passthrough
-                                    && state.focus == Focus::Results)
-                                {
-                                    query.push_char(c)
+                                } else {
+                                    if *action_visible {
+                                        *action_visible = false;
+                                        action_input.cancel();
+                                        crate::ACTION_BOX_ACTIVE
+                                            .store(false, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    if !(ui.config.nav_mode
+                                        && !ui.config.nav_passthrough
+                                        && state.focus == Focus::Results)
+                                    {
+                                        query.push_char(c)
+                                    }
                                 }
                             }
                         }
@@ -1488,9 +1531,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                 if matches!(interrupt, Interrupt::ChDir) {
                     if let Ok(cwd) = std::env::current_dir() {
-                        if let Some(sort_order) = ui.config.resolve_sort_for_dir(&cwd) {
-                            picker_ui.worker.set_sort_order(Some(sort_order));
-                        }
+                        let sort_order = ui.config.resolve_sort_for_dir(&cwd);
+                        picker_ui.worker.set_sort_order(sort_order);
                     }
                 }
 
@@ -1562,6 +1604,19 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
         if !picker_ui.results.config.spinner_prefix.is_empty() {
             state.needs_redraw = true;
+        }
+
+        if !picker_ui.results.flash_targets.is_empty() {
+            let now = std::time::Instant::now();
+            let prev_len = picker_ui.results.flash_targets.len();
+            picker_ui.results.flash_targets.retain(|_, (start, _)| {
+                now.duration_since(*start) < std::time::Duration::from_millis(1500)
+            });
+            if !picker_ui.results.flash_targets.is_empty()
+                || prev_len != picker_ui.results.flash_targets.len()
+            {
+                state.needs_redraw = true;
+            }
         }
 
         if ui.config.nav_mode {
@@ -2502,19 +2557,22 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
 
     let hints: &[(&str, &str, Color)] = if is_basic {
         &[
-            ("[Tab]", "Filter", Color::Cyan),
+            ("[/]", "Filter", Color::Cyan),
             ("[j/k]", "Move", Color::Yellow),
             ("[h/l]", "Up/Dir", Color::Yellow),
             ("[C-h/l]", "Trav", Color::Green),
             ("[p]", "Toggle", Color::Magenta),
             ("[J/K]", "Scroll", Color::Blue),
             ("[,]", "Sort", Color::Yellow),
+            ("[.]", "Cols", Color::Cyan),
+            ("[\\]", "Pane", Color::Cyan),
         ]
     } else {
         &[
-            ("[Tab]", "Filter", Color::Cyan),
+            ("[/]", "Filter", Color::Cyan),
             ("[Space]", "Sel/Unsel", Color::Yellow),
             ("[,]", "Sort", Color::Yellow),
+            ("[.]", "Cols", Color::Cyan),
             ("[f]", "Frecency", Color::Cyan),
             ("[b]", "Bookmarks", Color::Magenta),
             ("[*]", "Bookmark", Color::Yellow),
@@ -2523,9 +2581,11 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             ("[d]", "Trash", Color::Red),
             ("[y/x]", "Copy/Cut", Color::Green),
             ("[p]", "Paste", Color::Magenta),
+            ("[P]", "PasteInto", Color::Magenta),
+            ("[u]", "Undo", Color::Blue),
             ("[z/Z]", "Zip/Unzip", Color::Blue),
             ("[D]", "Drag", Color::Magenta),
-            ("[P]", "Pane", Color::Cyan),
+            ("[\\]", "Pane", Color::Cyan),
             ("[C-p]", "Toggle", Color::Blue),
         ]
     };

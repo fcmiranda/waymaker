@@ -5,6 +5,7 @@
 nav_mode = true
 nav_bar = "Plain"
 nav_color = "Black"
+nav_notify = true
 
 [ui.parent_peek]
 enabled = true
@@ -86,6 +87,10 @@ percentage = 50
 "ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
 "ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
+"," = "SortMenu"
+"." = "NextColumn"
+">" = "PrevColumn"
+"\\" = "ToggleParentPeek"
 
 [ui.nav_binds]
 "j" = "Down"
@@ -102,9 +107,17 @@ percentage = 50
 "ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
 "ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"p" = "SwitchPreview"
+"p" = "@paste"
+"P" = "@paste_into"
+"y" = "@yank"
+"x" = "@cut"
+"u" = "@undo"
+"/" = "FocusFilter"
+"," = "SortMenu"
+"." = "NextColumn"
+">" = "PrevColumn"
+"\\" = "ToggleParentPeek"
 "ctrl-p" = "SwitchPreview"
-"u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
 [breadcrumb]

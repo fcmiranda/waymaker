@@ -214,4 +214,23 @@ mod tests {
             matchmaker::config::SortThreshold::SMART
         );
     }
+
+    #[test]
+    fn test_jump_preset_deserialization() {
+        let toml_str = include_str!("../assets/presets/jump.toml");
+        let res: Result<PartialConfig, _> = toml::from_str(toml_str);
+        if let Err(e) = &res {
+            eprintln!("=== TOML ERROR ON ASSET JUMP ===\n{}\n================", e);
+            panic!("Error parsing asset jump.toml: {e}");
+        }
+
+        let dotfiles_str =
+            std::fs::read_to_string("/home/fecavmi/.dotfiles/main/matchmaker/.config/matchmaker/presets/jump.toml")
+                .unwrap();
+        let res_dotfiles: Result<PartialConfig, _> = toml::from_str(&dotfiles_str);
+        if let Err(e) = &res_dotfiles {
+            eprintln!("=== TOML ERROR ON DOTFILES JUMP ===\n{}\n================", e);
+            panic!("Error parsing dotfiles jump.toml: {e}");
+        }
+    }
 }

@@ -402,7 +402,11 @@ impl Default for UiConfig {
         nav_binds.insert("K".to_string(), Actions::from([Action::PreviewUp(1)]));
         nav_binds.insert("gg".to_string(), Actions::from([Action::PreviewUp(0)]));
         nav_binds.insert("G".to_string(), Actions::from([Action::PreviewDown(0)]));
-        nav_binds.insert("P".to_string(), Actions::from([Action::ToggleParentPeek]));
+        nav_binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
+        nav_binds.insert("\\".to_string(), Actions::from([Action::ToggleParentPeek]));
+        nav_binds.insert("|".to_string(), Actions::from([Action::ToggleParentPeek]));
+        nav_binds.insert(".".to_string(), Actions::from([Action::NextColumn]));
+        nav_binds.insert(">".to_string(), Actions::from([Action::PrevColumn]));
         nav_binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
         nav_binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
         nav_binds.insert(",".to_string(), Actions::from([Action::SortMenu]));

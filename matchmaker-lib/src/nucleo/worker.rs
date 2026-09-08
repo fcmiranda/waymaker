@@ -394,14 +394,19 @@ impl<T: SSS> Worker<T> {
         let query_len = query_str.len();
 
         let effective_dir_first = self.dir_first && self.mode_index == 0;
-        let should_sort = self.sort_order.is_some()
+        let effective_sort_order = if self.mode_index == 0 {
+            self.sort_order
+        } else {
+            None
+        };
+        let should_sort = effective_sort_order.is_some()
             || (!is_query_empty
                 && ((self.frecency && self.frecency_snapshot.is_some())
                     || (self.depth_penalty > 0 && self.mode_index == 0)))
             || effective_dir_first;
 
         if should_sort {
-            let total_sort = if self.sort_order.is_some() {
+            let total_sort = if effective_sort_order.is_some() {
                 total
             } else if self.sort_cap > 0 {
                 total.min(self.sort_cap as u32)
@@ -485,7 +490,7 @@ impl<T: SSS> Worker<T> {
                         get_item_tier_and_clean_path(raw_path.as_ref(), effective_dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
-                    let (mtime, btime, size, ext_range) = match self.sort_order {
+                    let (mtime, btime, size, ext_range) = match effective_sort_order {
                         Some(
                             crate::action::SortOrder::Modified
                             | crate::action::SortOrder::ModifiedReverse,
@@ -549,7 +554,7 @@ impl<T: SSS> Worker<T> {
                 .collect();
 
             decorated.sort_unstable_by(|a, b| {
-                if let Some(sort_order) = self.sort_order {
+                if let Some(sort_order) = effective_sort_order {
                     use crate::action::SortOrder;
                     if effective_dir_first && a.tier != b.tier {
                         return a.tier.cmp(&b.tier);
@@ -767,7 +772,12 @@ impl<T: SSS> Worker<T> {
         let is_query_empty = query_str.is_empty();
         let query_len = query_str.len();
         let effective_dir_first = self.dir_first && self.mode_index == 0;
-        let should_sort = self.sort_order.is_some()
+        let effective_sort_order = if self.mode_index == 0 {
+            self.sort_order
+        } else {
+            None
+        };
+        let should_sort = effective_sort_order.is_some()
             || (!is_query_empty
                 && ((self.frecency && self.frecency_snapshot.is_some())
                     || (self.depth_penalty > 0 && self.mode_index == 0)))
@@ -775,7 +785,7 @@ impl<T: SSS> Worker<T> {
 
         let (items_buf, initial_prev_tier) = if should_sort {
             let total = status.matched_count;
-            let total_sort = if self.sort_order.is_some() {
+            let total_sort = if effective_sort_order.is_some() {
                 total
             } else if self.sort_cap > 0 {
                 total.min(self.sort_cap as u32)
@@ -859,7 +869,7 @@ impl<T: SSS> Worker<T> {
                         get_item_tier_and_clean_path(raw_path.as_ref(), effective_dir_first);
                     let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
                     let clean_range = (clean_start, clean_start + clean.len());
-                    let (mtime, btime, size, ext_range) = match self.sort_order {
+                    let (mtime, btime, size, ext_range) = match effective_sort_order {
                         Some(
                             crate::action::SortOrder::Modified
                             | crate::action::SortOrder::ModifiedReverse,
@@ -923,7 +933,7 @@ impl<T: SSS> Worker<T> {
                 .collect();
 
             decorated.sort_unstable_by(|a, b| {
-                if let Some(sort_order) = self.sort_order {
+                if let Some(sort_order) = effective_sort_order {
                     use crate::action::SortOrder;
                     if effective_dir_first && a.tier != b.tier {
                         return a.tier.cmp(&b.tier);
@@ -2291,6 +2301,7 @@ mod tests {
         worker.dir_first = true;
         worker.depth_penalty = 15;
         worker.set_mode_index(1);
+        worker.set_sort_order(Some(crate::action::SortOrder::ModifiedReverse));
         worker.set_stability(crate::config::SortThreshold::SMART);
 
         let paths = vec![
@@ -2312,6 +2323,11 @@ mod tests {
         }
 
         worker.nucleo.tick(10);
+
+        for (idx, expected) in paths.iter().enumerate() {
+            let nth = worker.get_nth(idx as u32);
+            assert_eq!(nth, Some(expected), "get_nth mismatch at index {idx}");
+        }
 
         let mut matcher = Matcher::default();
         let (results, _, _, _) = worker.results(

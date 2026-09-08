@@ -117,9 +117,13 @@ ansi = false # don't set to true here
 "alt-right" = "HScroll(1)"
 "alt-1" = "Pos(0)"
 "alt-0" = "Pos(-1)"
+
+# Sort
 "," = "SortMenu"
 
 # Columns
+"." = "NextColumn"
+">" = "PrevColumn"
 "ctrl-." = "NextColumn"
 "ctrl-shift-." = "PrevColumn"
 

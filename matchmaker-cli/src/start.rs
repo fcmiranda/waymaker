@@ -303,16 +303,22 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         nb("x", matchmaker::acs![Action::Semantic("fm_cut".into())]);
         nb("X", matchmaker::acs![Action::Semantic("fm_uncut".into())]);
         nb("p", matchmaker::acs![Action::Semantic("fm_paste".into())]);
+        nb(
+            "P",
+            matchmaker::acs![Action::Semantic("fm_paste_into".into())],
+        );
         nb("u", matchmaker::acs![Action::Semantic("fm_undo".into())]);
         nb(
             "ctrl-r",
             matchmaker::acs![Action::Semantic("fm_redo".into())],
         );
-        nb(
-            "D",
-            matchmaker::acs![Action::Semantic("fm_dragdrop".into())],
-        );
+        nb("D", matchmaker::acs![Action::Semantic("fm_dragdrop".into())]);
         nb(",", matchmaker::acs![Action::SortMenu]);
+        nb(".", matchmaker::acs![Action::NextColumn]);
+        nb(">", matchmaker::acs![Action::PrevColumn]);
+        nb("/", matchmaker::acs![Action::FocusFilter]);
+        nb("\\", matchmaker::acs![Action::ToggleParentPeek]);
+        nb("|", matchmaker::acs![Action::ToggleParentPeek]);
         nb("f", matchmaker::acs![Action::Semantic("reloadnext".into())]);
         nb("b", matchmaker::acs![Action::Semantic("pins".into())]);
         nb("*", matchmaker::acs![Action::Semantic("pin".into())]);
@@ -328,8 +334,8 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     // check binds
-    let tab_trigger = "tab".parse().expect("tab trigger should parse");
-    let user_has_tab = config.binds.contains_key(&tab_trigger);
+    let slash_trigger = "/".parse().expect("slash trigger should parse");
+    let user_has_slash = config.binds.contains_key(&slash_trigger);
     let user_has_focus_action = config.binds.values().any(|actions| {
         actions.iter().any(|a| {
             matches!(
@@ -343,10 +349,10 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
 
     config.binds = BindMap::default_binds().modify(|x| x.extend(config.binds));
     if config.render.ui.nav_mode {
-        if !user_has_tab && !user_has_focus_action {
+        if !user_has_slash && !user_has_focus_action {
             config.binds.insert(
-                tab_trigger,
-                matchmaker::acs![matchmaker::Action::ToggleFocus],
+                slash_trigger,
+                matchmaker::acs![matchmaker::Action::FocusFilter],
             );
         }
         config.binds.insert(
@@ -373,6 +379,9 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     def_sem("@reloadnext", Action::Custom(MMAction::ReloadNext(None)));
     def_sem("@reloadprev", Action::Custom(MMAction::ReloadPrev));
     def_sem("@cycle", Action::Custom(MMAction::ReloadNext(None)));
+    def_sem("@paste", Action::Custom(MMAction::FmPaste));
+    def_sem("@paste_into", Action::Custom(MMAction::FmPasteInto));
+    def_sem("@paste_target", Action::Custom(MMAction::FmPasteInto));
 
     config.binds.check_cycles().map_err(anyhow::Error::msg)?;
     config.binds.retain(|_, actions| !actions.is_empty());
@@ -1590,38 +1599,155 @@ pub async fn start(
         .ext_handler(move |x, y| action_handler(x, y, &mut action_context))
         .ext_aliaser(|a, _state| match a {
             Action::Accept => acs![MMAction::Accept],
-            Action::Semantic(ref s) if s == "fm_create" => acs![MMAction::FmCreateStart],
-            Action::Semantic(ref s) if s == "fm_delete" => acs![MMAction::FmDeleteStart],
-            Action::Semantic(ref s) if s == "fm_rename" => acs![MMAction::FmRenameStart],
-            Action::Semantic(ref s) if s == "fm_unzip" => acs![MMAction::FmUnzipStart],
-            Action::Semantic(ref s) if s == "fm_zip" => acs![MMAction::FmZipStart],
-            Action::Semantic(ref s) if s == "fm_yank" => acs![MMAction::FmYank],
-            Action::Semantic(ref s) if s == "fm_unyank" => acs![MMAction::FmUnyank],
-            Action::Semantic(ref s) if s == "fm_cut" => acs![MMAction::FmCut],
-            Action::Semantic(ref s) if s == "fm_uncut" => acs![MMAction::FmUncut],
-            Action::Semantic(ref s) if s == "fm_paste" => acs![MMAction::FmPaste],
-            Action::Semantic(ref s) if s == "fm_undo" => acs![MMAction::FmUndo],
-            Action::Semantic(ref s) if s == "fm_redo" => acs![MMAction::FmRedo],
-            Action::Semantic(ref s) if s == "fm_dragdrop" => acs![MMAction::FmDragDrop],
             Action::Semantic(ref s)
-                if s == "fm_pin" || s == "fm_bookmark" || s == "pin" || s == "bookmark" =>
+                if s.eq_ignore_ascii_case("fm_create")
+                    || s.eq_ignore_ascii_case("fmcreate")
+                    || s.eq_ignore_ascii_case("create") =>
+            {
+                acs![MMAction::FmCreateStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_delete")
+                    || s.eq_ignore_ascii_case("fmdelete")
+                    || s.eq_ignore_ascii_case("delete") =>
+            {
+                acs![MMAction::FmDeleteStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_rename")
+                    || s.eq_ignore_ascii_case("fmrename")
+                    || s.eq_ignore_ascii_case("rename") =>
+            {
+                acs![MMAction::FmRenameStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_unzip")
+                    || s.eq_ignore_ascii_case("fmunzip")
+                    || s.eq_ignore_ascii_case("unzip") =>
+            {
+                acs![MMAction::FmUnzipStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_zip")
+                    || s.eq_ignore_ascii_case("fmzip")
+                    || s.eq_ignore_ascii_case("zip") =>
+            {
+                acs![MMAction::FmZipStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_yank")
+                    || s.eq_ignore_ascii_case("fmyank")
+                    || s.eq_ignore_ascii_case("yank") =>
+            {
+                acs![MMAction::FmYank]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_unyank")
+                    || s.eq_ignore_ascii_case("fmunyank")
+                    || s.eq_ignore_ascii_case("unyank") =>
+            {
+                acs![MMAction::FmUnyank]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_cut")
+                    || s.eq_ignore_ascii_case("fmcut")
+                    || s.eq_ignore_ascii_case("cut") =>
+            {
+                acs![MMAction::FmCut]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_uncut")
+                    || s.eq_ignore_ascii_case("fmuncut")
+                    || s.eq_ignore_ascii_case("uncut") =>
+            {
+                acs![MMAction::FmUncut]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_paste")
+                    || s.eq_ignore_ascii_case("fmpaste")
+                    || s.eq_ignore_ascii_case("paste") =>
+            {
+                acs![MMAction::FmPaste]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_paste_into")
+                    || s.eq_ignore_ascii_case("fmpasteinto")
+                    || s.eq_ignore_ascii_case("fm_paste_target")
+                    || s.eq_ignore_ascii_case("fmpastetarget")
+                    || s.eq_ignore_ascii_case("paste_into")
+                    || s.eq_ignore_ascii_case("pasteinto")
+                    || s.eq_ignore_ascii_case("paste_target")
+                    || s.eq_ignore_ascii_case("pastetarget") =>
+            {
+                acs![MMAction::FmPasteInto]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_undo")
+                    || s.eq_ignore_ascii_case("fmundo")
+                    || s.eq_ignore_ascii_case("undo") =>
+            {
+                acs![MMAction::FmUndo]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_redo")
+                    || s.eq_ignore_ascii_case("fmredo")
+                    || s.eq_ignore_ascii_case("redo") =>
+            {
+                acs![MMAction::FmRedo]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_dragdrop")
+                    || s.eq_ignore_ascii_case("fmdragdrop")
+                    || s.eq_ignore_ascii_case("dragdrop") =>
+            {
+                acs![MMAction::FmDragDrop]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_pin")
+                    || s.eq_ignore_ascii_case("fmpin")
+                    || s.eq_ignore_ascii_case("pin")
+                    || s.eq_ignore_ascii_case("fm_bookmark")
+                    || s.eq_ignore_ascii_case("fmbookmark")
+                    || s.eq_ignore_ascii_case("bookmark") =>
             {
                 acs![MMAction::FmTogglePin]
             }
             Action::Semantic(ref s)
-                if s == "pins" || s == "bookmarks" || s == "reload_pins" || s == "reload_bookmarks" =>
+                if s.eq_ignore_ascii_case("pins")
+                    || s.eq_ignore_ascii_case("bookmarks")
+                    || s.eq_ignore_ascii_case("reload_pins")
+                    || s.eq_ignore_ascii_case("reload_bookmarks") =>
             {
                 acs![MMAction::ReloadNext(Some(2))]
             }
             Action::Semantic(ref s)
-                if s == "dirs" || s == "frecency" || s == "reload_dirs" || s == "reload_frecency" =>
+                if s.eq_ignore_ascii_case("dirs")
+                    || s.eq_ignore_ascii_case("frecency")
+                    || s.eq_ignore_ascii_case("reload_dirs")
+                    || s.eq_ignore_ascii_case("reload_frecency") =>
             {
                 acs![MMAction::ReloadNext(Some(1))]
             }
-            Action::Semantic(ref s) if s == "cycle" => acs![MMAction::ReloadNext(None)],
-            Action::Semantic(ref s) if s == "reloadnext" => acs![MMAction::ReloadNext(None)],
-            Action::Semantic(ref s) if s == "reloadprev" => acs![MMAction::ReloadPrev],
-            Action::Semantic(ref s) if s == "reload_local" || s == "local" => acs![MMAction::ReloadNext(Some(0))],
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("cycle")
+                    || s.eq_ignore_ascii_case("reloadnext")
+                    || s.eq_ignore_ascii_case("reload_next") =>
+            {
+                acs![MMAction::ReloadNext(None)]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("reloadprev")
+                    || s.eq_ignore_ascii_case("reload_prev") =>
+            {
+                acs![MMAction::ReloadPrev]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("reload_local")
+                    || s.eq_ignore_ascii_case("reloadlocal")
+                    || s.eq_ignore_ascii_case("local") =>
+            {
+                acs![MMAction::ReloadNext(Some(0))]
+            }
             _ => acs![a],
         });
 

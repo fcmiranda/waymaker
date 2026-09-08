@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use ratatui::{layout::Rect, text::Line};
 
@@ -17,6 +17,12 @@ mod tests;
 
 pub use icons::icon_for_name;
 pub use status::StatusUI;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlashOp {
+    Copy,
+    Cut,
+}
 
 #[derive(Debug)]
 pub struct ResultsUI {
@@ -54,6 +60,7 @@ pub struct ResultsUI {
     pub yank_paths: HashSet<String>,
     pub cut_paths: HashSet<String>,
     pub pin_paths: HashSet<String>,
+    pub flash_targets: HashMap<String, (std::time::Instant, FlashOp)>,
     pub mode_index: usize,
 }
 
@@ -86,8 +93,52 @@ impl ResultsUI {
             yank_paths: HashSet::new(),
             cut_paths: HashSet::new(),
             pin_paths: HashSet::new(),
+            flash_targets: HashMap::new(),
             mode_index: 0,
         }
+    }
+
+    pub fn set_flash_target(&mut self, path: String, op: FlashOp) {
+        let now = std::time::Instant::now();
+        for p in path.split('\n').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            self.flash_targets.insert(p.to_string(), (now, op));
+        }
+    }
+
+    pub fn get_flash_op(&self, name: &str, cwd: &std::path::Path) -> Option<FlashOp> {
+        let now = std::time::Instant::now();
+        let path = std::path::Path::new(name);
+        let abs_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            cwd.join(path)
+        };
+        let abs_str = abs_path.to_string_lossy();
+        let name_trimmed = name.trim().trim_end_matches('/');
+        let abs_str_trimmed = abs_str.trim_end_matches('/');
+
+        for (target, (start, op)) in &self.flash_targets {
+            if now.duration_since(*start) < std::time::Duration::from_millis(1500) {
+                let target_path = std::path::Path::new(target);
+                let abs_target = if target_path.is_absolute() {
+                    target_path.to_path_buf()
+                } else {
+                    cwd.join(target_path)
+                };
+                let abs_target_str = abs_target.to_string_lossy();
+                let target_trimmed = target.trim().trim_end_matches('/');
+                let abs_target_trimmed = abs_target_str.trim_end_matches('/');
+
+                if name_trimmed == target_trimmed
+                    || abs_str_trimmed == abs_target_trimmed
+                    || abs_target_trimmed.ends_with(&format!("/{}", name_trimmed))
+                    || abs_str_trimmed.ends_with(&format!("/{}", target_trimmed))
+                {
+                    return Some(*op);
+                }
+            }
+        }
+        None
     }
 
     pub fn set_mode_index(&mut self, index: usize) {

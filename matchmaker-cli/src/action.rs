@@ -100,6 +100,9 @@ pub enum MMAction {
     FmCut,
     FmUncut,
     FmPaste,
+    FmPasteInto,
+    FmSetFlashCopy(String),
+    FmSetFlashCut(String),
     FmUndo,
     FmRedo,
     FmDragDrop,
@@ -689,90 +692,100 @@ pub fn action_handler(
             }
         }
         MMAction::FmSetYankPaths(raw) => {
-            let cwd = std::env::current_dir().unwrap_or_default();
             state.picker_ui.results.yank_paths = raw
                 .split('\n')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .map(|s| {
-                    let path = PathBuf::from(&s);
-                    if path.is_absolute() {
-                        s
-                    } else {
-                        cwd.join(path).to_string_lossy().to_string()
-                    }
-                })
                 .collect();
+            state.needs_redraw = true;
         }
         MMAction::FmRemoveYankPaths(raw) => {
             let cwd = std::env::current_dir().unwrap_or_default();
-            let to_remove: std::collections::HashSet<String> = raw
+            let to_remove: Vec<String> = raw
                 .split('\n')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .map(|s| {
-                    let path = PathBuf::from(&s);
-                    if path.is_absolute() {
-                        s
-                    } else {
-                        cwd.join(path).to_string_lossy().to_string()
-                    }
-                })
                 .collect();
-            for item in to_remove {
-                state.picker_ui.results.yank_paths.remove(&item);
-            }
+            state.picker_ui.results.yank_paths.retain(|item| {
+                !to_remove.iter().any(|rem| {
+                    let rem_trimmed = rem.trim_end_matches('/').trim_end_matches('\\');
+                    let item_trimmed = item.trim_end_matches('/').trim_end_matches('\\');
+                    if rem_trimmed == item_trimmed {
+                        return true;
+                    }
+                    let rem_abs = if std::path::Path::new(rem_trimmed).is_absolute() {
+                        rem_trimmed.to_string()
+                    } else {
+                        cwd.join(rem_trimmed).to_string_lossy().to_string()
+                    };
+                    let item_abs = if std::path::Path::new(item_trimmed).is_absolute() {
+                        item_trimmed.to_string()
+                    } else {
+                        cwd.join(item_trimmed).to_string_lossy().to_string()
+                    };
+                    rem_abs == item_abs
+                })
+            });
+            state.needs_redraw = true;
         }
         MMAction::FmRemoveCutPaths(raw) => {
             let cwd = std::env::current_dir().unwrap_or_default();
-            let to_remove: std::collections::HashSet<String> = raw
+            let to_remove: Vec<String> = raw
                 .split('\n')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .map(|s| {
-                    let path = PathBuf::from(&s);
-                    if path.is_absolute() {
-                        s
-                    } else {
-                        cwd.join(path).to_string_lossy().to_string()
-                    }
-                })
                 .collect();
-            for item in to_remove {
-                state.picker_ui.results.cut_paths.remove(&item);
-            }
+            state.picker_ui.results.cut_paths.retain(|item| {
+                !to_remove.iter().any(|rem| {
+                    let rem_trimmed = rem.trim_end_matches('/').trim_end_matches('\\');
+                    let item_trimmed = item.trim_end_matches('/').trim_end_matches('\\');
+                    if rem_trimmed == item_trimmed {
+                        return true;
+                    }
+                    let rem_abs = if std::path::Path::new(rem_trimmed).is_absolute() {
+                        rem_trimmed.to_string()
+                    } else {
+                        cwd.join(rem_trimmed).to_string_lossy().to_string()
+                    };
+                    let item_abs = if std::path::Path::new(item_trimmed).is_absolute() {
+                        item_trimmed.to_string()
+                    } else {
+                        cwd.join(item_trimmed).to_string_lossy().to_string()
+                    };
+                    rem_abs == item_abs
+                })
+            });
+            state.needs_redraw = true;
         }
         MMAction::FmSetCutPaths(raw) => {
-            let cwd = std::env::current_dir().unwrap_or_default();
             state.picker_ui.results.cut_paths = raw
                 .split('\n')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .map(|s| {
-                    let path = PathBuf::from(&s);
-                    if path.is_absolute() {
-                        s
-                    } else {
-                        cwd.join(path).to_string_lossy().to_string()
-                    }
-                })
                 .collect();
+            state.needs_redraw = true;
         }
         MMAction::FmSetPinPaths(raw) => {
-            let cwd = std::env::current_dir().unwrap_or_default();
             state.picker_ui.results.pin_paths = raw
                 .split('\n')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .map(|s| {
-                    let path = PathBuf::from(&s);
-                    if path.is_absolute() {
-                        s
-                    } else {
-                        cwd.join(path).to_string_lossy().to_string()
-                    }
-                })
                 .collect();
+            state.needs_redraw = true;
+        }
+        MMAction::FmSetFlashCopy(raw) => {
+            state
+                .picker_ui
+                .results
+                .set_flash_target(raw, matchmaker::ui::results::FlashOp::Copy);
+            state.needs_redraw = true;
+        }
+        MMAction::FmSetFlashCut(raw) => {
+            state
+                .picker_ui
+                .results
+                .set_flash_target(raw, matchmaker::ui::results::FlashOp::Cut);
+            state.needs_redraw = true;
         }
         MMAction::FmCreateStart => {
             *fm_action = Some(FmActionMode::Create);
@@ -883,16 +896,17 @@ pub fn action_handler(
                     });
                 }
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                    MMAction::FmSetFlashCopy(items.join("\n")),
+                )));
+                let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                     MMAction::FmSetYankPaths(items.join("\n")),
                 )));
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                     MMAction::FmSetCutPaths(String::new()),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Copied", &items, "{green}");
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
+                    let msg = fm_notify_msg("Copied", &items, "{yellow}");
+                    show_styled_info_box(state, &msg);
                 }
             }
         }
@@ -910,10 +924,8 @@ pub fn action_handler(
                     MMAction::FmRemoveCutPaths(items.join("\n")),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Un-yanked", &items, "{green}");
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
+                    let msg = fm_notify_msg("Un-yanked", &items, "{yellow}");
+                    show_styled_info_box(state, &msg);
                 }
             }
         }
@@ -927,10 +939,8 @@ pub fn action_handler(
                     MMAction::FmRemoveCutPaths(items.join("\n")),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Un-cut", &items, "{yellow}");
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
+                    let msg = fm_notify_msg("Un-cut", &items, "{red}");
+                    show_styled_info_box(state, &msg);
                 }
             }
         }
@@ -956,16 +966,17 @@ pub fn action_handler(
                     });
                 }
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                    MMAction::FmSetFlashCut(items.join("\n")),
+                )));
+                let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                     MMAction::FmSetCutPaths(items.join("\n")),
                 )));
                 let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                     MMAction::FmSetYankPaths(String::new()),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Cut", &items, "{yellow}");
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
+                    let msg = fm_notify_msg("Cut", &items, "{red}");
+                    show_styled_info_box(state, &msg);
                 }
             }
         }
@@ -974,16 +985,36 @@ pub fn action_handler(
             if let Some(clip) = clip {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 let mut had_error = false;
+                let mut pasted_items = Vec::new();
+
                 for src in &clip.items {
                     let result = match clip.op {
                         crate::fm::ClipOp::Copy => crate::fm::copy_into(src, &cwd),
                         crate::fm::ClipOp::Cut => crate::fm::move_into(src, &cwd),
                     };
-                    if let Err(e) = result {
-                        error!("fm paste '{}': {e}", src.display());
-                        had_error = true;
+                    match result {
+                        Ok(dest) => {
+                            pasted_items.push((src.clone(), dest));
+                        }
+                        Err(e) => {
+                            error!("fm paste '{}': {e}", src.display());
+                            had_error = true;
+                        }
                     }
                 }
+
+                if !pasted_items.is_empty() {
+                    if let Ok(mut u) = undo_stack.lock() {
+                        u.push(crate::fm::UndoAction::Paste {
+                            op: clip.op,
+                            items: pasted_items.clone(),
+                            saved_clipboard: Some(clip.clone()),
+                            saved_yank_paths: state.picker_ui.results.yank_paths.clone(),
+                            saved_cut_paths: state.picker_ui.results.cut_paths.clone(),
+                        });
+                    }
+                }
+
                 if !had_error {
                     // Record paste destination directory in frecency store
                     let store = matchmaker::frecency::FrecencyStore::open();
@@ -998,7 +1029,10 @@ pub fn action_handler(
                     let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                         MMAction::FmSetYankPaths(String::new()),
                     )));
+                    state.picker_ui.results.cut_paths.clear();
+                    state.picker_ui.results.yank_paths.clear();
                 }
+
                 if *fm_notify {
                     let names: Vec<String> = clip
                         .items
@@ -1006,61 +1040,237 @@ pub fn action_handler(
                         .filter_map(|p| p.file_name())
                         .map(|n| n.to_string_lossy().into_owned())
                         .collect();
-                    let verb = match clip.op {
-                        crate::fm::ClipOp::Copy => "Pasted",
-                        crate::fm::ClipOp::Cut => "Moved",
+                    let (verb, icon) = match clip.op {
+                        crate::fm::ClipOp::Copy => ("Pasted", "󰆏"),
+                        crate::fm::ClipOp::Cut => ("Moved", "󰆐"),
                     };
                     let color = if had_error { "{red}" } else { "{cyan}" };
-                    let msg = fm_notify_msg(verb, &names, color);
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
+                    let count = clip.items.len();
+                    let item_word = if count == 1 { "item" } else { "items" };
+                    let msg = format!("{color}{icon} {verb} {count} {item_word} ({}) into current folder (u to undo){{reset}}", names.join(", "));
+                    show_styled_info_box(state, &msg);
                 }
+                let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
+            }
+        }
+        MMAction::FmPasteInto => {
+            let clip = clipboard.lock().ok().and_then(|g| g.clone());
+            if let Some(clip) = clip {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let focused_path = state.current_raw().and_then(|item| {
+                    state.picker_ui.worker.columns.first().map(|c| c.raw(item).into_owned())
+                });
+
+                let (dest_dir, is_subfolder, dest_display_name) = if let Some(ref raw) = focused_path {
+                    let p = std::path::Path::new(raw);
+                    let abs = if p.is_absolute() {
+                        p.to_path_buf()
+                    } else {
+                        cwd.join(p)
+                    };
+                    if abs.is_dir() {
+                        (abs, true, raw.clone())
+                    } else {
+                        (cwd.clone(), false, String::new())
+                    }
+                } else {
+                    (cwd.clone(), false, String::new())
+                };
+
+                let mut had_error = false;
+                let mut pasted_items = Vec::new();
+
+                for src in &clip.items {
+                    let result = match clip.op {
+                        crate::fm::ClipOp::Copy => crate::fm::copy_into(src, &dest_dir),
+                        crate::fm::ClipOp::Cut => crate::fm::move_into(src, &dest_dir),
+                    };
+                    match result {
+                        Ok(dest) => {
+                            pasted_items.push((src.clone(), dest));
+                        }
+                        Err(e) => {
+                            error!("fm paste into '{}': {e}", src.display());
+                            had_error = true;
+                        }
+                    }
+                }
+
+                if !pasted_items.is_empty() {
+                    if let Ok(mut u) = undo_stack.lock() {
+                        u.push(crate::fm::UndoAction::Paste {
+                            op: clip.op,
+                            items: pasted_items.clone(),
+                            saved_clipboard: Some(clip.clone()),
+                            saved_yank_paths: state.picker_ui.results.yank_paths.clone(),
+                            saved_cut_paths: state.picker_ui.results.cut_paths.clone(),
+                        });
+                    }
+                }
+
+                if !had_error {
+                    let store = matchmaker::frecency::FrecencyStore::open();
+                    let _ = store.add(&dest_dir.to_string_lossy());
+
+                    if let Ok(mut cb) = clipboard.lock() {
+                        *cb = None;
+                    }
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                        MMAction::FmSetCutPaths(String::new()),
+                    )));
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                        MMAction::FmSetYankPaths(String::new()),
+                    )));
+                    state.picker_ui.results.cut_paths.clear();
+                    state.picker_ui.results.yank_paths.clear();
+                }
+
+                if is_subfolder {
+                    let action = match clip.op {
+                        crate::fm::ClipOp::Copy => MMAction::FmSetFlashCopy(dest_display_name.clone()),
+                        crate::fm::ClipOp::Cut => MMAction::FmSetFlashCut(dest_display_name.clone()),
+                    };
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(action)));
+                }
+
+                let count = clip.items.len();
+                let item_word = if count == 1 { "item" } else { "items" };
+                let (verb, icon) = match clip.op {
+                    crate::fm::ClipOp::Copy => ("Pasted", "󰆏"),
+                    crate::fm::ClipOp::Cut => ("Moved", "󰆐"),
+                };
+                let color = if had_error { "{red}" } else { "{cyan}" };
+                let msg = if is_subfolder {
+                    let clean_dest = dest_display_name
+                        .trim()
+                        .trim_start_matches("./")
+                        .trim_end_matches('/')
+                        .trim_end_matches('\\');
+                    format!("{color}{icon} {verb} {count} {item_word} into ./{clean_dest}/ (u to undo){{reset}}")
+                } else {
+                    format!("{color}{icon} {verb} {count} {item_word} into current folder (u to undo){{reset}}")
+                };
+                show_styled_info_box(state, &msg);
+
                 let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
             }
         }
         MMAction::FmUndo => {
             let action = undo_stack.lock().ok().and_then(|mut s| s.pop());
             if let Some(action) = action {
-                if let Ok(mut rs) = redo_stack.lock() {
-                    rs.push(action.clone());
-                }
                 if let Err(e) = crate::fm::apply_undo(&action) {
                     error!("fm undo: {e}");
                 }
+
+                if let crate::fm::UndoAction::Paste {
+                    ref saved_clipboard,
+                    ref saved_yank_paths,
+                    ref saved_cut_paths,
+                    ..
+                } = action
+                {
+                    if let Ok(mut cb) = clipboard.lock() {
+                        *cb = saved_clipboard.clone();
+                    }
+                    state.picker_ui.results.yank_paths = saved_yank_paths.clone();
+                    state.picker_ui.results.cut_paths = saved_cut_paths.clone();
+                    let yanks: Vec<String> = saved_yank_paths.iter().cloned().collect();
+                    let cuts: Vec<String> = saved_cut_paths.iter().cloned().collect();
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                        MMAction::FmSetYankPaths(yanks.join("\n")),
+                    )));
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                        MMAction::FmSetCutPaths(cuts.join("\n")),
+                    )));
+                }
+
+                let msg = match &action {
+                    crate::fm::UndoAction::Paste { op, items, .. } => {
+                        let count = items.len();
+                        let item_word = if count == 1 { "item" } else { "items" };
+                        let op_word = match op {
+                            crate::fm::ClipOp::Copy => "copy",
+                            crate::fm::ClipOp::Cut => "move",
+                        };
+                        format!("{{yellow}}󰕌 Undone {op_word} of {count} {item_word} (clipboard restored){{reset}}")
+                    }
+                    crate::fm::UndoAction::DeletedFile { original, .. } => {
+                        format!("{{yellow}}󰕌 Restored: {}{{reset}}", original.display())
+                    }
+                    crate::fm::UndoAction::DeletedFiles { items } => {
+                        let count = items.len();
+                        let item_word = if count == 1 { "item" } else { "items" };
+                        format!("{{yellow}}󰕌 Restored {count} {item_word}{{reset}}")
+                    }
+                    crate::fm::UndoAction::CreatedFile { path } => {
+                        format!("{{yellow}}󰕌 Undone creation of: {}{{reset}}", path.display())
+                    }
+                    crate::fm::UndoAction::Renamed { from, to } => {
+                        format!(
+                            "{{yellow}}󰕌 Reverted rename: {} -> {}{{reset}}",
+                            to.display(),
+                            from.display()
+                        )
+                    }
+                    crate::fm::UndoAction::Copied { dest } => {
+                        format!("{{yellow}}󰕌 Removed copy: {}{{reset}}", dest.display())
+                    }
+                    crate::fm::UndoAction::Moved { from, to } => {
+                        format!(
+                            "{{yellow}}󰕌 Moved back: {} -> {}{{reset}}",
+                            to.display(),
+                            from.display()
+                        )
+                    }
+                };
+
+                if let Ok(mut rs) = redo_stack.lock() {
+                    rs.push(action);
+                }
+
+                show_styled_info_box(state, &msg);
                 let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
             }
         }
         MMAction::FmRedo => {
             let action = redo_stack.lock().ok().and_then(|mut s| s.pop());
             if let Some(action) = action {
-                let redo_action = match &action {
-                    crate::fm::UndoAction::DeletedFile { original, backup } => {
-                        crate::fm::UndoAction::DeletedFile {
-                            original: backup.clone(),
-                            backup: original.clone(),
-                        }
-                    }
-                    crate::fm::UndoAction::CreatedFile { path } => {
-                        crate::fm::UndoAction::CreatedFile { path: path.clone() }
-                    }
-                    crate::fm::UndoAction::Renamed { from, to } => crate::fm::UndoAction::Renamed {
-                        from: to.clone(),
-                        to: from.clone(),
-                    },
-                    crate::fm::UndoAction::Copied { dest } => {
-                        crate::fm::UndoAction::Copied { dest: dest.clone() }
-                    }
-                    crate::fm::UndoAction::Moved { from, to } => crate::fm::UndoAction::Moved {
-                        from: to.clone(),
-                        to: from.clone(),
-                    },
-                };
-                if let Err(e) = crate::fm::apply_undo(&redo_action) {
+                if let Err(e) = crate::fm::apply_redo(&action) {
                     error!("fm redo: {e}");
-                } else if let Ok(mut us) = undo_stack.lock() {
-                    us.push(redo_action);
                 }
+
+                if let crate::fm::UndoAction::Paste { .. } = action {
+                    if let Ok(mut cb) = clipboard.lock() {
+                        *cb = None;
+                    }
+                    state.picker_ui.results.yank_paths.clear();
+                    state.picker_ui.results.cut_paths.clear();
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                        MMAction::FmSetYankPaths(String::new()),
+                    )));
+                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
+                        MMAction::FmSetCutPaths(String::new()),
+                    )));
+                }
+
+                let msg = match &action {
+                    crate::fm::UndoAction::Paste { op, items, .. } => {
+                        let count = items.len();
+                        let item_word = if count == 1 { "item" } else { "items" };
+                        let op_word = match op {
+                            crate::fm::ClipOp::Copy => "pasted",
+                            crate::fm::ClipOp::Cut => "moved",
+                        };
+                        format!("{{cyan}}󰑖 Redone {op_word} of {count} {item_word}{{reset}}")
+                    }
+                    _ => "{cyan}󰑖 Redone last action{reset}".to_string(),
+                };
+
+                if let Ok(mut us) = undo_stack.lock() {
+                    us.push(action);
+                }
+
+                show_styled_info_box(state, &msg);
                 let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
             }
         }
@@ -1091,8 +1301,7 @@ pub fn action_handler(
                         last_state = pinned;
                         let key_str = matchmaker::frecency::normalize_path(p);
                         if pinned {
-                            state.picker_ui.results.pin_paths.insert(key_str.clone());
-                            state.picker_ui.results.pin_paths.insert(p.clone());
+                            state.picker_ui.results.pin_paths.insert(key_str);
                         } else {
                             state.picker_ui.results.pin_paths.remove(&key_str);
                             state.picker_ui.results.pin_paths.remove(p);
@@ -1107,9 +1316,7 @@ pub fn action_handler(
                 let icon_str = if is_dir { "{yellow:󰮟}" } else { "{yellow:󱀻}" };
                 let color = if last_state { icon_str } else { "{darkgray}" };
                 let msg = fm_notify_msg(verb, &paths, color);
-                let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                    MMAction::SetStyledStatus(msg),
-                )));
+                show_styled_info_box(state, &msg);
                 let _ = render_tx.send(RenderCommand::Action(Action::Redraw));
                 let _ = render_tx.send(RenderCommand::Refresh);
             }
@@ -1177,11 +1384,11 @@ enum_from_str_display! {
     MMAction;
 
     units:
-    CycleSort, HistoryUp, HistoryDown, Accept, ReloadPrev, FmCreateStart, FmDeleteStart, FmRenameStart, FmUnzipStart, FmZipStart, FmYank, FmUnyank, FmCut, FmUncut, FmPaste, FmUndo, FmRedo, FmDragDrop, FmTogglePin;
+    CycleSort, HistoryUp, HistoryDown, Accept, ReloadPrev, FmCreateStart, FmDeleteStart, FmRenameStart, FmUnzipStart, FmZipStart, FmYank, FmUnyank, FmCut, FmUncut, FmPaste, FmPasteInto, FmUndo, FmRedo, FmDragDrop, FmTogglePin;
 
 
     tuples:
-    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, SetModeIndex, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, FmSetPinPaths, Confirm, Prompt;
+    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, SetModeIndex, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, FmSetPinPaths, FmSetFlashCopy, FmSetFlashCut, Confirm, Prompt;
 
     defaults:
     ;
@@ -1336,6 +1543,17 @@ fn show_styled_action_box(state: &mut MMState<'_, '_>, prompt: &str, initial: &s
         .set_prompt_line(StatusUI::parse_template_to_status_line(prompt));
 }
 
+fn show_styled_info_box(state: &mut MMState<'_, '_>, message: &str) {
+    state.picker_ui.action_visible = true;
+    matchmaker::ACTION_BOX_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    state.picker_ui.action.set(Some(String::new()), 0);
+    state
+        .picker_ui
+        .action
+        .set_prompt_line(StatusUI::parse_template_to_status_line(message));
+    state.needs_redraw = true;
+}
+
 fn close_action_box(state: &mut MMState<'_, '_>, fm_action: &mut Option<FmActionMode>) {
     state.picker_ui.action_visible = false;
     matchmaker::ACTION_BOX_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -1371,6 +1589,7 @@ fn commit_fm_action(
                     }
                     std::fs::File::create(&input).map(|_| ())
                 };
+                close_action_box(state, fm_action);
                 if let Err(e) = result {
                     error!("fm create '{input}': {e}");
                 } else {
@@ -1381,35 +1600,37 @@ fn commit_fm_action(
                     }
                     if fm_notify {
                         let msg = format!("{{green:Created:}} {}", input);
-                        let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                            MMAction::SetStyledStatus(msg),
-                        )));
+                        show_styled_info_box(state, &msg);
                     }
                 }
+            } else {
+                close_action_box(state, fm_action);
             }
         }
         FmActionMode::Delete { paths } => {
-            let mut deleted = Vec::new();
+            let mut deleted_items = Vec::new();
+            let mut deleted_names = Vec::new();
             for path in &paths {
                 let path_buf = PathBuf::from(path);
                 match crate::fm::move_to_trash(&path_buf) {
                     Ok(backup) => {
-                        deleted.push(path.clone());
-                        if let Ok(mut stack) = undo_stack.lock() {
-                            stack.push(crate::fm::UndoAction::DeletedFile {
-                                original: path_buf,
-                                backup,
-                            });
-                        }
+                        deleted_names.push(path.clone());
+                        deleted_items.push((path_buf, backup));
                     }
                     Err(e) => error!("fm delete '{}': {e}", path),
                 }
             }
-            if fm_notify && !deleted.is_empty() {
-                let msg = fm_notify_msg("Deleted", &deleted, "{red}");
-                let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                    MMAction::SetStyledStatus(msg),
-                )));
+            if !deleted_items.is_empty() {
+                if let Ok(mut stack) = undo_stack.lock() {
+                    stack.push(crate::fm::UndoAction::DeletedFiles {
+                        items: deleted_items,
+                    });
+                }
+            }
+            close_action_box(state, fm_action);
+            if fm_notify && !deleted_names.is_empty() {
+                let msg = fm_notify_msg("Deleted", &deleted_names, "{red}");
+                show_styled_info_box(state, &msg);
             }
         }
         FmActionMode::Rename { from, remaining } => {
@@ -1418,19 +1639,11 @@ fn commit_fm_action(
                     crate::fm::move_path(std::path::Path::new(&from), std::path::Path::new(&input))
                 {
                     error!("fm rename '{}' -> '{input}': {e}", from);
-                } else {
-                    if let Ok(mut stack) = undo_stack.lock() {
-                        stack.push(crate::fm::UndoAction::Renamed {
-                            from: PathBuf::from(&from),
-                            to: PathBuf::from(&input),
-                        });
-                    }
-                    if fm_notify {
-                        let msg = format!("{{cyan:Renamed:}} {} -> {}", from, input);
-                        let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                            MMAction::SetStyledStatus(msg),
-                        )));
-                    }
+                } else if let Ok(mut stack) = undo_stack.lock() {
+                    stack.push(crate::fm::UndoAction::Renamed {
+                        from: PathBuf::from(&from),
+                        to: PathBuf::from(&input),
+                    });
                 }
             }
 
@@ -1450,31 +1663,49 @@ fn commit_fm_action(
                 let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
                 return;
             }
+
+            close_action_box(state, fm_action);
+            if fm_notify && !input.is_empty() && input != from {
+                let msg = format!("{{cyan:Renamed:}} {} -> {}", from, input);
+                show_styled_info_box(state, &msg);
+            }
         }
         FmActionMode::Unzip { src } => {
             if !input.is_empty() {
-                if let Err(e) = std::fs::create_dir_all(&input) {
-                    error!("fm unzip: create dir '{input}': {e}");
-                } else if let Err(e) = crate::fm::extract_archive(&src, &input) {
-                    error!("fm unzip '{src}' -> '{input}': {e}");
-                } else if fm_notify {
-                    let msg = format!("{{green:Extracted:}} {} -> {}", src, input);
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
+                let res = if let Err(e) = std::fs::create_dir_all(&input) {
+                    Err(e)
+                } else {
+                    crate::fm::extract_archive(&src, &input)
+                };
+                close_action_box(state, fm_action);
+                match res {
+                    Ok(_) => {
+                        if fm_notify {
+                            let msg = format!("{{green:Extracted:}} {} -> {}", src, input);
+                            show_styled_info_box(state, &msg);
+                        }
+                    }
+                    Err(e) => error!("fm unzip '{src}' -> '{input}': {e}"),
                 }
+            } else {
+                close_action_box(state, fm_action);
             }
         }
         FmActionMode::Zip { paths } => {
             if !input.is_empty() {
-                if let Err(e) = crate::fm::create_archive(&input, &paths) {
-                    error!("fm zip '{input}': {e}");
-                } else if fm_notify {
-                    let msg = format!("{{green:Compressed:}} {}", input);
-                    let _ = render_tx.send(RenderCommand::Action(Action::Custom(
-                        MMAction::SetStyledStatus(msg),
-                    )));
+                let res = crate::fm::create_archive(&input, &paths);
+                close_action_box(state, fm_action);
+                match res {
+                    Ok(_) => {
+                        if fm_notify {
+                            let msg = format!("{{green:Compressed:}} {}", input);
+                            show_styled_info_box(state, &msg);
+                        }
+                    }
+                    Err(e) => error!("fm zip '{input}': {e}"),
                 }
+            } else {
+                close_action_box(state, fm_action);
             }
         }
         FmActionMode::Custom { command } => {
@@ -1491,10 +1722,10 @@ fn commit_fm_action(
                     let _ = child.wait();
                 }
             }
+            close_action_box(state, fm_action);
         }
     }
 
-    close_action_box(state, fm_action);
     let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
 }
 
@@ -1785,5 +2016,251 @@ mod tests {
             std::env::remove_var("MM_FRECENCY_DB");
         }
         let _ = std::fs::remove_file(&db_file);
+    }
+
+    #[tokio::test]
+    async fn test_fm_paste_into_and_flash() {
+        use matchmaker::nucleo::injector::Injector;
+        use matchmaker::preview::AppendOnly;
+        use matchmaker::render::State;
+        use matchmaker::ui::UI;
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::mpsc;
+
+        let (mut mm, injector, _guard) = matchmaker::ConfigMatchmaker::new_from_config(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        );
+
+        let temp_dir = std::env::temp_dir().join(format!("test_paste_into_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let sub_dir = temp_dir.join("target_folder");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        let source_file = temp_dir.join("source.txt");
+        std::fs::write(&source_file, "hello world").unwrap();
+
+        injector.push((None, sub_dir.to_string_lossy().to_string())).unwrap();
+        mm.worker.nucleo.tick(10);
+
+        let mut state_obj = State::new();
+        let mut tui = matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
+        let mut matcher = matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
+
+        let hidden_columns = vec![false];
+        let (mut ui, mut picker_ui, mut footer_ui, mut preview_ui) = UI::new(
+            mm.render_config,
+            &mut matcher,
+            mm.worker,
+            mm.selector,
+            None,
+            &mut tui,
+            hidden_columns,
+        );
+
+        let (bind_tx, _) = mpsc::unbounded_channel();
+        let (render_tx, _) = mpsc::unbounded_channel();
+        let (controller_tx, _) = mpsc::unbounded_channel();
+
+        let clipboard = Arc::new(Mutex::new(Some(crate::fm::FmClipboard {
+            items: vec![source_file.clone()],
+            op: crate::fm::ClipOp::Copy,
+        })));
+        let undo_stack = Arc::new(Mutex::new(Vec::new()));
+        let redo_stack = Arc::new(Mutex::new(Vec::new()));
+
+        let mut action_context = ActionContext {
+            bind_tx,
+            render_tx,
+            additional_commands: (vec!["cmd0".to_string()], 0),
+            output_template: None,
+            print_handle: AppendOnly::new(),
+            output_separator: "\n".to_string(),
+            clipboard: clipboard.clone(),
+            fm_notify: false,
+            undo_stack: undo_stack.clone(),
+            redo_stack: redo_stack.clone(),
+            fm_action: None,
+            mode_history: std::collections::HashMap::new(),
+            last_cwd: Some(temp_dir.clone()),
+        };
+
+        let mut mm_state = state_obj.dispatcher(
+            &mut ui,
+            &mut picker_ui,
+            &mut footer_ui,
+            &mut preview_ui,
+            &controller_tx,
+        );
+
+        // Test FmPasteInto
+        action_handler(MMAction::FmPasteInto, &mut mm_state, &mut action_context);
+
+        let pasted_file = sub_dir.join("source.txt");
+        assert!(pasted_file.exists(), "Pasted file should exist inside target_folder");
+        assert_eq!(std::fs::read_to_string(&pasted_file).unwrap(), "hello world");
+        assert_eq!(undo_stack.lock().unwrap().len(), 1, "Undo stack should have 1 item");
+        assert!(clipboard.lock().unwrap().is_none(), "Clipboard should be cleared after paste");
+        assert!(mm_state.picker_ui.action_visible, "Action box should be visible for info notification");
+
+        // Test Flash action
+        action_handler(MMAction::FmSetFlashCopy("target_folder".to_string()), &mut mm_state, &mut action_context);
+        let flash_op = mm_state.picker_ui.results.get_flash_op("target_folder", &temp_dir);
+        assert_eq!(flash_op, Some(matchmaker::ui::results::FlashOp::Copy));
+
+        // Test Undo
+        action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
+        assert!(!pasted_file.exists(), "Pasted file should be removed after undo");
+        assert!(clipboard.lock().unwrap().is_some(), "Clipboard should be restored after undo");
+        assert!(mm_state.picker_ui.action_visible, "Action box should be visible with undo notification");
+
+        // Test exact item counts in yank_paths and cut_paths
+        action_handler(
+            MMAction::FmSetYankPaths("folder/\nfile.txt".to_string()),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(
+            mm_state.picker_ui.results.yank_paths.len(),
+            2,
+            "yank_paths should contain exactly 2 items (1 for folder/ and 1 for file.txt)"
+        );
+
+        action_handler(
+            MMAction::FmRemoveYankPaths("folder/".to_string()),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(
+            mm_state.picker_ui.results.yank_paths.len(),
+            1,
+            "yank_paths should contain exactly 1 item after removing folder/"
+        );
+        assert!(mm_state.picker_ui.results.yank_paths.contains("file.txt"));
+
+        action_handler(
+            MMAction::FmSetCutPaths("single_folder/".to_string()),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(
+            mm_state.picker_ui.results.cut_paths.len(),
+            1,
+            "cut_paths should contain exactly 1 item for single folder"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_fm_batch_paste_and_undo_clipboard_restoration() {
+        use matchmaker::nucleo::injector::Injector;
+        use matchmaker::preview::AppendOnly;
+        use matchmaker::render::State;
+        use matchmaker::ui::UI;
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::mpsc;
+
+        let (mut mm, injector, _guard) = matchmaker::ConfigMatchmaker::new_from_config(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        );
+
+        let temp_dir = std::env::temp_dir().join(format!("test_batch_paste_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let file1 = temp_dir.join("file1.txt");
+        let file2 = temp_dir.join("file2.txt");
+        let target_dir = temp_dir.join("dest_dir");
+        std::fs::write(&file1, "content 1").unwrap();
+        std::fs::write(&file2, "content 2").unwrap();
+        std::fs::create_dir_all(&target_dir).unwrap();
+
+        injector.push((None, target_dir.to_string_lossy().to_string())).unwrap();
+        mm.worker.nucleo.tick(10);
+
+        let mut state_obj = State::new();
+        let mut tui = matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
+        let mut matcher = matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
+
+        let hidden_columns = vec![false];
+        let (mut ui, mut picker_ui, mut footer_ui, mut preview_ui) = UI::new(
+            mm.render_config,
+            &mut matcher,
+            mm.worker,
+            mm.selector,
+            None,
+            &mut tui,
+            hidden_columns,
+        );
+
+        let (bind_tx, _) = mpsc::unbounded_channel();
+        let (render_tx, _) = mpsc::unbounded_channel();
+        let (controller_tx, _) = mpsc::unbounded_channel();
+
+        let clipboard = Arc::new(Mutex::new(Some(crate::fm::FmClipboard {
+            items: vec![file1.clone(), file2.clone()],
+            op: crate::fm::ClipOp::Copy,
+        })));
+        let undo_stack = Arc::new(Mutex::new(Vec::new()));
+        let redo_stack = Arc::new(Mutex::new(Vec::new()));
+
+        let mut action_context = ActionContext {
+            bind_tx,
+            render_tx,
+            additional_commands: (vec!["cmd0".to_string()], 0),
+            output_template: None,
+            print_handle: AppendOnly::new(),
+            output_separator: "\n".to_string(),
+            clipboard: clipboard.clone(),
+            fm_notify: true,
+            undo_stack: undo_stack.clone(),
+            redo_stack: redo_stack.clone(),
+            fm_action: None,
+            mode_history: std::collections::HashMap::new(),
+            last_cwd: Some(temp_dir.clone()),
+        };
+
+        let mut mm_state = state_obj.dispatcher(
+            &mut ui,
+            &mut picker_ui,
+            &mut footer_ui,
+            &mut preview_ui,
+            &controller_tx,
+        );
+
+        mm_state.picker_ui.results.yank_paths.insert("file1.txt".to_string());
+        mm_state.picker_ui.results.yank_paths.insert("file2.txt".to_string());
+
+        // Execute Paste Into target_dir
+        action_handler(MMAction::FmPasteInto, &mut mm_state, &mut action_context);
+
+        let pasted1 = target_dir.join("file1.txt");
+        let pasted2 = target_dir.join("file2.txt");
+        assert!(pasted1.exists(), "pasted1 should exist");
+        assert!(pasted2.exists(), "pasted2 should exist");
+        assert!(clipboard.lock().unwrap().is_none(), "clipboard cleared after paste");
+        assert!(mm_state.picker_ui.results.yank_paths.is_empty(), "yank_paths cleared after paste");
+        assert!(mm_state.picker_ui.action_visible, "action box visible for feedback");
+
+        // Execute Undo
+        action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
+
+        assert!(!pasted1.exists(), "pasted1 should be removed on undo");
+        assert!(!pasted2.exists(), "pasted2 should be removed on undo");
+        assert!(clipboard.lock().unwrap().is_some(), "clipboard restored on undo");
+        assert_eq!(clipboard.lock().unwrap().as_ref().unwrap().items.len(), 2);
+        assert_eq!(mm_state.picker_ui.results.yank_paths.len(), 2, "yank_paths restored on undo");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

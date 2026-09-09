@@ -66,6 +66,7 @@ delay_clear = true
 
 [preview]
 media = true
+media_size = 1280
 
 [preview.border]
 title_fg = "cyan"

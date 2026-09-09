@@ -76,6 +76,11 @@ pub struct Cli {
     #[arg(long, value_name = "PROP", num_args = 0..)]
     pub media: Option<Vec<String>>,
 
+    /// Override the pixel resolution limit for media downscaling (images, videos, PDFs).
+    /// Examples: --media-size 1280, --media-size 800, --media-size xl, --media-size full, --media-size 0
+    #[arg(long, value_name = "SIZE")]
+    pub media_size: Option<String>,
+
     /// Colourise the UI with fzf-style key:value pairs (comma-separated).
     /// Example: --color border:#cba6f7,hl-fg:#a6e3a1,nav:#89b4fa
     /// Keys: fg, bg, hl-fg, hl-bg, border, label, preview-border, preview-label,
@@ -216,6 +221,7 @@ impl Cli {
             try_parse!("group-prefix", "--");
             try_parse!("parent-peek-pct", "--");
             try_parse!("pos", "--");
+            try_parse!("media-size", "--");
 
             // Flags
             if [

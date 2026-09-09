@@ -220,8 +220,17 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         config.render.results.pos = Some(pos);
     }
 
+    // Synchronize [preview] media_size with [previewer] media_size if configured in TOML
+    if let Some(size) = config.render.preview.media_size {
+        config.previewer.media_size = size;
+    }
+
     if let Some(props) = &cli.media {
         apply_media_props(props, &mut config);
+    }
+
+    if let Some(size_str) = &cli.media_size {
+        apply_media_size_str(size_str, &mut config);
     }
 
     for spec in &cli.color {
@@ -576,6 +585,30 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
     }
 }
 
+fn set_media_size(config: &mut Config, size: u32) {
+    config.previewer.media_size = size;
+    config.render.preview.media_size = Some(size);
+}
+
+fn apply_media_size_str(s: &str, config: &mut Config) {
+    config.render.preview.media = true;
+    match s.to_ascii_lowercase().as_str() {
+        "xs" => set_media_size(config, 128),
+        "s" => set_media_size(config, 256),
+        "m" => set_media_size(config, 512),
+        "l" => set_media_size(config, 1024),
+        "xl" => set_media_size(config, 2048),
+        "full" | "0" | "none" => set_media_size(config, 0),
+        _ => {
+            if let Ok(num) = s.parse::<u32>() {
+                set_media_size(config, num);
+            } else {
+                eprintln!("warning: invalid --media-size value '{}'", s);
+            }
+        }
+    }
+}
+
 fn apply_media_props(props: &[String], config: &mut Config) {
     config.render.preview.media = true;
 
@@ -588,15 +621,15 @@ fn apply_media_props(props: &[String], config: &mut Config) {
                         "kitty" | "sixel" | "halfblocks" | "iterm2" => {
                             config.render.preview.media_protocol = Some(prop.to_string());
                         }
-                        "xs" => config.previewer.media_size = 128,
-                        "s" => config.previewer.media_size = 256,
-                        "m" => config.previewer.media_size = 512,
-                        "l" => config.previewer.media_size = 1024,
-                        "xl" => config.previewer.media_size = 2048,
-                        "full" => config.previewer.media_size = 0,
+                        "xs" => set_media_size(config, 128),
+                        "s" => set_media_size(config, 256),
+                        "m" => set_media_size(config, 512),
+                        "l" => set_media_size(config, 1024),
+                        "xl" => set_media_size(config, 2048),
+                        "full" | "0" | "none" => set_media_size(config, 0),
                         _ => {
                             if let Ok(num) = prop.parse::<u32>() {
-                                config.previewer.media_size = num;
+                                set_media_size(config, num);
                             } else {
                                 eprintln!("warning: unknown --media property '{}'", prop);
                             }
@@ -604,15 +637,15 @@ fn apply_media_props(props: &[String], config: &mut Config) {
                     }
                 }
                 Some(("size", s)) => match s.to_ascii_lowercase().as_str() {
-                    "xs" => config.previewer.media_size = 128,
-                    "s" => config.previewer.media_size = 256,
-                    "m" => config.previewer.media_size = 512,
-                    "l" => config.previewer.media_size = 1024,
-                    "xl" => config.previewer.media_size = 2048,
-                    "full" => config.previewer.media_size = 0,
+                    "xs" => set_media_size(config, 128),
+                    "s" => set_media_size(config, 256),
+                    "m" => set_media_size(config, 512),
+                    "l" => set_media_size(config, 1024),
+                    "xl" => set_media_size(config, 2048),
+                    "full" | "0" | "none" => set_media_size(config, 0),
                     _ => {
                         if let Ok(num) = s.parse::<u32>() {
-                            config.previewer.media_size = num;
+                            set_media_size(config, num);
                         } else {
                             eprintln!("warning: invalid --media size value '{}'", s);
                         }
@@ -1999,3 +2032,30 @@ fn is_default_file_walker_command(cmd: &str) -> bool {
         || trimmed == "fd --strip-cwd-prefix --print0"
         || trimmed == "find . -print0"
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_media_size_str_and_sync() {
+        let mut config = Config::default();
+        apply_media_size_str("800", &mut config);
+        assert_eq!(config.previewer.media_size, 800);
+        assert_eq!(config.render.preview.media_size, Some(800));
+        assert!(config.render.preview.media);
+
+        apply_media_size_str("xl", &mut config);
+        assert_eq!(config.previewer.media_size, 2048);
+        assert_eq!(config.render.preview.media_size, Some(2048));
+
+        apply_media_size_str("full", &mut config);
+        assert_eq!(config.previewer.media_size, 0);
+        assert_eq!(config.render.preview.media_size, Some(0));
+
+        apply_media_props(&["size:1280".to_string()], &mut config);
+        assert_eq!(config.previewer.media_size, 1280);
+        assert_eq!(config.render.preview.media_size, Some(1280));
+    }
+}
+

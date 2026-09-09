@@ -1446,7 +1446,7 @@ pub struct PreviewConfig {
     pub media: bool,
     /// Overriding graphics protocol for media previews (e.g. "kitty", "sixel", "halfblocks", "iterm2")
     pub media_protocol: Option<String>,
-    /// Pixel resolution for media previews (ffmpegthumbnailer -s). Default: 512. 0 = original
+    /// Pixel resolution for media previews (images, videos, PDFs). Default: 1280. 0 = original
     pub media_size: Option<u32>,
     /// Initial zoom level for image previews. Default: 1.0
     pub zoom: Option<f32>,
@@ -1542,7 +1542,7 @@ pub struct PreviewerConfig {
     /// See [`StartConfig`]
     pub command_args: Vec<OsString>,
 
-    /// Pixel resolution for media previews (ffmpegthumbnailer -s). Default: 512. 0 = original
+    /// Pixel resolution for media previews (images, videos, PDFs). Default: 1280. 0 = original
     pub media_size: u32,
 }
 
@@ -1561,7 +1561,7 @@ impl Default for PreviewerConfig {
             hide_semantic_help: true,
 
             command_args: Default::default(),
-            media_size: 512,
+            media_size: 1280,
         }
     }
 }

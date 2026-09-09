@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use redb::{Database, ReadableTable, TableDefinition};
@@ -241,8 +241,19 @@ pub fn clean_path(path: &str) -> &str {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ShadowFileGuard {
+    temp_path: PathBuf,
+}
+
+impl Drop for ShadowFileGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.temp_path);
+    }
+}
+
 static FRECENCY_DB_INSTANCES: std::sync::Mutex<
-    Option<rustc_hash::FxHashMap<PathBuf, Arc<Database>>>,
+    Option<rustc_hash::FxHashMap<PathBuf, Weak<Database>>>,
 > = std::sync::Mutex::new(None);
 
 /// Main Frecency Store wrapping `redb::Database` with thread safety and resilient fallback.
@@ -250,6 +261,7 @@ static FRECENCY_DB_INSTANCES: std::sync::Mutex<
 pub struct FrecencyStore {
     db: Option<Arc<Database>>,
     pub db_path: Option<PathBuf>,
+    _shadow_guard: Option<Arc<ShadowFileGuard>>,
 }
 
 impl std::fmt::Debug for FrecencyStore {
@@ -257,6 +269,7 @@ impl std::fmt::Debug for FrecencyStore {
         f.debug_struct("FrecencyStore")
             .field("db_path", &self.db_path)
             .field("active", &self.db.is_some())
+            .field("is_shadow", &self._shadow_guard.is_some())
             .finish()
     }
 }
@@ -265,6 +278,9 @@ impl FrecencyStore {
     /// Default state directory for matchmaker frecency DB:
     /// `~/.local/state/matchmaker/frecency.redb`
     pub fn default_db_path() -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("MM_FRECENCY_DB") {
+            return Some(PathBuf::from(p));
+        }
         let dir = dirs::state_dir()
             .or_else(dirs::data_local_dir)
             .map(|d| d.join("matchmaker"))?;
@@ -279,36 +295,74 @@ impl FrecencyStore {
                 Self {
                     db: None,
                     db_path: Some(path),
+                    _shadow_guard: None,
                 }
             })
         } else {
             Self {
                 db: None,
                 db_path: None,
+                _shadow_guard: None,
             }
         }
+    }
+
+    /// Returns true if this store is operating on a read-only shadow copy due to lock contention.
+    pub fn is_shadow(&self) -> bool {
+        self._shadow_guard.is_some()
+    }
+
+    fn get_write_db(&self) -> Option<Arc<Database>> {
+        if self._shadow_guard.is_none() {
+            return self.db.clone();
+        }
+        // If we are currently holding a shadow copy (because another process holds flock),
+        // attempt to open the real database now for writing.
+        if let Some(path) = &self.db_path {
+            if let Ok(d) = Database::create(path) {
+                return Some(Arc::new(d));
+            }
+        }
+        None
     }
 
     /// Opens or creates the frecency database at a specific path.
     pub fn open_at(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
-        let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-
-        let mut lock = FRECENCY_DB_INSTANCES.lock().unwrap();
-        let map = lock.get_or_insert_with(rustc_hash::FxHashMap::default);
-        if let Some(existing) = map.get(&canonical_path) {
-            return Ok(Self {
-                db: Some(existing.clone()),
-                db_path: Some(canonical_path),
-            });
-        }
-
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let db_res = Database::create(path);
-        let db = match db_res {
+        let canonical_path = path.canonicalize().unwrap_or_else(|_| {
+            if let Some(parent) = path.parent() {
+                let p = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+                if let Some(name) = path.file_name() {
+                    p.join(name)
+                } else {
+                    path.to_path_buf()
+                }
+            } else {
+                path.to_path_buf()
+            }
+        });
+
+        // 1. Check if another thread in this process already has an active Database open
+        {
+            let mut lock = FRECENCY_DB_INSTANCES.lock().unwrap();
+            let map = lock.get_or_insert_with(rustc_hash::FxHashMap::default);
+            if let Some(weak) = map.get(&canonical_path) {
+                if let Some(existing) = weak.upgrade() {
+                    return Ok(Self {
+                        db: Some(existing),
+                        db_path: Some(canonical_path),
+                        _shadow_guard: None,
+                    });
+                }
+            }
+        }
+
+        // 2. Attempt to open primary database with retry on lock contention
+        let mut db = match Database::create(path) {
             Ok(database) => Some(Arc::new(database)),
             Err(err) => {
                 log::warn!("redb error opening {path:?}: {err}.");
@@ -316,7 +370,7 @@ impl FrecencyStore {
                     redb::DatabaseError::DatabaseAlreadyOpen => {
                         let mut retried = None;
                         for _ in 0..10 {
-                            std::thread::sleep(std::time::Duration::from_millis(20));
+                            std::thread::sleep(std::time::Duration::from_millis(25));
                             if let Ok(d) = Database::create(path) {
                                 retried = Some(Arc::new(d));
                                 break;
@@ -338,19 +392,48 @@ impl FrecencyStore {
             }
         };
 
+        let mut shadow_guard = None;
+
+        // 3. Fallback: If primary database is locked by another process, create an ephemeral shadow copy for reading
+        if db.is_none() && canonical_path.exists() {
+            let temp_file = std::env::temp_dir().join(format!(
+                "mm_frecency_shadow_{}_{}.redb",
+                std::process::id(),
+                current_unix_nanos()
+            ));
+            if fs::copy(&canonical_path, &temp_file).is_ok() {
+                if let Ok(shadow_db) = Database::create(&temp_file) {
+                    db = Some(Arc::new(shadow_db));
+                    shadow_guard = Some(Arc::new(ShadowFileGuard {
+                        temp_path: temp_file,
+                    }));
+                } else {
+                    let _ = fs::remove_file(&temp_file);
+                }
+            }
+        }
+
+        // 4. If primary DB opened, cache it as a Weak reference
         if let Some(ref d) = db {
-            map.insert(canonical_path.clone(), d.clone());
+            if shadow_guard.is_none() {
+                let actual_canonical = path.canonicalize().unwrap_or_else(|_| canonical_path.clone());
+                let mut lock = FRECENCY_DB_INSTANCES.lock().unwrap();
+                let map = lock.get_or_insert_with(rustc_hash::FxHashMap::default);
+                map.insert(actual_canonical, Arc::downgrade(d));
+                map.insert(canonical_path.clone(), Arc::downgrade(d));
+            }
         }
 
         Ok(Self {
             db,
             db_path: Some(canonical_path),
+            _shadow_guard: shadow_guard,
         })
     }
 
     /// Record access event for a file or directory path. Returns updated score.
     pub fn add(&self, raw_path: &str) -> anyhow::Result<u32> {
-        let Some(db) = self.db.as_ref() else {
+        let Some(db) = self.get_write_db() else {
             return Ok(0);
         };
 
@@ -506,7 +589,7 @@ impl FrecencyStore {
 
     /// Import an entry with a specified access count/weight into the database.
     pub fn import_entry(&self, raw_path: &str, count: u64) -> anyhow::Result<()> {
-        let Some(db) = self.db.as_ref() else {
+        let Some(db) = self.get_write_db() else {
             return Ok(());
         };
 
@@ -636,7 +719,11 @@ impl FrecencyStore {
             return Ok(0);
         }
 
-        let write_txn = db.begin_write()?;
+        let Some(write_db) = self.get_write_db() else {
+            return Ok(0);
+        };
+
+        let write_txn = write_db.begin_write()?;
         {
             let mut table = write_txn.open_table(FRECENCY_TABLE)?;
             for key in &stale_keys {
@@ -649,7 +736,7 @@ impl FrecencyStore {
 
     /// Removes a specific path entry from the frecency database. Returns true if key was present.
     pub fn remove(&self, raw_path: &str) -> anyhow::Result<bool> {
-        let Some(db) = self.db.as_ref() else {
+        let Some(db) = self.get_write_db() else {
             return Ok(false);
         };
 
@@ -675,7 +762,7 @@ impl FrecencyStore {
 
     /// Pin / bookmark a path.
     pub fn pin(&self, raw_path: &str) -> anyhow::Result<()> {
-        let Some(db) = self.db.as_ref() else {
+        let Some(db) = self.get_write_db() else {
             return Ok(());
         };
 
@@ -695,7 +782,7 @@ impl FrecencyStore {
 
     /// Unpin / remove bookmark for a path. Returns true if key was present.
     pub fn unpin(&self, raw_path: &str) -> anyhow::Result<bool> {
-        let Some(db) = self.db.as_ref() else {
+        let Some(db) = self.get_write_db() else {
             return Ok(false);
         };
 
@@ -810,6 +897,13 @@ fn current_unix_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn current_unix_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
 }
 
 #[cfg(test)]
@@ -1092,6 +1186,44 @@ mod tests {
         assert!(!store.is_pinned(path2));
         assert_eq!(store.list_pins().len(), 1);
 
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+
+    #[test]
+    fn test_shadow_copy_fallback_on_locked_database() -> anyhow::Result<()> {
+        let temp_dir = std::env::temp_dir().join("mm_test_shadow_fallback");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir)?;
+        let db_path = temp_dir.join("primary.redb");
+
+        let test_file = temp_dir.join("locked_item.rs");
+        fs::write(&test_file, "")?;
+        let test_path = test_file.to_str().unwrap();
+
+        // Open primary database and populate with test data
+        let primary_store = FrecencyStore::open_at(&db_path)?;
+        primary_store.add(test_path)?;
+        primary_store.pin(test_path)?;
+
+        let temp_shadow = std::env::temp_dir().join(format!("test_shadow_{}.redb", current_unix_nanos()));
+        fs::copy(&db_path, &temp_shadow)?;
+        let shadow_db = Database::create(&temp_shadow)?;
+        let shadow_store = FrecencyStore {
+            db: Some(Arc::new(shadow_db)),
+            db_path: Some(db_path.clone()),
+            _shadow_guard: Some(Arc::new(ShadowFileGuard { temp_path: temp_shadow.clone() })),
+        };
+
+        assert!(shadow_store.is_shadow());
+        assert!(shadow_store.is_pinned(test_path));
+        assert!(shadow_store.get_bonus(test_path) > 0);
+        assert_eq!(shadow_store.list_pins(), vec![test_path.to_string()]);
+
+        drop(shadow_store);
+        assert!(!temp_shadow.exists(), "Shadow temp file must be cleaned up on drop");
+
+        drop(primary_store);
         let _ = fs::remove_dir_all(&temp_dir);
         Ok(())
     }

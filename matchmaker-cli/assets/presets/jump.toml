@@ -3,8 +3,10 @@
 
 [ui]
 nav_mode = true
+nav_focus_on_start = "picker"
 nav_bar = "Plain"
 nav_color = "Black"
+nav_notify = true
 
 [ui.parent_peek]
 enabled = true
@@ -44,6 +46,7 @@ typo_tolerance = true
 dir_first = true
 
 [results]
+scroll_wrap = true
 max = 15
 reverse = false
 icons = true
@@ -58,11 +61,12 @@ symlink_target = true
 symlink_target_style.fg = "cyan"
 
 [previewer]
-debounce_ms = 20
+debounce_ms = 35
 delay_clear = true
 
 [preview]
 media = true
+media_size = 1280
 
 [preview.border]
 title_fg = "cyan"
@@ -70,42 +74,71 @@ color = "blue"
 type = "Rounded"
 
 [[preview.layout]]
-command = '''p={1}; p="${p/#\~/$HOME}"; if [ -d "$p" ]; then mm tree "$p" 2>/dev/null || eza --tree --level=2 --icons=always --git-ignore --color=always "$p" 2>/dev/null || ls -la "$p"; else mime=$(file -b --mime-type "$p" 2>/dev/null); if [[ "$mime" == image/* ]]; then if command -v chafa >/dev/null 2>&1; then chafa --format=symbols --size=80x35 "$p" 2>/dev/null; elif command -v img2txt >/dev/null 2>&1; then img2txt -f ansi -W 60 "$p" 2>/dev/null; fi; echo ""; identify "$p" 2>/dev/null || file "$p"; else bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; fi; fi'''
+command = '''p={1}; p="${p/#\~/$HOME}"; if [ -d "$p" ]; then mm tree "$p" 2>/dev/null || eza --tree --level=2 --icons=always --git-ignore --color=always "$p" 2>/dev/null || ls -la "$p"; else mime=$(file -b --mime-type "$p" 2>/dev/null); if [[ "$mime" == image/* ]]; then if command -v chafa >/dev/null 2>&1; then chafa --probe=off --format=symbols --size=80x35 "$p" 2>/dev/null; elif command -v img2txt >/dev/null 2>&1; then img2txt -f ansi -W 60 "$p" 2>/dev/null; fi; echo ""; identify "$p" 2>/dev/null || file "$p"; else bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; fi; fi'''
 side = "right"
 percentage = 50
 
 [binds]
-"tab" = []
+"tab" = "@reloadnext"
+"shift-backtab" = "@reloadprev"
+"backtab" = "@reloadprev"
 "esc" = "ToggleFocus"
 "ctrl-f" = "@dirs"
 "ctrl-b" = "@bookmarks"
 "*" = "@bookmark"
 "ctrl-j" = "Down"
 "ctrl-k" = "Up"
-"ctrl-p" = "SwitchPreview"
-"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
-"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
+"alt-j" = "Down"
+"alt-k" = "Up"
+"ctrl-p" = "@paste_into"
+"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"alt-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"alt-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-v" = "@paste_into"
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
+"," = "SortMenu"
+"." = "NextColumn"
+">" = "PrevColumn"
+"\\" = "ToggleParentPeek"
 
 [ui.nav_binds]
-"tab" = []
+"tab" = "@reloadnext"
+"shift-backtab" = "@reloadprev"
+"backtab" = "@reloadprev"
 " " = "Toggle"
 "esc" = "Quit"
-"/" = "FocusFilter"
 "q" = "Quit"
 "j" = "Down"
 "k" = "Up"
-"backspace" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
 "f" = "@dirs"
 "b" = "@bookmarks"
 "*" = "@bookmark"
-"l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
-"h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
-"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
-"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
-"p" = "SwitchPreview"
-"ctrl-p" = "SwitchPreview"
-"u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
+"l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"backspace" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"alt-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"alt-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"p" = "@paste"
+"P" = "@paste_into"
+"ctrl-p" = "@paste_into"
+"ctrl-v" = "@paste_into"
+"y" = "@yank"
+"x" = "@cut"
+"u" = "@undo"
+"/" = "FocusFilter"
+"," = "SortMenu"
+"." = "NextColumn"
+">" = "PrevColumn"
+"\\" = "ToggleParentPeek"
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
 [breadcrumb]

@@ -15,8 +15,13 @@ impl Percentage {
 
     /// Rounds up
     pub fn compute_clamped(&self, total: u16, min: u16, max: u16) -> u16 {
+        if total == 0 {
+            return 0;
+        }
+        let effective_max = if max == 0 { total } else { max };
+        let effective_min = min.min(effective_max);
         let pct_height = (total * self.inner()).div_ceil(100);
-        pct_height.clamp(min, if max == 0 { total } else { max })
+        pct_height.clamp(effective_min, effective_max)
     }
 
     pub fn complement(&self) -> Self {
@@ -63,5 +68,35 @@ impl std::str::FromStr for Percentage {
             .parse()
             .map_err(|e: std::num::ParseIntError| format!("Invalid number: {}", e))?;
         v.try_into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_clamped_zero_total() {
+        let p = Percentage::new(50);
+        // total == 0 with min = 1, max = 0 previously panicked with min > max
+        assert_eq!(p.compute_clamped(0, 1, 0), 0);
+        assert_eq!(p.compute_clamped(0, 0, 0), 0);
+        assert_eq!(p.compute_clamped(0, 5, 10), 0);
+    }
+
+    #[test]
+    fn test_compute_clamped_normal() {
+        let p = Percentage::new(50);
+        assert_eq!(p.compute_clamped(100, 10, 80), 50);
+        assert_eq!(p.compute_clamped(10, 1, 0), 5);
+        assert_eq!(p.compute_clamped(100, 60, 80), 60);
+        assert_eq!(p.compute_clamped(100, 10, 40), 40);
+    }
+
+    #[test]
+    fn test_compute_clamped_min_greater_than_max() {
+        let p = Percentage::new(50);
+        // min > max should not panic
+        assert_eq!(p.compute_clamped(100, 80, 40), 40);
     }
 }

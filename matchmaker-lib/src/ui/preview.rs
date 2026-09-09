@@ -591,16 +591,17 @@ impl PreviewUI {
 
                 is_gen.store(true, std::sync::atomic::Ordering::Release);
                 tokio::task::spawn_blocking(move || {
-                    let mut display_img = img.clone();
-                    if zoom != 1.0 {
+                    let display_img = if zoom != 1.0 {
                         let center_x = img.width() / 2;
                         let center_y = img.height() / 2;
                         let crop_w = (img.width() as f32 / zoom) as u32;
                         let crop_h = (img.height() as f32 / zoom) as u32;
                         let x = center_x.saturating_sub(crop_w / 2);
                         let y = center_y.saturating_sub(crop_h / 2);
-                        display_img = img.crop_imm(x, y, crop_w, crop_h);
-                    }
+                        img.crop_imm(x, y, crop_w, crop_h)
+                    } else {
+                        img
+                    };
                     let state = picker.new_resize_protocol(display_img);
                     let _ = tx.send((live_image_id, state));
                     changed_signal.store(true, std::sync::atomic::Ordering::Release);

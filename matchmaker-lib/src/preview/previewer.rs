@@ -262,6 +262,7 @@ impl Previewer {
                         let image_id = self.image_id.clone();
                         let changed = self.changed.clone();
 
+                        let media_size = self.config.media_size;
                         let rx = self.rx.clone();
                         tokio::task::spawn_blocking(move || {
                             if rx.has_changed().unwrap_or(false) {
@@ -270,7 +271,11 @@ impl Previewer {
 
                             let img_result = if path.to_lowercase().ends_with(".pdf") {
                                 // PDF support using pdftoppm if available
-                                let pdf_scale = self.config.media_size.max(1200).to_string();
+                                let pdf_scale = if media_size > 0 {
+                                    media_size.to_string()
+                                } else {
+                                    "1200".to_string()
+                                };
                                 let output = std::process::Command::new("pdftoppm")
                                     .args([
                                         "-jpeg",
@@ -298,7 +303,11 @@ impl Previewer {
                                 || path.to_lowercase().ends_with(".wmv")
                             {
                                 // Video support
-                                let media_size_str = self.config.media_size.to_string();
+                                let media_size_str = if media_size > 0 {
+                                    media_size.to_string()
+                                } else {
+                                    "512".to_string()
+                                };
                                 let output = std::process::Command::new("ffmpegthumbnailer")
                                     .args([
                                         "-i",
@@ -331,7 +340,18 @@ impl Previewer {
                                     None
                                 }
                             } else {
-                                image::open(&path).ok()
+                                let img = image::open(&path).ok();
+                                if rx.has_changed().unwrap_or(false) {
+                                    return;
+                                }
+                                img.map(|i| {
+                                    let max_dim = media_size;
+                                    if max_dim > 0 && (i.width() > max_dim || i.height() > max_dim) {
+                                        i.thumbnail(max_dim, max_dim)
+                                    } else {
+                                        i
+                                    }
+                                })
                             };
 
                             if rx.has_changed().unwrap_or(false) {

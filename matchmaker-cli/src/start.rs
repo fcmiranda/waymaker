@@ -220,8 +220,17 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         config.render.results.pos = Some(pos);
     }
 
+    // Synchronize [preview] media_size with [previewer] media_size if configured in TOML
+    if let Some(size) = config.render.preview.media_size {
+        config.previewer.media_size = size;
+    }
+
     if let Some(props) = &cli.media {
         apply_media_props(props, &mut config);
+    }
+
+    if let Some(size_str) = &cli.media_size {
+        apply_media_size_str(size_str, &mut config);
     }
 
     for spec in &cli.color {
@@ -275,6 +284,13 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         }
     }
 
+    if config.render.ui.nav_mode {
+        let defaults = matchmaker::config::UiConfig::default().nav_binds;
+        for (k, v) in defaults {
+            config.render.ui.nav_binds.entry(k).or_insert(v);
+        }
+    }
+
     if config.render.ui.nav_mode && !config.render.ui.nav_basic {
         use matchmaker::action::Actions;
         let mut nb = |k: &str, actions: Actions<matchmaker::action::NullActionExt>| {
@@ -296,6 +312,10 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         nb("x", matchmaker::acs![Action::Semantic("fm_cut".into())]);
         nb("X", matchmaker::acs![Action::Semantic("fm_uncut".into())]);
         nb("p", matchmaker::acs![Action::Semantic("fm_paste".into())]);
+        nb(
+            "P",
+            matchmaker::acs![Action::Semantic("fm_paste_into".into())],
+        );
         nb("u", matchmaker::acs![Action::Semantic("fm_undo".into())]);
         nb(
             "ctrl-r",
@@ -306,6 +326,11 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             matchmaker::acs![Action::Semantic("fm_dragdrop".into())],
         );
         nb(",", matchmaker::acs![Action::SortMenu]);
+        nb(".", matchmaker::acs![Action::NextColumn]);
+        nb(">", matchmaker::acs![Action::PrevColumn]);
+        nb("/", matchmaker::acs![Action::FocusFilter]);
+        nb("\\", matchmaker::acs![Action::ToggleParentPeek]);
+        nb("|", matchmaker::acs![Action::ToggleParentPeek]);
         nb("f", matchmaker::acs![Action::Semantic("reloadnext".into())]);
         nb("b", matchmaker::acs![Action::Semantic("pins".into())]);
         nb("*", matchmaker::acs![Action::Semantic("pin".into())]);
@@ -321,12 +346,27 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     // check binds
+    let slash_trigger = "/".parse().expect("slash trigger should parse");
+    let user_has_slash = config.binds.contains_key(&slash_trigger);
+    let user_has_focus_action = config.binds.values().any(|actions| {
+        actions.iter().any(|a| {
+            matches!(
+                a,
+                matchmaker::Action::ToggleFocus
+                    | matchmaker::Action::FocusNav
+                    | matchmaker::Action::FocusFilter
+            )
+        })
+    });
+
     config.binds = BindMap::default_binds().modify(|x| x.extend(config.binds));
     if config.render.ui.nav_mode {
-        config.binds.insert(
-            "tab".parse().expect("tab trigger should parse"),
-            matchmaker::acs![matchmaker::Action::ToggleFocus],
-        );
+        if !user_has_slash && !user_has_focus_action {
+            config.binds.insert(
+                slash_trigger,
+                matchmaker::acs![matchmaker::Action::FocusFilter],
+            );
+        }
         config.binds.insert(
             "shift-enter".parse().expect("shift-enter should parse"),
             matchmaker::acs![
@@ -351,6 +391,9 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     def_sem("@reloadnext", Action::Custom(MMAction::ReloadNext(None)));
     def_sem("@reloadprev", Action::Custom(MMAction::ReloadPrev));
     def_sem("@cycle", Action::Custom(MMAction::ReloadNext(None)));
+    def_sem("@paste", Action::Custom(MMAction::FmPaste));
+    def_sem("@paste_into", Action::Custom(MMAction::FmPasteInto));
+    def_sem("@paste_target", Action::Custom(MMAction::FmPasteInto));
 
     config.binds.check_cycles().map_err(anyhow::Error::msg)?;
     config.binds.retain(|_, actions| !actions.is_empty());
@@ -396,6 +439,7 @@ pub fn map_reader<E: SSS + std::fmt::Display>(
 }
 
 pub static COMMAND_ARGS: Mutex<Vec<std::ffi::OsString>> = Mutex::new(Vec::new());
+pub static TARGET_ITEM: Mutex<Option<String>> = Mutex::new(None);
 
 fn parse_border_type(s: &str) -> ratatui::widgets::BorderType {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -541,6 +585,30 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
     }
 }
 
+fn set_media_size(config: &mut Config, size: u32) {
+    config.previewer.media_size = size;
+    config.render.preview.media_size = Some(size);
+}
+
+fn apply_media_size_str(s: &str, config: &mut Config) {
+    config.render.preview.media = true;
+    match s.to_ascii_lowercase().as_str() {
+        "xs" => set_media_size(config, 128),
+        "s" => set_media_size(config, 256),
+        "m" => set_media_size(config, 512),
+        "l" => set_media_size(config, 1024),
+        "xl" => set_media_size(config, 2048),
+        "full" | "0" | "none" => set_media_size(config, 0),
+        _ => {
+            if let Ok(num) = s.parse::<u32>() {
+                set_media_size(config, num);
+            } else {
+                eprintln!("warning: invalid --media-size value '{}'", s);
+            }
+        }
+    }
+}
+
 fn apply_media_props(props: &[String], config: &mut Config) {
     config.render.preview.media = true;
 
@@ -553,15 +621,15 @@ fn apply_media_props(props: &[String], config: &mut Config) {
                         "kitty" | "sixel" | "halfblocks" | "iterm2" => {
                             config.render.preview.media_protocol = Some(prop.to_string());
                         }
-                        "xs" => config.previewer.media_size = 128,
-                        "s" => config.previewer.media_size = 256,
-                        "m" => config.previewer.media_size = 512,
-                        "l" => config.previewer.media_size = 1024,
-                        "xl" => config.previewer.media_size = 2048,
-                        "full" => config.previewer.media_size = 0,
+                        "xs" => set_media_size(config, 128),
+                        "s" => set_media_size(config, 256),
+                        "m" => set_media_size(config, 512),
+                        "l" => set_media_size(config, 1024),
+                        "xl" => set_media_size(config, 2048),
+                        "full" | "0" | "none" => set_media_size(config, 0),
                         _ => {
                             if let Ok(num) = prop.parse::<u32>() {
-                                config.previewer.media_size = num;
+                                set_media_size(config, num);
                             } else {
                                 eprintln!("warning: unknown --media property '{}'", prop);
                             }
@@ -569,15 +637,15 @@ fn apply_media_props(props: &[String], config: &mut Config) {
                     }
                 }
                 Some(("size", s)) => match s.to_ascii_lowercase().as_str() {
-                    "xs" => config.previewer.media_size = 128,
-                    "s" => config.previewer.media_size = 256,
-                    "m" => config.previewer.media_size = 512,
-                    "l" => config.previewer.media_size = 1024,
-                    "xl" => config.previewer.media_size = 2048,
-                    "full" => config.previewer.media_size = 0,
+                    "xs" => set_media_size(config, 128),
+                    "s" => set_media_size(config, 256),
+                    "m" => set_media_size(config, 512),
+                    "l" => set_media_size(config, 1024),
+                    "xl" => set_media_size(config, 2048),
+                    "full" | "0" | "none" => set_media_size(config, 0),
                     _ => {
                         if let Ok(num) = s.parse::<u32>() {
-                            config.previewer.media_size = num;
+                            set_media_size(config, num);
                         } else {
                             eprintln!("warning: invalid --media size value '{}'", s);
                         }
@@ -901,6 +969,7 @@ pub async fn start(
             s.envs.extend(envs_);
             s.picker_ui.query.set_mode_index(initial_index);
             s.picker_ui.results.set_mode_index(initial_index);
+            s.picker_ui.worker.set_mode_index(initial_index);
         });
 
     let render_tx = options.render_tx();
@@ -966,6 +1035,7 @@ pub async fn start(
     let mut history: std::collections::HashMap<std::path::PathBuf, String> =
         std::collections::HashMap::new();
     mm.register_interrupt_handler(Interrupt::ChDir, move |state| {
+        state.picker_ui.worker.nucleo.tick(15);
         let template = state.payload().clone();
         if template.is_empty() {
             return;
@@ -1000,11 +1070,23 @@ pub async fn start(
             target_path.to_path_buf()
         };
 
-        let mut target_to_select = None;
-        if target_dir == Path::new("..") {
-            if let Ok(cwd) = std::env::current_dir() {
-                if let Some(name) = cwd.file_name() {
-                    target_to_select = Some(name.to_string_lossy().to_string());
+        let mut target_to_select = TARGET_ITEM
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| std::env::var("MM_TARGET_ITEM").ok());
+        if target_to_select.is_none() {
+            if target_path == Path::new("..") || path == ".." {
+                if let Ok(cwd) = std::env::current_dir() {
+                    if let Some(name) = cwd.file_name() {
+                        target_to_select = Some(name.to_string_lossy().to_string());
+                    }
+                }
+            } else if let Ok(cwd) = std::env::current_dir() {
+                if cwd.parent() == Some(&target_dir) {
+                    if let Some(name) = cwd.file_name() {
+                        target_to_select = Some(name.to_string_lossy().to_string());
+                    }
                 }
             }
         }
@@ -1039,10 +1121,12 @@ pub async fn start(
             log::warn!("ChDir({}) failed: {e}", target_dir.display());
         } else {
             if let Some(t) = target_to_select {
+                *TARGET_ITEM.lock().unwrap() = Some(t.clone());
                 unsafe {
                     std::env::set_var("MM_TARGET_ITEM", t);
                 }
             } else {
+                TARGET_ITEM.lock().unwrap().take();
                 unsafe {
                     std::env::remove_var("MM_TARGET_ITEM");
                 }
@@ -1052,12 +1136,14 @@ pub async fn start(
                 let store = matchmaker::frecency::FrecencyStore::open();
                 let _ = store.add(&new_cwd.to_string_lossy());
                 if state.ui.config.nav_mode {
-                    // Reset view to local mode (index 0) and nav mode upon entering/changing directory
-                    let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
-                        matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(
-                            Some(0),
-                        )),
-                    ));
+                    state.focus = matchmaker::render::Focus::Results;
+                    if state.picker_ui.query.mode_index() != 0 {
+                        let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
+                            matchmaker::action::Action::Custom(
+                                crate::action::MMAction::ReloadNext(Some(0)),
+                            ),
+                        ));
+                    }
                     let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
                         matchmaker::action::Action::FocusNav,
                     ));
@@ -1078,26 +1164,71 @@ pub async fn start(
         }
     });
 
-    let sync_formatter = cli_formatter.clone();
-    mm.register_event_handler(Event::Synced, move |state, _| {
-        if let Ok(target) = std::env::var("MM_TARGET_ITEM") {
+    let sync_render_tx = render_tx.clone();
+    mm.register_event_handler(Event::Synced | Event::Resynced, move |state, _| {
+        let target_opt = TARGET_ITEM
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| std::env::var("MM_TARGET_ITEM").ok());
+
+        if let Some(target) = target_opt {
             let count = state.picker_ui.worker.counts().0;
+            if count == 0 {
+                return;
+            }
             let mut found = false;
+            let target_trimmed = target.trim_end_matches('/');
             for i in 0..count {
-                state.picker_ui.results.cursor_jump(i);
-                let val = use_formatter(&sync_formatter, state, "{=}", None);
-                let val_trimmed = val.trim_end_matches('/');
-                let target_trimmed = target.trim_end_matches('/');
-                if val_trimmed == target_trimmed {
-                    found = true;
-                    break;
+                if let Some(raw) = state.picker_ui.worker.get_nth(i) {
+                    let val = state.picker_ui.worker.columns[0].raw(raw);
+                    let val_trimmed = val.trim_end_matches('/');
+                    let val_is_abs = val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
+                    let target_is_abs =
+                        target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
+                    let is_match = if val_trimmed == target_trimmed {
+                        true
+                    } else if val_trimmed.trim_start_matches("./")
+                        == target_trimmed.trim_start_matches("./")
+                    {
+                        true
+                    } else if val_is_abs && target_is_abs {
+                        false
+                    } else if !val_is_abs && target_is_abs {
+                        target_trimmed.ends_with(&format!("/{}", val_trimmed))
+                    } else if val_is_abs && !target_is_abs {
+                        state.picker_ui.worker.mode_index == 0
+                            && val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                    } else {
+                        val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                            || target_trimmed.ends_with(&format!("/{}", val_trimmed))
+                    };
+                    if is_match {
+                        state.picker_ui.results.cursor_jump(i);
+                        let _ = sync_render_tx.send(matchmaker::message::RenderCommand::Action(
+                            matchmaker::action::Action::Pos(i as i32),
+                        ));
+                        state.needs_redraw = true;
+                        found = true;
+                        break;
+                    }
                 }
             }
-            if !found && count > 0 {
+            if found {
+                TARGET_ITEM.lock().unwrap().take();
+                unsafe {
+                    std::env::remove_var("MM_TARGET_ITEM");
+                }
+            } else if !state.picker_ui.results.status.running {
+                TARGET_ITEM.lock().unwrap().take();
+                unsafe {
+                    std::env::remove_var("MM_TARGET_ITEM");
+                }
                 state.picker_ui.results.cursor_jump(0);
-            }
-            unsafe {
-                std::env::remove_var("MM_TARGET_ITEM");
+                let _ = sync_render_tx.send(matchmaker::message::RenderCommand::Action(
+                    matchmaker::action::Action::Pos(0),
+                ));
+                state.needs_redraw = true;
             }
         }
     });
@@ -1219,7 +1350,8 @@ pub async fn start(
                 || cmd.contains("frecency"));
 
         if is_bookmarks {
-            state.picker_ui.worker.restart(true);
+            state.picker_ui.worker.set_mode_index(2);
+            state.picker_ui.worker.restart(false);
             state.reloading = true;
 
             let injector = state.injector();
@@ -1245,7 +1377,8 @@ pub async fn start(
                 matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(vec![])),
             ));
         } else if is_dirs {
-            state.picker_ui.worker.restart(true);
+            state.picker_ui.worker.set_mode_index(1);
+            state.picker_ui.worker.restart(false);
             state.reloading = true;
 
             let injector = state.injector();
@@ -1266,10 +1399,30 @@ pub async fn start(
             if let Ok(cwd) = std::env::current_dir() {
                 let _ = store.add(&cwd.to_string_lossy());
             }
-            let snapshot = store.get_snapshot_with_half_life(30);
-            let mut items: Vec<(String, u32)> = snapshot.scores.into_iter().collect();
-            items.sort_by(|a, b| b.1.cmp(&a.1));
-            for (path, _) in items {
+            let pinned_paths = store.list_pins();
+            let pins_set: std::collections::HashSet<String> =
+                pinned_paths.iter().cloned().collect();
+
+            for path in pinned_paths {
+                if std::path::Path::new(&path).is_dir() {
+                    let _ = push_fn(path);
+                }
+            }
+
+            let snapshot = store.get_snapshot();
+            let mut items: Vec<(String, u32, usize)> = Vec::new();
+            for (path, score) in snapshot.scores {
+                if pins_set.contains(&path) {
+                    continue;
+                }
+                let p = std::path::Path::new(&path);
+                if p.is_dir() {
+                    let depth = p.components().count();
+                    items.push((path, score, depth));
+                }
+            }
+            items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.cmp(&b.2)));
+            for (path, _, _) in items {
                 let _ = push_fn(path);
             }
 
@@ -1277,6 +1430,7 @@ pub async fn start(
                 matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(vec![])),
             ));
         } else if is_default_file_walker_command(&cmd) {
+            state.picker_ui.worker.set_mode_index(0);
             let cwd_str = current_dir.to_string_lossy().to_string();
 
             if state.payload().is_empty() {
@@ -1500,51 +1654,161 @@ pub async fn start(
         undo_stack: Arc::new(Mutex::new(Vec::new())),
         redo_stack: Arc::new(Mutex::new(Vec::new())),
         fm_action: None,
-        query_history: std::collections::HashMap::new(),
+        mode_history: std::collections::HashMap::new(),
+        last_cwd: std::env::current_dir().ok(),
     };
 
     options = options
         .ext_handler(move |x, y| action_handler(x, y, &mut action_context))
         .ext_aliaser(|a, _state| match a {
             Action::Accept => acs![MMAction::Accept],
-            Action::Semantic(ref s) if s == "fm_create" => acs![MMAction::FmCreateStart],
-            Action::Semantic(ref s) if s == "fm_delete" => acs![MMAction::FmDeleteStart],
-            Action::Semantic(ref s) if s == "fm_rename" => acs![MMAction::FmRenameStart],
-            Action::Semantic(ref s) if s == "fm_unzip" => acs![MMAction::FmUnzipStart],
-            Action::Semantic(ref s) if s == "fm_zip" => acs![MMAction::FmZipStart],
-            Action::Semantic(ref s) if s == "fm_yank" => acs![MMAction::FmYank],
-            Action::Semantic(ref s) if s == "fm_unyank" => acs![MMAction::FmUnyank],
-            Action::Semantic(ref s) if s == "fm_cut" => acs![MMAction::FmCut],
-            Action::Semantic(ref s) if s == "fm_uncut" => acs![MMAction::FmUncut],
-            Action::Semantic(ref s) if s == "fm_paste" => acs![MMAction::FmPaste],
-            Action::Semantic(ref s) if s == "fm_undo" => acs![MMAction::FmUndo],
-            Action::Semantic(ref s) if s == "fm_redo" => acs![MMAction::FmRedo],
-            Action::Semantic(ref s) if s == "fm_dragdrop" => acs![MMAction::FmDragDrop],
             Action::Semantic(ref s)
-                if s == "fm_pin" || s == "fm_bookmark" || s == "pin" || s == "bookmark" =>
+                if s.eq_ignore_ascii_case("fm_create")
+                    || s.eq_ignore_ascii_case("fmcreate")
+                    || s.eq_ignore_ascii_case("create") =>
+            {
+                acs![MMAction::FmCreateStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_delete")
+                    || s.eq_ignore_ascii_case("fmdelete")
+                    || s.eq_ignore_ascii_case("delete") =>
+            {
+                acs![MMAction::FmDeleteStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_rename")
+                    || s.eq_ignore_ascii_case("fmrename")
+                    || s.eq_ignore_ascii_case("rename") =>
+            {
+                acs![MMAction::FmRenameStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_unzip")
+                    || s.eq_ignore_ascii_case("fmunzip")
+                    || s.eq_ignore_ascii_case("unzip") =>
+            {
+                acs![MMAction::FmUnzipStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_zip")
+                    || s.eq_ignore_ascii_case("fmzip")
+                    || s.eq_ignore_ascii_case("zip") =>
+            {
+                acs![MMAction::FmZipStart]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_yank")
+                    || s.eq_ignore_ascii_case("fmyank")
+                    || s.eq_ignore_ascii_case("yank") =>
+            {
+                acs![MMAction::FmYank]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_unyank")
+                    || s.eq_ignore_ascii_case("fmunyank")
+                    || s.eq_ignore_ascii_case("unyank") =>
+            {
+                acs![MMAction::FmUnyank]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_cut")
+                    || s.eq_ignore_ascii_case("fmcut")
+                    || s.eq_ignore_ascii_case("cut") =>
+            {
+                acs![MMAction::FmCut]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_uncut")
+                    || s.eq_ignore_ascii_case("fmuncut")
+                    || s.eq_ignore_ascii_case("uncut") =>
+            {
+                acs![MMAction::FmUncut]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_paste")
+                    || s.eq_ignore_ascii_case("fmpaste")
+                    || s.eq_ignore_ascii_case("paste") =>
+            {
+                acs![MMAction::FmPaste]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_paste_into")
+                    || s.eq_ignore_ascii_case("fmpasteinto")
+                    || s.eq_ignore_ascii_case("fm_paste_target")
+                    || s.eq_ignore_ascii_case("fmpastetarget")
+                    || s.eq_ignore_ascii_case("paste_into")
+                    || s.eq_ignore_ascii_case("pasteinto")
+                    || s.eq_ignore_ascii_case("paste_target")
+                    || s.eq_ignore_ascii_case("pastetarget") =>
+            {
+                acs![MMAction::FmPasteInto]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_undo")
+                    || s.eq_ignore_ascii_case("fmundo")
+                    || s.eq_ignore_ascii_case("undo") =>
+            {
+                acs![MMAction::FmUndo]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_redo")
+                    || s.eq_ignore_ascii_case("fmredo")
+                    || s.eq_ignore_ascii_case("redo") =>
+            {
+                acs![MMAction::FmRedo]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_dragdrop")
+                    || s.eq_ignore_ascii_case("fmdragdrop")
+                    || s.eq_ignore_ascii_case("dragdrop") =>
+            {
+                acs![MMAction::FmDragDrop]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("fm_pin")
+                    || s.eq_ignore_ascii_case("fmpin")
+                    || s.eq_ignore_ascii_case("pin")
+                    || s.eq_ignore_ascii_case("fm_bookmark")
+                    || s.eq_ignore_ascii_case("fmbookmark")
+                    || s.eq_ignore_ascii_case("bookmark") =>
             {
                 acs![MMAction::FmTogglePin]
             }
             Action::Semantic(ref s)
-                if s == "pins"
-                    || s == "bookmarks"
-                    || s == "reload_pins"
-                    || s == "reload_bookmarks" =>
+                if s.eq_ignore_ascii_case("pins")
+                    || s.eq_ignore_ascii_case("bookmarks")
+                    || s.eq_ignore_ascii_case("reload_pins")
+                    || s.eq_ignore_ascii_case("reload_bookmarks") =>
             {
                 acs![MMAction::ReloadNext(Some(2))]
             }
             Action::Semantic(ref s)
-                if s == "dirs"
-                    || s == "frecency"
-                    || s == "reload_dirs"
-                    || s == "reload_frecency" =>
+                if s.eq_ignore_ascii_case("dirs")
+                    || s.eq_ignore_ascii_case("frecency")
+                    || s.eq_ignore_ascii_case("reload_dirs")
+                    || s.eq_ignore_ascii_case("reload_frecency") =>
             {
                 acs![MMAction::ReloadNext(Some(1))]
             }
-            Action::Semantic(ref s) if s == "cycle" => acs![MMAction::ReloadNext(None)],
-            Action::Semantic(ref s) if s == "reloadnext" => acs![MMAction::ReloadNext(None)],
-            Action::Semantic(ref s) if s == "reloadprev" => acs![MMAction::ReloadPrev],
-            Action::Semantic(ref s) if s == "reload_local" || s == "local" => {
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("cycle")
+                    || s.eq_ignore_ascii_case("reloadnext")
+                    || s.eq_ignore_ascii_case("reload_next") =>
+            {
+                acs![MMAction::ReloadNext(None)]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("reloadprev")
+                    || s.eq_ignore_ascii_case("reload_prev") =>
+            {
+                acs![MMAction::ReloadPrev]
+            }
+            Action::Semantic(ref s)
+                if s.eq_ignore_ascii_case("reload_local")
+                    || s.eq_ignore_ascii_case("reloadlocal")
+                    || s.eq_ignore_ascii_case("local") =>
+            {
                 acs![MMAction::ReloadNext(Some(0))]
             }
             _ => acs![a],
@@ -1778,3 +2042,30 @@ fn is_default_file_walker_command(cmd: &str) -> bool {
         || trimmed == "fd --strip-cwd-prefix --print0"
         || trimmed == "find . -print0"
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_media_size_str_and_sync() {
+        let mut config = Config::default();
+        apply_media_size_str("800", &mut config);
+        assert_eq!(config.previewer.media_size, 800);
+        assert_eq!(config.render.preview.media_size, Some(800));
+        assert!(config.render.preview.media);
+
+        apply_media_size_str("xl", &mut config);
+        assert_eq!(config.previewer.media_size, 2048);
+        assert_eq!(config.render.preview.media_size, Some(2048));
+
+        apply_media_size_str("full", &mut config);
+        assert_eq!(config.previewer.media_size, 0);
+        assert_eq!(config.render.preview.media_size, Some(0));
+
+        apply_media_props(&["size:1280".to_string()], &mut config);
+        assert_eq!(config.previewer.media_size, 1280);
+        assert_eq!(config.render.preview.media_size, Some(1280));
+    }
+}
+

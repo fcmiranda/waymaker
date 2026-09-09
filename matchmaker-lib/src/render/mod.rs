@@ -402,6 +402,10 @@ fn apply_focus_binds<A: ActionExt>(
                 sim_focus = Focus::Results;
                 out.push(RenderCommand::Action(Action::FocusNav));
             }
+            RenderCommand::Action(Action::ChDir(payload)) => {
+                sim_focus = Focus::Results;
+                out.push(RenderCommand::Action(Action::ChDir(payload)));
+            }
             RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
                 let key = c.to_string();
                 process_results_nav_key(
@@ -429,6 +433,39 @@ fn apply_focus_binds<A: ActionExt>(
                 // sim_focus == Focus::Input
                 update_sim_focus(&action, &mut sim_focus);
                 out.push(RenderCommand::Action(action));
+            }
+            RenderCommand::Action(Action::DeleteChar) if sim_focus == Focus::Results => {
+                process_results_nav_key(
+                    "backspace",
+                    Some(Action::DeleteChar),
+                    focus_binds,
+                    pending_nav_key,
+                    sort_menu_active,
+                    &mut sim_focus,
+                    &mut out,
+                );
+            }
+            RenderCommand::Action(Action::BackwardChar) if sim_focus == Focus::Results => {
+                process_results_nav_key(
+                    "left",
+                    Some(Action::BackwardChar),
+                    focus_binds,
+                    pending_nav_key,
+                    sort_menu_active,
+                    &mut sim_focus,
+                    &mut out,
+                );
+            }
+            RenderCommand::Action(Action::ForwardChar) if sim_focus == Focus::Results => {
+                process_results_nav_key(
+                    "right",
+                    Some(Action::ForwardChar),
+                    focus_binds,
+                    pending_nav_key,
+                    sort_menu_active,
+                    &mut sim_focus,
+                    &mut out,
+                );
             }
             other => out.push(other),
         }
@@ -498,9 +535,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
     }
 
     if let Ok(cwd) = std::env::current_dir() {
-        if let Some(sort_order) = ui.config.resolve_sort_for_dir(&cwd) {
-            picker_ui.worker.set_sort_order(Some(sort_order));
-        }
+        let sort_order = ui.config.resolve_sort_for_dir(&cwd);
+        picker_ui.worker.set_sort_order(sort_order);
     }
 
     if let Some(handler) = initializer {
@@ -1320,77 +1356,110 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                         // Edit
                         Action::SetQuery(context) => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.set(context, u16::MAX);
                             } else {
                                 query.set(context, u16::MAX);
                             }
                         }
                         Action::ForwardChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.forward_char()
                             } else {
                                 query.forward_char()
                             }
                         }
                         Action::BackwardChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.backward_char()
                             } else {
                                 query.backward_char()
                             }
                         }
                         Action::ForwardWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.forward_word()
                             } else {
                                 query.forward_word()
                             }
                         }
                         Action::BackwardWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.backward_word()
                             } else {
                                 query.backward_word()
                             }
                         }
                         Action::DeleteChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete()
                             } else {
                                 query.delete()
                             }
                         }
                         Action::DeleteWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_word()
                             } else {
                                 query.delete_word()
                             }
                         }
                         Action::DeleteNextChar => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_next()
                             } else {
                                 query.delete_next()
                             }
                         }
                         Action::DeleteNextWord => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_next_word()
                             } else {
                                 query.delete_next_word()
                             }
                         }
                         Action::DeleteLineStart => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_line_start()
                             } else {
                                 query.delete_line_start()
                             }
                         }
                         Action::DeleteLineEnd => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 action_input.delete_line_end()
                             } else {
                                 query.delete_line_end()
@@ -1402,6 +1471,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 action_input.cancel();
                                 crate::ACTION_BOX_ACTIVE
                                     .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
                             } else {
                                 query.cancel()
                             }
@@ -1412,6 +1482,17 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             tui.redraw();
                         }
                         Action::ToggleFocus => {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
+                                *action_visible = false;
+                                action_input.cancel();
+                                crate::ACTION_BOX_ACTIVE
+                                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
+                                continue;
+                            }
                             if ui.config.nav_mode {
                                 state.focus = match state.focus {
                                     Focus::Input => Focus::Results,
@@ -1433,6 +1514,17 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             }
                         }
                         Action::FocusFilter => {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
+                                *action_visible = false;
+                                action_input.cancel();
+                                crate::ACTION_BOX_ACTIVE
+                                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
+                                continue;
+                            }
                             if ui.config.nav_mode {
                                 state.focus = Focus::Input;
                                 state.focus_blink = true;
@@ -1445,6 +1537,17 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             }
                         }
                         Action::FocusNav => {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
+                                *action_visible = false;
+                                action_input.cancel();
+                                crate::ACTION_BOX_ACTIVE
+                                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                                tui.redraw();
+                                continue;
+                            }
                             if ui.config.nav_mode {
                                 state.focus = Focus::Results;
                                 state.focus_blink = true;
@@ -1480,13 +1583,24 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                         Action::Char(c) => {
                             if !c.is_ascii_control() {
-                                if *action_visible {
+                                let is_action_box_input = *action_visible
+                                    && crate::ACTION_BOX_ACTIVE
+                                        .load(std::sync::atomic::Ordering::Relaxed);
+                                if is_action_box_input {
                                     action_input.push_char(c)
-                                } else if !(ui.config.nav_mode
-                                    && !ui.config.nav_passthrough
-                                    && state.focus == Focus::Results)
-                                {
-                                    query.push_char(c)
+                                } else {
+                                    if *action_visible {
+                                        *action_visible = false;
+                                        action_input.cancel();
+                                        crate::ACTION_BOX_ACTIVE
+                                            .store(false, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    if !(ui.config.nav_mode
+                                        && !ui.config.nav_passthrough
+                                        && state.focus == Focus::Results)
+                                    {
+                                        query.push_char(c)
+                                    }
                                 }
                             }
                         }
@@ -1533,7 +1647,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     state.synced = [false; 2];
                     did_reload = true;
                 }
-                Interrupt::ChDir => {}
+                Interrupt::ChDir => {
+                    state.synced = [false; 2];
+                }
                 Interrupt::Become => {
                     tui.exit(None);
                 }
@@ -1556,11 +1672,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                 }
 
                 if matches!(interrupt, Interrupt::ChDir) {
-                    picker_ui.results.cursor_jump(0);
                     if let Ok(cwd) = std::env::current_dir() {
-                        if let Some(sort_order) = ui.config.resolve_sort_for_dir(&cwd) {
-                            picker_ui.worker.set_sort_order(Some(sort_order));
-                        }
+                        let sort_order = ui.config.resolve_sort_for_dir(&cwd);
+                        picker_ui.worker.set_sort_order(sort_order);
                     }
                 }
 
@@ -1632,6 +1746,19 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
         if !picker_ui.results.config.spinner_prefix.is_empty() {
             state.needs_redraw = true;
+        }
+
+        if !picker_ui.results.flash_targets.is_empty() {
+            let now = std::time::Instant::now();
+            let prev_len = picker_ui.results.flash_targets.len();
+            picker_ui.results.flash_targets.retain(|_, (start, _)| {
+                now.duration_since(*start) < std::time::Duration::from_millis(1500)
+            });
+            if !picker_ui.results.flash_targets.is_empty()
+                || prev_len != picker_ui.results.flash_targets.len()
+            {
+                state.needs_redraw = true;
+            }
         }
 
         if ui.config.nav_mode {
@@ -2572,19 +2699,22 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
 
     let hints: &[(&str, &str, Color)] = if is_basic {
         &[
-            ("[Tab]", "Filter", Color::Cyan),
+            ("[/]", "Filter", Color::Cyan),
             ("[j/k]", "Move", Color::Yellow),
             ("[h/l]", "Up/Dir", Color::Yellow),
             ("[C-h/l]", "Trav", Color::Green),
             ("[p]", "Toggle", Color::Magenta),
             ("[J/K]", "Scroll", Color::Blue),
             ("[,]", "Sort", Color::Yellow),
+            ("[.]", "Cols", Color::Cyan),
+            ("[\\]", "Pane", Color::Cyan),
         ]
     } else {
         &[
-            ("[Tab]", "Filter", Color::Cyan),
+            ("[/]", "Filter", Color::Cyan),
             ("[Space]", "Sel/Unsel", Color::Yellow),
             ("[,]", "Sort", Color::Yellow),
+            ("[.]", "Cols", Color::Cyan),
             ("[f]", "Frecency", Color::Cyan),
             ("[b]", "Bookmarks", Color::Magenta),
             ("[*]", "Bookmark", Color::Yellow),
@@ -2593,9 +2723,11 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             ("[d]", "Trash", Color::Red),
             ("[y/x]", "Copy/Cut", Color::Green),
             ("[p]", "Paste", Color::Magenta),
+            ("[P]", "PasteInto", Color::Magenta),
+            ("[u]", "Undo", Color::Blue),
             ("[z/Z]", "Zip/Unzip", Color::Blue),
             ("[D]", "Drag", Color::Magenta),
-            ("[P]", "Pane", Color::Cyan),
+            ("[\\]", "Pane", Color::Cyan),
             ("[C-p]", "Toggle", Color::Blue),
         ]
     };
@@ -3067,6 +3199,84 @@ mod test {
             buffer[0],
             RenderCommand::Action(Action::ToggleFocus)
         ));
+    }
+
+    #[test]
+    fn test_apply_focus_binds_esc_and_nav() {
+        use crate::action::{Actions, NullActionExt};
+        let mut focus_binds = std::collections::HashMap::new();
+        focus_binds.insert("esc".to_string(), Actions::from([Action::Quit(0)]));
+        focus_binds.insert("q".to_string(), Actions::from([Action::Quit(0)]));
+        focus_binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
+        focus_binds.insert("backspace".to_string(), Actions::from([Action::Pos(0)]));
+
+        let mut pending = None;
+        let mut sort_menu_active = false;
+
+        // 1. In Input mode, ToggleFocus passes through
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::ToggleFocus)];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleFocus)));
+
+        // 2. In Results mode, ToggleFocus is intercepted and replaced by nav_binds["esc"] (Quit)
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::ToggleFocus)];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(0))));
+
+        // 3. In Results mode, 'q' triggers Quit
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('q'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(0))));
+
+        // 4. In Results mode, '/' triggers FocusFilter
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('/'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::FocusFilter)));
+
+        // 5. In Results mode, DeleteChar triggers 'backspace' bind
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::DeleteChar)];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(0))));
     }
 }
 

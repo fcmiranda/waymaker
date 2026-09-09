@@ -13,7 +13,10 @@ use crate::{
     render::Click,
     ui::results::{
         ResultsUI,
-        icons::{extract_col0_name, insert_icon_span, maybe_append_symlink_target},
+        icons::{
+            apply_bookmark_text_style, bookmark_color, extract_col0_name, insert_icon_span,
+            maybe_append_symlink_target,
+        },
     },
     utils::{
         string::{fit_width, substitute_escaped},
@@ -77,7 +80,9 @@ impl ResultsUI {
         let current_nav_bar = self.config.current_nav_bar;
         let get_nav_bar_span = |is_first: bool,
                                 is_last: bool,
-                                is_current: bool|
+                                is_current: bool,
+                                is_yanked: bool,
+                                is_cut: bool|
          -> Option<ratatui::text::Span<'static>> {
             nav_bar_style.as_ref().map(|(border_type, style)| {
                 let bt = if is_current {
@@ -85,8 +90,14 @@ impl ResultsUI {
                 } else {
                     *border_type
                 };
+                let mut st = *style;
+                if is_cut {
+                    st = st.fg(ratatui::style::Color::Red);
+                } else if is_yanked {
+                    st = st.fg(ratatui::style::Color::Yellow);
+                }
                 let ch = get_border_char(is_first, is_last, bt);
-                ratatui::text::Span::styled(ch, *style)
+                ratatui::text::Span::styled(ch, st)
             })
         };
 
@@ -165,24 +176,8 @@ impl ResultsUI {
                         );
                     }
                 }
-                let (is_yanked, is_cut) = if (!self.yank_paths.is_empty()
-                    || !self.cut_paths.is_empty())
-                    && !icon_name.is_empty()
-                {
-                    let path = std::path::Path::new(&icon_name);
-                    let abs_path = if path.is_absolute() {
-                        path.to_path_buf()
-                    } else {
-                        cwd.join(path)
-                    };
-                    let abs_str = abs_path.to_string_lossy();
-                    (
-                        !self.yank_paths.is_empty() && self.yank_paths.contains(abs_str.as_ref()),
-                        !self.cut_paths.is_empty() && self.cut_paths.contains(abs_str.as_ref()),
-                    )
-                } else {
-                    (false, false)
-                };
+                let is_yanked = Self::is_path_in_set(&self.yank_paths, &icon_name, &cwd);
+                let is_cut = Self::is_path_in_set(&self.cut_paths, &icon_name, &cwd);
 
                 let prefix = if is_spinner && !self.config.spinner_inline {
                     let frame =
@@ -462,9 +457,16 @@ impl ResultsUI {
                     let is_first = rows.is_empty();
                     let is_last = (self.height <= total_height + remaining_height)
                         || (start_index as usize >= results_len);
-                    let nav_bar_span = get_nav_bar_span(is_first, is_last, is_current_row);
                     let (prefix, icon_name, is_spinner, spinner_col_idx, is_yanked, is_cut) =
                         get_prefix!(row, is_selected, 0, item, columns, is_first, is_last);
+                    let nav_bar_span =
+                        get_nav_bar_span(is_first, is_last, is_current_row, is_yanked, is_cut);
+                    let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
+                    let b_color = if is_pinned || self.mode_index == 2 {
+                        Some(bookmark_color(&self.config, &icon_name))
+                    } else {
+                        None
+                    };
 
                     total_height += remaining_height;
 
@@ -500,6 +502,9 @@ impl ResultsUI {
                             .enumerate()
                             .map(|(x, mut t)| {
                                 t = style_text(t, x, is_current_row);
+                                if let Some(color) = b_color {
+                                    apply_bookmark_text_style(&mut t, color);
+                                }
                                 if x == target_prefix_col {
                                     prefix_span(
                                         &mut t,
@@ -517,7 +522,7 @@ impl ResultsUI {
                                             &cwd,
                                         ),
                                         is_current_row,
-                                        if !is_selected && !is_yanked && !is_cut {
+                                        if !is_selected {
                                             nav_bar_span.clone()
                                         } else {
                                             None
@@ -526,22 +531,20 @@ impl ResultsUI {
                                         self.config.current_nav_bar_style,
                                     );
                                     if self.config.icons {
-                                        let is_pinned =
-                                            Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                         insert_icon_span(
                                             &mut t,
                                             &icon_name,
-                                            !is_selected
-                                                && !is_yanked
-                                                && !is_cut
-                                                && nav_bar_span.is_some(),
+                                            !is_selected && nav_bar_span.is_some(),
                                             is_current_row,
                                             self.config.uncolor_current_icon,
                                             self.config.invert_current_icon,
                                             self.config.current_icon_style,
                                             is_pinned,
+                                            is_yanked,
+                                            is_cut,
                                             self.mode_index,
                                             &self.config,
+                                            self.get_flash_op(&icon_name, &cwd),
                                         );
                                     }
                                     if self.config.symlink_target {
@@ -588,6 +591,10 @@ impl ResultsUI {
                             }
                             remaining_height -= height;
 
+                            if let Some(color) = b_color {
+                                apply_bookmark_text_style(&mut col, color);
+                            }
+
                             prefix_span(
                                 &mut col,
                                 prefix.clone(),
@@ -599,7 +606,7 @@ impl ResultsUI {
                                     &cwd,
                                 ),
                                 is_current_row,
-                                if !is_selected && !is_yanked && !is_cut {
+                                if !is_selected {
                                     nav_bar_span.clone()
                                 } else {
                                     None
@@ -608,19 +615,20 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons && col_idx == 0 {
-                                let is_pinned =
-                                    Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                 insert_icon_span(
                                     &mut col,
                                     &icon_name,
-                                    !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some(),
+                                    !is_selected && nav_bar_span.is_some(),
                                     is_current_row,
                                     self.config.uncolor_current_icon,
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
                                     is_pinned,
+                                    is_yanked,
+                                    is_cut,
                                     self.mode_index,
                                     &self.config,
+                                    self.get_flash_op(&icon_name, &cwd),
                                 );
                             }
                             if self.config.symlink_target && col_idx == 0 {
@@ -671,9 +679,16 @@ impl ResultsUI {
             let is_first = rows.is_empty();
             let is_last = (self.height <= total_height + remaining_height)
                 || (start_index as usize >= results_len);
-            let nav_bar_span = get_nav_bar_span(is_first, is_last, is_current_row);
             let (prefix, icon_name, is_spinner, spinner_col_idx, is_yanked, is_cut) =
                 get_prefix!(row, is_selected, 0, item, columns, is_first, is_last);
+            let nav_bar_span =
+                get_nav_bar_span(is_first, is_last, is_current_row, is_yanked, is_cut);
+            let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
+            let b_color = if is_pinned || self.mode_index == 2 {
+                Some(bookmark_color(&self.config, &icon_name))
+            } else {
+                None
+            };
 
             total_height += remaining_height;
 
@@ -705,6 +720,9 @@ impl ResultsUI {
                     .enumerate()
                     .map(|(x, mut t)| {
                         t = style_text(t, x, is_current_row);
+                        if let Some(color) = b_color {
+                            apply_bookmark_text_style(&mut t, color);
+                        }
                         if x == target_prefix_col {
                             prefix_span(
                                 &mut t,
@@ -717,7 +735,7 @@ impl ResultsUI {
                                     &cwd,
                                 ),
                                 is_current_row,
-                                if !is_selected && !is_yanked && !is_cut {
+                                if !is_selected {
                                     nav_bar_span.clone()
                                 } else {
                                     None
@@ -726,19 +744,20 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons {
-                                let is_pinned =
-                                    Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                                 insert_icon_span(
                                     &mut t,
                                     &icon_name,
-                                    !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some(),
+                                    !is_selected && nav_bar_span.is_some(),
                                     is_current_row,
                                     self.config.uncolor_current_icon,
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
                                     is_pinned,
+                                    is_yanked,
+                                    is_cut,
                                     self.mode_index,
                                     &self.config,
+                                    self.get_flash_op(&icon_name, &cwd),
                                 );
                             }
                             if self.config.symlink_target {
@@ -763,7 +782,7 @@ impl ResultsUI {
                     let total_available = self.width.saturating_sub(self.column_spacing_width());
                     let surplus = total_available.saturating_sub(total_allocated);
                     let num_cols = row_texts.len();
-                    let has_nav = !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some();
+                    let has_nav = !is_selected && nav_bar_span.is_some();
                     let prefix_skip = if has_nav { 2 } else { 1 };
                     for (col_idx, t) in row_texts.iter_mut().enumerate() {
                         let is_last_col = col_idx == num_cols.saturating_sub(1);
@@ -809,13 +828,17 @@ impl ResultsUI {
                     }
                     remaining_height -= height;
 
+                    if let Some(color) = b_color {
+                        apply_bookmark_text_style(&mut col, color);
+                    }
+
                     prefix_span(
                         &mut col,
                         prefix.clone(),
                         self.active_prefix_style(&icon_name, is_selected, is_spinner, &cwd),
                         self.inactive_prefix_style(&icon_name, is_selected, is_spinner, &cwd),
                         is_current_row,
-                        if !is_selected && !is_yanked && !is_cut {
+                        if !is_selected {
                             nav_bar_span.clone()
                         } else {
                             None
@@ -824,18 +847,20 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && col_idx == 0 {
-                        let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name,
-                            !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some(),
+                            !is_selected && nav_bar_span.is_some(),
                             is_current_row,
                             self.config.uncolor_current_icon,
                             self.config.invert_current_icon,
                             self.config.current_icon_style,
                             is_pinned,
+                            is_yanked,
+                            is_cut,
                             self.mode_index,
                             &self.config,
+                            self.get_flash_op(&icon_name, &cwd),
                         );
                     }
                     if self.config.symlink_target && col_idx == 0 {
@@ -849,8 +874,7 @@ impl ResultsUI {
 
                     if is_topside_tier_underlined {
                         let target_w = self.width as usize;
-                        let has_nav =
-                            !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some();
+                        let has_nav = !is_selected && nav_bar_span.is_some();
                         let prefix_skip = if has_nav { 2 } else { 1 };
                         let skip = if col_idx == 0 { prefix_skip } else { 0 };
                         apply_tier_underline(&mut col, target_w, skip);
@@ -896,7 +920,7 @@ impl ResultsUI {
                 if remaining_height > 0 {
                     let is_first = rows.is_empty();
                     let is_last = remaining_height <= 1;
-                    let nav_bar_span = get_nav_bar_span(is_first, is_last, false);
+                    let nav_bar_span = get_nav_bar_span(is_first, is_last, false, false, false);
 
                     let row_opt = match group {
                         crate::nucleo::GroupHeader::Named(group_name) => {
@@ -1015,9 +1039,16 @@ impl ResultsUI {
             };
             let is_last = is_last_in_results || (remaining_height <= h);
             let is_current_row = self.is_current(i);
-            let nav_bar_span = get_nav_bar_span(is_first, is_last, is_current_row);
             let (prefix, icon_name_hz, is_spinner, spinner_col_idx, is_yanked, is_cut) =
                 get_prefix!(row, is_selected, i, item, columns, is_first, is_last);
+            let nav_bar_span =
+                get_nav_bar_span(is_first, is_last, is_current_row, is_yanked, is_cut);
+            let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
+            let b_color = if is_pinned || self.mode_index == 2 {
+                Some(bookmark_color(&self.config, &icon_name_hz))
+            } else {
+                None
+            };
 
             if as_cols {
                 // scroll down
@@ -1073,6 +1104,9 @@ impl ResultsUI {
                     .enumerate()
                     .map(|(x, mut t)| {
                         t = style_text(t, x, self.is_current(i));
+                        if let Some(color) = b_color {
+                            apply_bookmark_text_style(&mut t, color);
+                        }
 
                         // prefix after hscroll
                         if x == target_prefix_col {
@@ -1092,7 +1126,7 @@ impl ResultsUI {
                                     &cwd,
                                 ),
                                 is_current_row,
-                                if !is_selected && !is_yanked && !is_cut {
+                                if !is_selected {
                                     nav_bar_span.clone()
                                 } else {
                                     None
@@ -1101,19 +1135,20 @@ impl ResultsUI {
                                 self.config.current_nav_bar_style,
                             );
                             if self.config.icons {
-                                let is_pinned =
-                                    Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
                                 insert_icon_span(
                                     &mut t,
                                     &icon_name_hz,
-                                    !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some(),
+                                    !is_selected && nav_bar_span.is_some(),
                                     is_current_row,
                                     self.config.uncolor_current_icon,
                                     self.config.invert_current_icon,
                                     self.config.current_icon_style,
                                     is_pinned,
+                                    is_yanked,
+                                    is_cut,
                                     self.mode_index,
                                     &self.config,
+                                    self.get_flash_op(&icon_name_hz, &cwd),
                                 );
                             }
                             if self.config.symlink_target {
@@ -1143,7 +1178,7 @@ impl ResultsUI {
                     let total_available = self.width.saturating_sub(self.column_spacing_width());
                     let surplus = total_available.saturating_sub(total_allocated);
                     let num_cols = row_texts.len();
-                    let has_nav = !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some();
+                    let has_nav = !is_selected && nav_bar_span.is_some();
                     let prefix_skip = if has_nav { 2 } else { 1 };
                     for (col_idx, t) in row_texts.iter_mut().enumerate() {
                         let is_last_col = col_idx == num_cols.saturating_sub(1);
@@ -1209,6 +1244,10 @@ impl ResultsUI {
                     }
                     remaining_height -= height;
 
+                    if let Some(color) = b_color {
+                        apply_bookmark_text_style(&mut col, color);
+                    }
+
                     let is_current_row = self.is_current(i);
                     prefix_span(
                         &mut col,
@@ -1221,7 +1260,7 @@ impl ResultsUI {
                             &cwd,
                         ),
                         is_current_row,
-                        if !is_selected && !is_yanked && !is_cut {
+                        if !is_selected {
                             nav_bar_span.clone()
                         } else {
                             None
@@ -1230,18 +1269,20 @@ impl ResultsUI {
                         self.config.current_nav_bar_style,
                     );
                     if self.config.icons && x == 0 {
-                        let is_pinned = Self::is_path_in_set(&self.pin_paths, &icon_name_hz, &cwd);
                         insert_icon_span(
                             &mut col,
                             &icon_name_hz,
-                            !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some(),
+                            !is_selected && nav_bar_span.is_some(),
                             is_current_row,
                             self.config.uncolor_current_icon,
                             self.config.invert_current_icon,
                             self.config.current_icon_style,
                             is_pinned,
+                            is_yanked,
+                            is_cut,
                             self.mode_index,
                             &self.config,
+                            self.get_flash_op(&icon_name_hz, &cwd),
                         );
                     }
                     if self.config.symlink_target && x == 0 {
@@ -1290,8 +1331,7 @@ impl ResultsUI {
                         )
                     {
                         let target_w = self.width as usize;
-                        let has_nav =
-                            !is_selected && !is_yanked && !is_cut && nav_bar_span.is_some();
+                        let has_nav = !is_selected && nav_bar_span.is_some();
                         let prefix_skip = if has_nav { 2 } else { 1 };
                         let skip = if x == 0 { prefix_skip } else { 0 };
                         apply_tier_underline(&mut col, target_w, skip);

@@ -361,6 +361,14 @@ impl QueryUI {
         self.mode_index = index;
     }
 
+    pub fn mode_index(&self) -> usize {
+        self.mode_index
+    }
+
+    pub fn prompt(&self) -> &Line<'static> {
+        &self.prompt
+    }
+
     pub fn active_prompt(&self, focused: bool, nav_prompt: Option<&str>) -> Line<'static> {
         if let Some(ref custom) = self.custom_prompt {
             return custom.clone();

@@ -98,12 +98,16 @@ pub fn prefix_span<'a, 'b: 'a>(
             let rest: String = chars.collect();
             let nav_span = if is_current {
                 let mut s = nav.style;
+                let is_cut_or_yanked = nav.style.fg == Some(ratatui::style::Color::Red)
+                    || nav.style.fg == Some(ratatui::style::Color::Yellow);
                 let has_nav_style = current_nav_bar_style.fg.is_some()
                     || current_nav_bar_style.bg.is_some()
                     || !current_nav_bar_style.modifier.is_empty();
                 if has_nav_style {
-                    if let Some(fg) = current_nav_bar_style.fg {
-                        s = s.fg(fg);
+                    if !is_cut_or_yanked {
+                        if let Some(fg) = current_nav_bar_style.fg {
+                            s = s.fg(fg);
+                        }
                     }
                     if let Some(bg) = current_nav_bar_style
                         .bg
@@ -116,8 +120,10 @@ pub fn prefix_span<'a, 'b: 'a>(
                         s = s.add_modifier(current_nav_bar_style.modifier);
                     }
                 } else {
-                    if let Some(fg) = override_style.fg.or(current_row_style.fg) {
-                        s = s.fg(fg);
+                    if !is_cut_or_yanked {
+                        if let Some(fg) = override_style.fg.or(current_row_style.fg) {
+                            s = s.fg(fg);
+                        }
                     }
                     if let Some(bg) = override_style.bg.or(current_row_style.bg) {
                         s = s.bg(bg);

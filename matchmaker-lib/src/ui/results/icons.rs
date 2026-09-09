@@ -21,35 +21,54 @@ impl ResultsUI {
         if set.is_empty() || col0_name.is_empty() {
             return false;
         }
-        if set.contains(col0_name) {
+        let trimmed = col0_name.trim().trim_end_matches('/').trim_end_matches('\\');
+        if set.contains(col0_name) || set.contains(trimmed) {
             return true;
         }
-        let trimmed = col0_name
-            .trim()
-            .trim_end_matches('/')
-            .trim_end_matches('\\');
-        if set.contains(trimmed) {
+        let with_slash = format!("{trimmed}/");
+        if set.contains(&with_slash) {
             return true;
         }
+
         let path = std::path::Path::new(trimmed);
-        if path.is_absolute() {
-            set.contains(trimmed)
+        let abs_path = if path.is_absolute() {
+            path.to_path_buf()
         } else {
-            let abs_path = cwd.join(path);
-            let s = abs_path.to_string_lossy();
-            let s_trimmed = s.trim_end_matches('/').trim_end_matches('\\');
-            if set.contains(s_trimmed) || set.contains(s.as_ref()) {
+            cwd.join(path)
+        };
+        let abs_str = abs_path.to_string_lossy();
+        let abs_trimmed = abs_str.trim_end_matches('/').trim_end_matches('\\');
+        let abs_slash = format!("{abs_trimmed}/");
+
+        if set.contains(abs_trimmed) || set.contains(&abs_slash) || set.contains(abs_str.as_ref()) {
+            return true;
+        }
+
+        for target in set {
+            let target_trimmed = target.trim().trim_end_matches('/').trim_end_matches('\\');
+            if trimmed == target_trimmed
+                || abs_trimmed == target_trimmed
+                || target_trimmed.ends_with(&format!("/{}", trimmed))
+                || abs_trimmed.ends_with(&format!("/{}", target_trimmed))
+            {
                 return true;
             }
-            if let Ok(canon) = abs_path.canonicalize() {
-                let c = canon.to_string_lossy();
-                let c_trimmed = c.trim_end_matches('/').trim_end_matches('\\');
-                if set.contains(c_trimmed) || set.contains(c.as_ref()) {
-                    return true;
-                }
+            let target_path = std::path::Path::new(target_trimmed);
+            let abs_target = if target_path.is_absolute() {
+                target_path.to_path_buf()
+            } else {
+                cwd.join(target_path)
+            };
+            let abs_target_str = abs_target.to_string_lossy();
+            let abs_target_trimmed = abs_target_str.trim_end_matches('/').trim_end_matches('\\');
+            if abs_trimmed == abs_target_trimmed
+                || abs_target_trimmed.ends_with(&format!("/{}", trimmed))
+                || abs_trimmed.ends_with(&format!("/{}", target_trimmed))
+            {
+                return true;
             }
-            false
         }
+        false
     }
 
     /// Return the correct inactive prefix style for a given row.
@@ -66,7 +85,25 @@ impl ResultsUI {
         if is_spinner {
             return self.config.spinner_style;
         }
-        if self.cut_paths.is_empty() && self.yank_paths.is_empty() && self.pin_paths.is_empty() {
+        if let Some(op) = self.get_flash_op(col0_name, cwd) {
+            return match op {
+                crate::ui::results::FlashOp::Cut => StyleSetting {
+                    fg: Some(ratatui::style::Color::Red),
+                    bg: None,
+                    modifier: ratatui::style::Modifier::BOLD,
+                },
+                crate::ui::results::FlashOp::Copy => StyleSetting {
+                    fg: Some(ratatui::style::Color::Yellow),
+                    bg: None,
+                    modifier: ratatui::style::Modifier::BOLD,
+                },
+            };
+        }
+        if self.cut_paths.is_empty()
+            && self.yank_paths.is_empty()
+            && self.pin_paths.is_empty()
+            && self.mode_index != 2
+        {
             return if is_selected {
                 self.config.selected_prefix_style
             } else {
@@ -78,9 +115,9 @@ impl ResultsUI {
             self.config.cut_prefix_style
         } else if Self::is_path_in_set(&self.yank_paths, col0_name, cwd) {
             self.config.yank_prefix_style
-        } else if Self::is_path_in_set(&self.pin_paths, col0_name, cwd) {
+        } else if Self::is_path_in_set(&self.pin_paths, col0_name, cwd) || self.mode_index == 2 {
             StyleSetting {
-                fg: Some(Color::Yellow),
+                fg: Some(bookmark_color(&self.config, col0_name)),
                 bg: None,
                 modifier: ratatui::style::Modifier::BOLD,
             }
@@ -102,7 +139,25 @@ impl ResultsUI {
         if is_spinner {
             return self.config.spinner_style;
         }
-        if self.cut_paths.is_empty() && self.yank_paths.is_empty() && self.pin_paths.is_empty() {
+        if let Some(op) = self.get_flash_op(col0_name, cwd) {
+            return match op {
+                crate::ui::results::FlashOp::Cut => StyleSetting {
+                    fg: Some(ratatui::style::Color::Red),
+                    bg: None,
+                    modifier: ratatui::style::Modifier::BOLD,
+                },
+                crate::ui::results::FlashOp::Copy => StyleSetting {
+                    fg: Some(ratatui::style::Color::Yellow),
+                    bg: None,
+                    modifier: ratatui::style::Modifier::BOLD,
+                },
+            };
+        }
+        if self.cut_paths.is_empty()
+            && self.yank_paths.is_empty()
+            && self.pin_paths.is_empty()
+            && self.mode_index != 2
+        {
             return if is_selected {
                 self.config.selected_prefix_style
             } else {
@@ -114,9 +169,9 @@ impl ResultsUI {
             self.config.cut_prefix_style
         } else if Self::is_path_in_set(&self.yank_paths, col0_name, cwd) {
             self.config.yank_prefix_style
-        } else if Self::is_path_in_set(&self.pin_paths, col0_name, cwd) {
+        } else if Self::is_path_in_set(&self.pin_paths, col0_name, cwd) || self.mode_index == 2 {
             StyleSetting {
-                fg: Some(Color::Yellow),
+                fg: Some(bookmark_color(&self.config, col0_name)),
                 bg: None,
                 modifier: ratatui::style::Modifier::BOLD,
             }
@@ -260,10 +315,24 @@ pub(super) fn insert_icon_span(
     invert_current: bool,
     current_icon_style: StyleSetting,
     is_pinned: bool,
+    is_yanked: bool,
+    is_cut: bool,
     mode_index: usize,
     results_config: &crate::config::ResultsConfig,
+    flash_op: Option<crate::ui::results::FlashOp>,
 ) {
-    let (icon_str, color): (std::borrow::Cow<'_, str>, Color) = if is_pinned || mode_index == 2 {
+    let (icon_str, color): (std::borrow::Cow<'_, str>, Color) = if let Some(op) = flash_op {
+        match op {
+            crate::ui::results::FlashOp::Cut => ("󰆐".into(), Color::Red),
+            crate::ui::results::FlashOp::Copy => ("󰆏".into(), Color::Yellow),
+        }
+    } else if is_cut {
+        let (ch, _) = icon_for_name(name);
+        (ch.to_string().into(), Color::Red)
+    } else if is_yanked {
+        let (ch, _) = icon_for_name(name);
+        (ch.to_string().into(), Color::Yellow)
+    } else if is_pinned || mode_index == 2 {
         let trimmed = name.trim();
         let is_dir = trimmed.ends_with('/')
             || trimmed.ends_with('\\')
@@ -281,19 +350,7 @@ pub(super) fn insert_icon_span(
                 .or(results_config.bookmark_icon.as_deref())
                 .unwrap_or("󱀻")
         };
-        let color = if is_dir {
-            results_config
-                .bookmark_folder_icon_style
-                .fg
-                .or(results_config.bookmark_icon_style.fg)
-                .unwrap_or(Color::Yellow)
-        } else {
-            results_config
-                .bookmark_file_icon_style
-                .fg
-                .or(results_config.bookmark_icon_style.fg)
-                .unwrap_or(Color::Yellow)
-        };
+        let color = bookmark_color(results_config, name);
         (icon.into(), color)
     } else if mode_index == 1 {
         let trimmed = name.trim();
@@ -319,8 +376,14 @@ pub(super) fn insert_icon_span(
         let (ch, c) = icon_for_name(name);
         (ch.to_string().into(), c)
     };
-    let style = if is_current_row {
-        if current_icon_style.fg.is_some()
+    let style = if flash_op.is_some() || is_cut || is_yanked {
+        ratatui::style::Style::default()
+            .fg(color)
+            .add_modifier(ratatui::style::Modifier::BOLD)
+    } else if is_current_row {
+        if is_pinned || mode_index == 2 {
+            ratatui::style::Style::default().fg(color)
+        } else if current_icon_style.fg.is_some()
             || current_icon_style.bg.is_some()
             || !current_icon_style.modifier.is_empty()
         {
@@ -342,6 +405,36 @@ pub(super) fn insert_icon_span(
         line.spans.insert(at, ratatui::text::Span::raw(" "));
         line.spans.insert(at + 1, icon_span.clone());
         line.spans.insert(at + 2, ratatui::text::Span::raw(" "));
+    }
+}
+
+pub(crate) fn bookmark_color(results_config: &crate::config::ResultsConfig, name: &str) -> Color {
+    let trimmed = name.trim();
+    let is_dir = trimmed.ends_with('/')
+        || trimmed.ends_with('\\')
+        || std::path::Path::new(trimmed).is_dir();
+    if is_dir {
+        results_config
+            .bookmark_folder_icon_style
+            .fg
+            .or(results_config.bookmark_icon_style.fg)
+            .unwrap_or(Color::Yellow)
+    } else {
+        results_config
+            .bookmark_file_icon_style
+            .fg
+            .or(results_config.bookmark_icon_style.fg)
+            .unwrap_or(Color::Yellow)
+    }
+}
+
+pub(crate) fn apply_bookmark_text_style(t: &mut ratatui::text::Text<'_>, color: Color) {
+    for line in t.lines.iter_mut() {
+        for span in line.spans.iter_mut() {
+            if span.style.fg.is_none() {
+                span.style = span.style.fg(color);
+            }
+        }
     }
 }
 

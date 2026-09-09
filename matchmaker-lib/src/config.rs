@@ -402,7 +402,11 @@ impl Default for UiConfig {
         nav_binds.insert("K".to_string(), Actions::from([Action::PreviewUp(1)]));
         nav_binds.insert("gg".to_string(), Actions::from([Action::PreviewUp(0)]));
         nav_binds.insert("G".to_string(), Actions::from([Action::PreviewDown(0)]));
-        nav_binds.insert("P".to_string(), Actions::from([Action::ToggleParentPeek]));
+        nav_binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
+        nav_binds.insert("\\".to_string(), Actions::from([Action::ToggleParentPeek]));
+        nav_binds.insert("|".to_string(), Actions::from([Action::ToggleParentPeek]));
+        nav_binds.insert(".".to_string(), Actions::from([Action::NextColumn]));
+        nav_binds.insert(">".to_string(), Actions::from([Action::PrevColumn]));
         nav_binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
         nav_binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
         nav_binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
@@ -1264,14 +1268,8 @@ impl Default for ResultsConfig {
                 fg: Some(Color::Yellow),
                 ..Default::default()
             },
-            bookmark_file_icon_style: StyleSetting {
-                fg: Some(Color::Yellow),
-                ..Default::default()
-            },
-            bookmark_folder_icon_style: StyleSetting {
-                fg: Some(Color::Yellow),
-                ..Default::default()
-            },
+            bookmark_file_icon_style: Default::default(),
+            bookmark_folder_icon_style: Default::default(),
             frecency_folder_icon: Some("󰪻".to_string()),
             frecency_folder_icon_style: StyleSetting {
                 fg: Some(Color::Blue),
@@ -1448,7 +1446,7 @@ pub struct PreviewConfig {
     pub media: bool,
     /// Overriding graphics protocol for media previews (e.g. "kitty", "sixel", "halfblocks", "iterm2")
     pub media_protocol: Option<String>,
-    /// Pixel resolution for media previews (ffmpegthumbnailer -s). Default: 512. 0 = original
+    /// Pixel resolution for media previews (images, videos, PDFs). Default: 1280. 0 = original
     pub media_size: Option<u32>,
     /// Initial zoom level for image previews. Default: 1.0
     pub zoom: Option<f32>,
@@ -1544,7 +1542,7 @@ pub struct PreviewerConfig {
     /// See [`StartConfig`]
     pub command_args: Vec<OsString>,
 
-    /// Pixel resolution for media previews (ffmpegthumbnailer -s). Default: 512. 0 = original
+    /// Pixel resolution for media previews (images, videos, PDFs). Default: 1280. 0 = original
     pub media_size: u32,
 }
 
@@ -1563,7 +1561,7 @@ impl Default for PreviewerConfig {
             hide_semantic_help: true,
 
             command_args: Default::default(),
-            media_size: 512,
+            media_size: 1280,
         }
     }
 }

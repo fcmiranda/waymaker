@@ -165,14 +165,32 @@ impl DirCacheStore {
             fs::create_dir_all(parent)?;
         }
 
-        let db_res = Database::create(path);
-        let db = match db_res {
+        let db = match Database::create(path) {
             Ok(database) => Some(database),
             Err(err) => {
-                log::error!("redb error opening dir cache at {path:?}: {err}. Recreating...");
-                let backup_path = path.with_extension("corrupt.bak");
-                let _ = fs::rename(path, &backup_path);
-                Database::create(path).ok()
+                log::warn!("redb error opening dir cache at {path:?}: {err}.");
+                match &err {
+                    redb::DatabaseError::DatabaseAlreadyOpen => {
+                        let mut retried = None;
+                        for _ in 0..10 {
+                            std::thread::sleep(std::time::Duration::from_millis(25));
+                            if let Ok(d) = Database::create(path) {
+                                retried = Some(d);
+                                break;
+                            }
+                        }
+                        retried
+                    }
+                    _ => {
+                        if path.exists() {
+                            let backup_path = path.with_extension("corrupt.bak");
+                            let _ = fs::rename(path, &backup_path);
+                            Database::create(path).ok()
+                        } else {
+                            None
+                        }
+                    }
+                }
             }
         };
 

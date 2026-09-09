@@ -40,11 +40,36 @@ pub type Clipboard = Arc<Mutex<Option<FmClipboard>>>;
 
 #[derive(Debug, Clone)]
 pub enum UndoAction {
-    DeletedFile { original: PathBuf, backup: PathBuf },
-    CreatedFile { path: PathBuf },
-    Renamed { from: PathBuf, to: PathBuf },
-    Copied { dest: PathBuf },
-    Moved { from: PathBuf, to: PathBuf },
+    DeletedFile {
+        original: PathBuf,
+        backup: PathBuf,
+    },
+    DeletedFiles {
+        items: Vec<(PathBuf, PathBuf)>,
+    },
+    CreatedFile {
+        path: PathBuf,
+    },
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Copied {
+        dest: PathBuf,
+    },
+    Moved {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Paste {
+        op: ClipOp,
+        items: Vec<(PathBuf, PathBuf)>,
+        saved_clipboard: Option<FmClipboard>,
+        saved_yank_paths: std::collections::HashSet<String>,
+        saved_cut_paths: std::collections::HashSet<String>,
+        previous_dir: Option<PathBuf>,
+        target_dir: Option<PathBuf>,
+    },
 }
 
 pub type UndoStack = Arc<Mutex<Vec<UndoAction>>>;
@@ -163,6 +188,14 @@ pub fn move_to_trash(path: &Path) -> std::io::Result<PathBuf> {
     Ok(backup)
 }
 
+pub fn copy_path(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        copy_dir_all(src, dst)
+    } else {
+        fs::copy(src, dst).map(|_| ())
+    }
+}
+
 pub fn apply_undo(action: &UndoAction) -> std::io::Result<()> {
     match action {
         UndoAction::DeletedFile { original, backup } => {
@@ -174,6 +207,22 @@ pub fn apply_undo(action: &UndoAction) -> std::io::Result<()> {
                             .join("info")
                             .join(format!("{}.trashinfo", name.to_string_lossy()));
                         let _ = fs::remove_file(info_file);
+                    }
+                }
+            }
+            Ok(())
+        }
+        UndoAction::DeletedFiles { items } => {
+            for (original, backup) in items {
+                let _ = move_path(backup, original);
+                if let Some(name) = backup.file_name() {
+                    if let Some(parent) = backup.parent() {
+                        if let Some(grandparent) = parent.parent() {
+                            let info_file = grandparent
+                                .join("info")
+                                .join(format!("{}.trashinfo", name.to_string_lossy()));
+                            let _ = fs::remove_file(info_file);
+                        }
                     }
                 }
             }
@@ -195,6 +244,66 @@ pub fn apply_undo(action: &UndoAction) -> std::io::Result<()> {
             }
         }
         UndoAction::Moved { from, to } => move_path(to, from),
+        UndoAction::Paste { op, items, .. } => {
+            for (_src, dest) in items {
+                match op {
+                    ClipOp::Copy => {
+                        if dest.is_dir() {
+                            let _ = fs::remove_dir_all(dest);
+                        } else {
+                            let _ = fs::remove_file(dest);
+                        }
+                    }
+                    ClipOp::Cut => {
+                        let _ = move_path(dest, _src);
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+pub fn apply_redo(action: &UndoAction) -> std::io::Result<()> {
+    match action {
+        UndoAction::DeletedFile { original, .. } => {
+            let _ = move_to_trash(original)?;
+            Ok(())
+        }
+        UndoAction::DeletedFiles { items } => {
+            for (original, _) in items {
+                let _ = move_to_trash(original);
+            }
+            Ok(())
+        }
+        UndoAction::CreatedFile { path } => {
+            if path.to_string_lossy().ends_with('/') {
+                fs::create_dir_all(path)
+            } else {
+                if let Some(parent) = path.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    let _ = fs::create_dir_all(parent);
+                }
+                fs::File::create(path).map(|_| ())
+            }
+        }
+        UndoAction::Renamed { from, to } => move_path(from, to),
+        UndoAction::Copied { dest: _ } => Ok(()),
+        UndoAction::Moved { from, to } => move_path(from, to),
+        UndoAction::Paste { op, items, .. } => {
+            for (src, dest) in items {
+                match op {
+                    ClipOp::Copy => {
+                        copy_path(src, dest)?;
+                    }
+                    ClipOp::Cut => {
+                        move_path(src, dest)?;
+                    }
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -257,7 +366,11 @@ impl Overlay for DeleteOverlay {
     fn handle_action(&mut self, action: &Action<MMAction>) -> OverlayEffect {
         match action {
             Action::Accept | Action::Custom(MMAction::Accept) => self.do_delete(),
-            Action::Quit(_) | Action::Cancel => OverlayEffect::Disable,
+            Action::Quit(_)
+            | Action::Cancel
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }
@@ -373,7 +486,11 @@ impl Overlay for CreateOverlay {
                 self.input.truncate(last_space);
                 OverlayEffect::None
             }
-            Action::Cancel | Action::Quit(_) => OverlayEffect::Disable,
+            Action::Cancel
+            | Action::Quit(_)
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }
@@ -504,7 +621,11 @@ impl Overlay for RenameOverlay {
                 self.input.truncate(last_space);
                 OverlayEffect::None
             }
-            Action::Cancel | Action::Quit(_) => OverlayEffect::Disable,
+            Action::Cancel
+            | Action::Quit(_)
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }
@@ -628,7 +749,11 @@ impl Overlay for UnzipOverlay {
                 self.dest.truncate(last_space);
                 OverlayEffect::None
             }
-            Action::Cancel | Action::Quit(_) => OverlayEffect::Disable,
+            Action::Cancel
+            | Action::Quit(_)
+            | Action::ToggleFocus
+            | Action::FocusFilter
+            | Action::FocusNav => OverlayEffect::Disable,
             _ => OverlayEffect::None,
         }
     }
@@ -801,7 +926,7 @@ pub fn create_archive(archive_name: &str, paths: &[String]) -> std::io::Result<(
     }
 }
 
-pub fn copy_into(src: &Path, dest_dir: &Path) -> std::io::Result<()> {
+pub fn copy_into(src: &Path, dest_dir: &Path) -> std::io::Result<PathBuf> {
     let file_name = src
         .file_name()
         .ok_or_else(|| std::io::Error::other("no file name"))?;
@@ -809,10 +934,11 @@ pub fn copy_into(src: &Path, dest_dir: &Path) -> std::io::Result<()> {
     let dest = unique_dest(dest_dir, Path::new(file_name));
 
     if src.is_dir() {
-        copy_dir_all(src, &dest)
+        copy_dir_all(src, &dest)?;
     } else {
-        fs::copy(src, &dest).map(|_| ())
+        fs::copy(src, &dest)?;
     }
+    Ok(dest)
 }
 
 pub fn move_path(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -830,13 +956,14 @@ pub fn move_path(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
 }
 
-pub fn move_into(src: &Path, dest_dir: &Path) -> std::io::Result<()> {
+pub fn move_into(src: &Path, dest_dir: &Path) -> std::io::Result<PathBuf> {
     let file_name = src
         .file_name()
         .ok_or_else(|| std::io::Error::other("no file name"))?;
 
     let dest = unique_dest(dest_dir, Path::new(file_name));
-    move_path(src, &dest)
+    move_path(src, &dest)?;
+    Ok(dest)
 }
 
 fn unique_dest(dir: &Path, name: &Path) -> PathBuf {

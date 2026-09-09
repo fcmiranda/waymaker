@@ -920,7 +920,7 @@ pub fn action_handler(
                     MMAction::FmSetCutPaths(String::new()),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Copied", &items, "{yellow}");
+                    let msg = fm_notify_msg("Copied", &items, "yellow");
                     show_styled_info_box(state, &msg);
                 }
             }
@@ -939,7 +939,7 @@ pub fn action_handler(
                     MMAction::FmRemoveCutPaths(items.join("\n")),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Un-yanked", &items, "{yellow}");
+                    let msg = fm_notify_msg("Un-yanked", &items, "yellow");
                     show_styled_info_box(state, &msg);
                 }
             }
@@ -954,7 +954,7 @@ pub fn action_handler(
                     MMAction::FmRemoveCutPaths(items.join("\n")),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Un-cut", &items, "{red}");
+                    let msg = fm_notify_msg("Un-cut", &items, "red");
                     show_styled_info_box(state, &msg);
                 }
             }
@@ -990,7 +990,7 @@ pub fn action_handler(
                     MMAction::FmSetYankPaths(String::new()),
                 )));
                 if *fm_notify {
-                    let msg = fm_notify_msg("Cut", &items, "{red}");
+                    let msg = fm_notify_msg("Cut", &items, "red");
                     show_styled_info_box(state, &msg);
                 }
             }
@@ -1061,11 +1061,11 @@ pub fn action_handler(
                         crate::fm::ClipOp::Copy => ("Pasted", "󰆏"),
                         crate::fm::ClipOp::Cut => ("Moved", "󰆐"),
                     };
-                    let color = if had_error { "{red}" } else { "{cyan}" };
+                    let color = if had_error { "red" } else { "cyan" };
                     let count = clip.items.len();
                     let item_word = if count == 1 { "item" } else { "items" };
                     let msg = format!(
-                        "{color}{icon} {verb} {count} {item_word} ({}) into current folder (u to undo){{reset}}",
+                        "{{{color}:{icon} {verb} {count} {item_word} ({}) into current folder (u to undo)}}",
                         names.join(", ")
                     );
                     show_styled_info_box(state, &msg);
@@ -1182,7 +1182,7 @@ pub fn action_handler(
                     crate::fm::ClipOp::Copy => ("Pasted", "󰆏"),
                     crate::fm::ClipOp::Cut => ("Moved", "󰆐"),
                 };
-                let color = if had_error { "{red}" } else { "{cyan}" };
+                let color = if had_error { "red" } else { "cyan" };
                 let msg = if is_subfolder {
                     let clean_dest = dest_display_name
                         .trim()
@@ -1195,11 +1195,11 @@ pub fn action_handler(
                         format!("./{clean_dest}/")
                     };
                     format!(
-                        "{color}{icon} {verb} {count} {item_word} into {target_display} (u to undo){{reset}}"
+                        "{{{color}:{icon} {verb} {count} {item_word} into {target_display} (u to undo)}}"
                     )
                 } else {
                     format!(
-                        "{color}{icon} {verb} {count} {item_word} into current folder (u to undo){{reset}}"
+                        "{{{color}:{icon} {verb} {count} {item_word} into current folder (u to undo)}}"
                     )
                 };
                 show_styled_info_box(state, &msg);
@@ -1275,36 +1275,36 @@ pub fn action_handler(
                             crate::fm::ClipOp::Cut => "move",
                         };
                         format!(
-                            "{{yellow}}󰕌 Undone {op_word} of {count} {item_word} (clipboard restored){{reset}}"
+                            "{{yellow:󰕌 Undone {op_word} of {count} {item_word} (clipboard restored)}}"
                         )
                     }
                     crate::fm::UndoAction::DeletedFile { original, .. } => {
-                        format!("{{yellow}}󰕌 Restored: {}{{reset}}", original.display())
+                        format!("{{yellow:󰕌 Restored: {}}}", original.display())
                     }
                     crate::fm::UndoAction::DeletedFiles { items } => {
                         let count = items.len();
                         let item_word = if count == 1 { "item" } else { "items" };
-                        format!("{{yellow}}󰕌 Restored {count} {item_word}{{reset}}")
+                        format!("{{yellow:󰕌 Restored {count} {item_word}}}")
                     }
                     crate::fm::UndoAction::CreatedFile { path } => {
                         format!(
-                            "{{yellow}}󰕌 Undone creation of: {}{{reset}}",
+                            "{{yellow:󰕌 Undone creation of: {}}}",
                             path.display()
                         )
                     }
                     crate::fm::UndoAction::Renamed { from, to } => {
                         format!(
-                            "{{yellow}}󰕌 Reverted rename: {} -> {}{{reset}}",
+                            "{{yellow:󰕌 Reverted rename: {} -> {}}}",
                             to.display(),
                             from.display()
                         )
                     }
                     crate::fm::UndoAction::Copied { dest } => {
-                        format!("{{yellow}}󰕌 Removed copy: {}{{reset}}", dest.display())
+                        format!("{{yellow:󰕌 Removed copy: {}}}", dest.display())
                     }
                     crate::fm::UndoAction::Moved { from, to } => {
                         format!(
-                            "{{yellow}}󰕌 Moved back: {} -> {}{{reset}}",
+                            "{{yellow:󰕌 Moved back: {} -> {}}}",
                             to.display(),
                             from.display()
                         )
@@ -1367,9 +1367,9 @@ pub fn action_handler(
                             crate::fm::ClipOp::Copy => "pasted",
                             crate::fm::ClipOp::Cut => "moved",
                         };
-                        format!("{{cyan}}󰑖 Redone {op_word} of {count} {item_word}{{reset}}")
+                        format!("{{cyan:󰑖 Redone {op_word} of {count} {item_word}}}")
                     }
-                    _ => "{cyan}󰑖 Redone last action{reset}".to_string(),
+                    _ => "{cyan:󰑖 Redone last action}".to_string(),
                 };
 
                 if let Ok(mut us) = undo_stack.lock() {
@@ -1743,7 +1743,7 @@ fn commit_fm_action(
             }
             close_action_box(state, fm_action);
             if fm_notify && !deleted_names.is_empty() {
-                let msg = fm_notify_msg("Deleted", &deleted_names, "{red}");
+                let msg = fm_notify_msg("Deleted", &deleted_names, "red");
                 show_styled_info_box(state, &msg);
             }
         }
@@ -1847,12 +1847,25 @@ fn fm_current_items(state: &MMState<'_, '_>) -> Vec<String> {
     state.map_selected_to_vec(|_, x| x.to_cow().to_string())
 }
 
-fn fm_notify_msg(verb: &str, names: &[String], color: &str) -> String {
-    let reset = "{reset}";
-    match names.len() {
-        0 => String::new(),
-        1 => format!("{color}{verb}: {}{reset}", names[0]),
-        n => format!("{color}{verb}: {} items ({}){reset}", n, names[0]),
+fn fm_notify_msg(verb: &str, names: &[String], style: &str) -> String {
+    let count = names.len();
+    if count == 0 {
+        return String::new();
+    }
+    let trimmed = style.trim();
+    if trimmed.starts_with('{') && trimmed.ends_with('}') && trimmed.contains(':') {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        if let Some((color, icon)) = inner.split_once(':') {
+            return match count {
+                1 => format!("{{{color}:{icon} {verb}: {}}}", names[0]),
+                n => format!("{{{color}:{icon} {verb}: {n} items ({})}}", names[0]),
+            };
+        }
+    }
+    let color_name = trimmed.trim_matches('{').trim_matches('}');
+    match count {
+        1 => format!("{{{color_name}:{verb}: {}}}", names[0]),
+        n => format!("{{{color_name}:{verb}: {n} items ({})}}", names[0]),
     }
 }
 
@@ -2537,6 +2550,11 @@ mod tests {
 
         let pasted = dest_folder.join("payload.txt");
         assert!(pasted.exists(), "Item should be copied into dest_folder");
+        assert!(mm_state.picker_ui.action_visible, "Info box should be visible on paste into");
+        let paste_prompt = mm_state.picker_ui.action.prompt();
+        assert_eq!(paste_prompt.spans.len(), 1);
+        assert_eq!(paste_prompt.spans[0].style.fg, Some(ratatui::style::Color::Cyan));
+        assert!(paste_prompt.spans[0].content.contains("Pasted 1 item into"));
 
         // Check that undo stack recorded previous_dir and target_dir
         {
@@ -2579,6 +2597,11 @@ mod tests {
         // 2. Execute FmUndo
         action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
         assert!(!pasted.exists(), "Pasted item should be deleted on undo");
+        assert!(mm_state.picker_ui.action_visible, "Info box should be visible on undo");
+        let undo_prompt = mm_state.picker_ui.action.prompt();
+        assert_eq!(undo_prompt.spans.len(), 1);
+        assert_eq!(undo_prompt.spans[0].style.fg, Some(ratatui::style::Color::Yellow));
+        assert!(undo_prompt.spans[0].content.contains("Undone copy"));
 
         // Drain render_rx and check that ChDir to previous_dir (cwd) was sent
         let mut chdir_prev_found = false;
@@ -2604,6 +2627,11 @@ mod tests {
         // 3. Execute FmRedo
         action_handler(MMAction::FmRedo, &mut mm_state, &mut action_context);
         assert!(pasted.exists(), "Pasted item should be restored on redo");
+        assert!(mm_state.picker_ui.action_visible, "Info box should be visible on redo");
+        let redo_prompt = mm_state.picker_ui.action.prompt();
+        assert_eq!(redo_prompt.spans.len(), 1);
+        assert_eq!(redo_prompt.spans[0].style.fg, Some(ratatui::style::Color::Cyan));
+        assert!(redo_prompt.spans[0].content.contains("Redone"));
 
         let mut chdir_redo_found = false;
         while let Ok(cmd) = render_rx.try_recv() {

@@ -1351,7 +1351,10 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             tui.redraw();
                         }
                         Action::ToggleFocus => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 *action_visible = false;
                                 action_input.cancel();
                                 crate::ACTION_BOX_ACTIVE
@@ -1380,7 +1383,10 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             }
                         }
                         Action::FocusFilter => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 *action_visible = false;
                                 action_input.cancel();
                                 crate::ACTION_BOX_ACTIVE
@@ -1400,7 +1406,10 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             }
                         }
                         Action::FocusNav => {
-                            if *action_visible {
+                            if *action_visible
+                                && crate::ACTION_BOX_ACTIVE
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 *action_visible = false;
                                 action_input.cancel();
                                 crate::ACTION_BOX_ACTIVE

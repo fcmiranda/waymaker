@@ -17,6 +17,36 @@ fn test_parse_template_to_status_line() {
 }
 
 #[test]
+fn test_parse_template_color_tags() {
+    let input = "{yellow}󰕌 Undone copy of 1 item{reset}";
+    let line = StatusUI::parse_template_to_status_line(input);
+    assert_eq!(line.spans.len(), 1);
+    assert_eq!(line.spans[0].content, "󰕌 Undone copy of 1 item");
+    assert_eq!(line.spans[0].style.fg, Some(Color::Yellow));
+
+    let input_mixed = "Copied: {yellow}3 items{reset} into {cyan}folder{reset}";
+    let line_mixed = StatusUI::parse_template_to_status_line(input_mixed);
+    assert_eq!(line_mixed.spans.len(), 4);
+    assert_eq!(line_mixed.spans[0].content, "Copied: ");
+    assert_eq!(line_mixed.spans[0].style.fg, None);
+    assert_eq!(line_mixed.spans[1].content, "3 items");
+    assert_eq!(line_mixed.spans[1].style.fg, Some(Color::Yellow));
+    assert_eq!(line_mixed.spans[2].content, " into ");
+    assert_eq!(line_mixed.spans[2].style.fg, None);
+    assert_eq!(line_mixed.spans[3].content, "folder");
+    assert_eq!(line_mixed.spans[3].style.fg, Some(Color::Cyan));
+}
+
+#[test]
+fn test_parse_template_colon_style() {
+    let input = "{yellow:󰕌 Undone copy of 1 item}";
+    let line = StatusUI::parse_template_to_status_line(input);
+    assert_eq!(line.spans.len(), 1);
+    assert_eq!(line.spans[0].content, "󰕌 Undone copy of 1 item");
+    assert_eq!(line.spans[0].style.fg, Some(Color::Yellow));
+}
+
+#[test]
 fn test_results_ui_renders_tier_separator() {
     let mut results_config = ResultsConfig::default();
     results_config.tier_separator = HorizontalSeparator::Top;

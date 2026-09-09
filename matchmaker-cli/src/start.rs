@@ -312,7 +312,10 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             "ctrl-r",
             matchmaker::acs![Action::Semantic("fm_redo".into())],
         );
-        nb("D", matchmaker::acs![Action::Semantic("fm_dragdrop".into())]);
+        nb(
+            "D",
+            matchmaker::acs![Action::Semantic("fm_dragdrop".into())],
+        );
         nb(",", matchmaker::acs![Action::SortMenu]);
         nb(".", matchmaker::acs![Action::NextColumn]);
         nb(">", matchmaker::acs![Action::PrevColumn]);
@@ -939,7 +942,9 @@ pub async fn start(
     let render_tx = options.render_tx();
     if initial_index > 0 {
         let _ = render_tx.send(matchmaker::message::RenderCommand::Action(
-            matchmaker::action::Action::Custom(crate::action::MMAction::SetModeIndex(initial_index)),
+            matchmaker::action::Action::Custom(crate::action::MMAction::SetModeIndex(
+                initial_index,
+            )),
         ));
     }
     let push_fn = inject_line(
@@ -1032,11 +1037,23 @@ pub async fn start(
             target_path.to_path_buf()
         };
 
-        let mut target_to_select = None;
-        if target_path == Path::new("..") || path == ".." {
-            if let Ok(cwd) = std::env::current_dir() {
-                if let Some(name) = cwd.file_name() {
-                    target_to_select = Some(name.to_string_lossy().to_string());
+        let mut target_to_select = TARGET_ITEM
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| std::env::var("MM_TARGET_ITEM").ok());
+        if target_to_select.is_none() {
+            if target_path == Path::new("..") || path == ".." {
+                if let Ok(cwd) = std::env::current_dir() {
+                    if let Some(name) = cwd.file_name() {
+                        target_to_select = Some(name.to_string_lossy().to_string());
+                    }
+                }
+            } else if let Ok(cwd) = std::env::current_dir() {
+                if cwd.parent() == Some(&target_dir) {
+                    if let Some(name) = cwd.file_name() {
+                        target_to_select = Some(name.to_string_lossy().to_string());
+                    }
                 }
             }
         }
@@ -1089,7 +1106,9 @@ pub async fn start(
                     state.focus = matchmaker::render::Focus::Results;
                     if state.picker_ui.query.mode_index() != 0 {
                         let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
-                            matchmaker::action::Action::Custom(crate::action::MMAction::ReloadNext(Some(0))),
+                            matchmaker::action::Action::Custom(
+                                crate::action::MMAction::ReloadNext(Some(0)),
+                            ),
                         ));
                     }
                     let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
@@ -1132,17 +1151,21 @@ pub async fn start(
                     let val = state.picker_ui.worker.columns[0].raw(raw);
                     let val_trimmed = val.trim_end_matches('/');
                     let val_is_abs = val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
-                    let target_is_abs = target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
+                    let target_is_abs =
+                        target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
                     let is_match = if val_trimmed == target_trimmed {
                         true
-                    } else if val_trimmed.trim_start_matches("./") == target_trimmed.trim_start_matches("./") {
+                    } else if val_trimmed.trim_start_matches("./")
+                        == target_trimmed.trim_start_matches("./")
+                    {
                         true
                     } else if val_is_abs && target_is_abs {
                         false
                     } else if !val_is_abs && target_is_abs {
                         target_trimmed.ends_with(&format!("/{}", val_trimmed))
                     } else if val_is_abs && !target_is_abs {
-                        state.picker_ui.worker.mode_index == 0 && val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                        state.picker_ui.worker.mode_index == 0
+                            && val_trimmed.ends_with(&format!("/{}", target_trimmed))
                     } else {
                         val_trimmed.ends_with(&format!("/{}", target_trimmed))
                             || target_trimmed.ends_with(&format!("/{}", val_trimmed))
@@ -1343,9 +1366,7 @@ pub async fn start(
             }
 
             let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
-                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
-                    vec![],
-                )),
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(vec![])),
             ));
         } else if is_dirs {
             state.picker_ui.worker.set_mode_index(1);
@@ -1371,7 +1392,8 @@ pub async fn start(
                 let _ = store.add(&cwd.to_string_lossy());
             }
             let pinned_paths = store.list_pins();
-            let pins_set: std::collections::HashSet<String> = pinned_paths.iter().cloned().collect();
+            let pins_set: std::collections::HashSet<String> =
+                pinned_paths.iter().cloned().collect();
 
             for path in pinned_paths {
                 if std::path::Path::new(&path).is_dir() {
@@ -1397,9 +1419,7 @@ pub async fn start(
             }
 
             let _ = reload_render_tx.send(matchmaker::message::RenderCommand::Action(
-                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(
-                    vec![],
-                )),
+                matchmaker::action::Action::Custom(crate::action::MMAction::ReloadReady(vec![])),
             ));
         } else if is_default_file_walker_command(&cmd) {
             state.picker_ui.worker.set_mode_index(0);

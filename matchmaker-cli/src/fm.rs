@@ -67,6 +67,8 @@ pub enum UndoAction {
         saved_clipboard: Option<FmClipboard>,
         saved_yank_paths: std::collections::HashSet<String>,
         saved_cut_paths: std::collections::HashSet<String>,
+        previous_dir: Option<PathBuf>,
+        target_dir: Option<PathBuf>,
     },
 }
 
@@ -278,7 +280,9 @@ pub fn apply_redo(action: &UndoAction) -> std::io::Result<()> {
             if path.to_string_lossy().ends_with('/') {
                 fs::create_dir_all(path)
             } else {
-                if let Some(parent) = path.parent() && !parent.as_os_str().is_empty() {
+                if let Some(parent) = path.parent()
+                    && !parent.as_os_str().is_empty()
+                {
                     let _ = fs::create_dir_all(parent);
                 }
                 fs::File::create(path).map(|_| ())

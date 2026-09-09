@@ -293,7 +293,12 @@ pub fn action_handler(
 
             if old_index != index {
                 let focused_item = state.current_raw().and_then(|item| {
-                    state.picker_ui.worker.columns.first().map(|c| c.raw(item).into_owned())
+                    state
+                        .picker_ui
+                        .worker
+                        .columns
+                        .first()
+                        .map(|c| c.raw(item).into_owned())
                 });
                 mode_history.insert(
                     old_index,
@@ -387,7 +392,12 @@ pub fn action_handler(
 
             if old_index != index {
                 let focused_item = state.current_raw().and_then(|item| {
-                    state.picker_ui.worker.columns.first().map(|c| c.raw(item).into_owned())
+                    state
+                        .picker_ui
+                        .worker
+                        .columns
+                        .first()
+                        .map(|c| c.raw(item).into_owned())
                 });
                 mode_history.insert(
                     old_index,
@@ -490,18 +500,23 @@ pub fn action_handler(
                     if let Some(raw) = state.picker_ui.worker.get_nth(i) {
                         let val = state.picker_ui.worker.columns[0].raw(raw);
                         let val_trimmed = val.trim_end_matches('/');
-                        let val_is_abs = val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
-                        let target_is_abs = target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
+                        let val_is_abs =
+                            val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
+                        let target_is_abs =
+                            target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
                         let is_match = if val_trimmed == target_trimmed {
                             true
-                        } else if val_trimmed.trim_start_matches("./") == target_trimmed.trim_start_matches("./") {
+                        } else if val_trimmed.trim_start_matches("./")
+                            == target_trimmed.trim_start_matches("./")
+                        {
                             true
                         } else if val_is_abs && target_is_abs {
                             false
                         } else if !val_is_abs && target_is_abs {
                             target_trimmed.ends_with(&format!("/{}", val_trimmed))
                         } else if val_is_abs && !target_is_abs {
-                            state.picker_ui.worker.mode_index == 0 && val_trimmed.ends_with(&format!("/{}", target_trimmed))
+                            state.picker_ui.worker.mode_index == 0
+                                && val_trimmed.ends_with(&format!("/{}", target_trimmed))
                         } else {
                             val_trimmed.ends_with(&format!("/{}", target_trimmed))
                                 || target_trimmed.ends_with(&format!("/{}", val_trimmed))
@@ -1011,6 +1026,8 @@ pub fn action_handler(
                             saved_clipboard: Some(clip.clone()),
                             saved_yank_paths: state.picker_ui.results.yank_paths.clone(),
                             saved_cut_paths: state.picker_ui.results.cut_paths.clone(),
+                            previous_dir: None,
+                            target_dir: None,
                         });
                     }
                 }
@@ -1047,7 +1064,10 @@ pub fn action_handler(
                     let color = if had_error { "{red}" } else { "{cyan}" };
                     let count = clip.items.len();
                     let item_word = if count == 1 { "item" } else { "items" };
-                    let msg = format!("{color}{icon} {verb} {count} {item_word} ({}) into current folder (u to undo){{reset}}", names.join(", "));
+                    let msg = format!(
+                        "{color}{icon} {verb} {count} {item_word} ({}) into current folder (u to undo){{reset}}",
+                        names.join(", ")
+                    );
                     show_styled_info_box(state, &msg);
                 }
                 let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
@@ -1057,25 +1077,34 @@ pub fn action_handler(
             let clip = clipboard.lock().ok().and_then(|g| g.clone());
             if let Some(clip) = clip {
                 let cwd = std::env::current_dir().unwrap_or_default();
-                let focused_path = state.current_raw().and_then(|item| {
-                    state.picker_ui.worker.columns.first().map(|c| c.raw(item).into_owned())
+                let focused_path = fm_current_items(state).into_iter().next().or_else(|| {
+                    state.current_raw().and_then(|item| {
+                        state
+                            .picker_ui
+                            .worker
+                            .columns
+                            .first()
+                            .map(|c| c.raw(item).into_owned())
+                    })
                 });
 
-                let (dest_dir, is_subfolder, dest_display_name) = if let Some(ref raw) = focused_path {
-                    let p = std::path::Path::new(raw);
-                    let abs = if p.is_absolute() {
-                        p.to_path_buf()
-                    } else {
-                        cwd.join(p)
-                    };
-                    if abs.is_dir() {
-                        (abs, true, raw.clone())
+                let (dest_dir, is_subfolder, dest_display_name) =
+                    if let Some(ref raw) = focused_path {
+                        let p = std::path::Path::new(raw);
+                        let abs = if p.is_absolute() {
+                            p.to_path_buf()
+                        } else {
+                            cwd.join(p)
+                        };
+                        let clean = raw.trim().trim_end_matches('/').trim_end_matches('\\');
+                        if abs.is_dir() && clean != "." && clean != ".." && abs != cwd {
+                            (abs, true, raw.clone())
+                        } else {
+                            (cwd.clone(), false, String::new())
+                        }
                     } else {
                         (cwd.clone(), false, String::new())
-                    }
-                } else {
-                    (cwd.clone(), false, String::new())
-                };
+                    };
 
                 let mut had_error = false;
                 let mut pasted_items = Vec::new();
@@ -1104,6 +1133,16 @@ pub fn action_handler(
                             saved_clipboard: Some(clip.clone()),
                             saved_yank_paths: state.picker_ui.results.yank_paths.clone(),
                             saved_cut_paths: state.picker_ui.results.cut_paths.clone(),
+                            previous_dir: if is_subfolder {
+                                Some(cwd.clone())
+                            } else {
+                                None
+                            },
+                            target_dir: if is_subfolder {
+                                Some(dest_dir.clone())
+                            } else {
+                                None
+                            },
                         });
                     }
                 }
@@ -1127,8 +1166,12 @@ pub fn action_handler(
 
                 if is_subfolder {
                     let action = match clip.op {
-                        crate::fm::ClipOp::Copy => MMAction::FmSetFlashCopy(dest_display_name.clone()),
-                        crate::fm::ClipOp::Cut => MMAction::FmSetFlashCut(dest_display_name.clone()),
+                        crate::fm::ClipOp::Copy => {
+                            MMAction::FmSetFlashCopy(dest_display_name.clone())
+                        }
+                        crate::fm::ClipOp::Cut => {
+                            MMAction::FmSetFlashCut(dest_display_name.clone())
+                        }
                     };
                     let _ = render_tx.send(RenderCommand::Action(Action::Custom(action)));
                 }
@@ -1146,12 +1189,35 @@ pub fn action_handler(
                         .trim_start_matches("./")
                         .trim_end_matches('/')
                         .trim_end_matches('\\');
-                    format!("{color}{icon} {verb} {count} {item_word} into ./{clean_dest}/ (u to undo){{reset}}")
+                    let target_display = if std::path::Path::new(clean_dest).is_absolute() {
+                        format!("{clean_dest}/")
+                    } else {
+                        format!("./{clean_dest}/")
+                    };
+                    format!(
+                        "{color}{icon} {verb} {count} {item_word} into {target_display} (u to undo){{reset}}"
+                    )
                 } else {
-                    format!("{color}{icon} {verb} {count} {item_word} into current folder (u to undo){{reset}}")
+                    format!(
+                        "{color}{icon} {verb} {count} {item_word} into current folder (u to undo){{reset}}"
+                    )
                 };
                 show_styled_info_box(state, &msg);
 
+                if is_subfolder && !pasted_items.is_empty() {
+                    if let Some((_, dest)) = pasted_items.first() {
+                        if let Some(item_name) = dest.file_name() {
+                            let name = item_name.to_string_lossy().to_string();
+                            *crate::start::TARGET_ITEM.lock().unwrap() = Some(name.clone());
+                            unsafe {
+                                std::env::set_var("MM_TARGET_ITEM", name);
+                            }
+                        }
+                    }
+                    let _ = render_tx.send(RenderCommand::Action(Action::ChDir(
+                        dest_dir.to_string_lossy().to_string(),
+                    )));
+                }
                 let _ = render_tx.send(RenderCommand::Action(Action::Reload(String::new())));
             }
         }
@@ -1166,6 +1232,8 @@ pub fn action_handler(
                     ref saved_clipboard,
                     ref saved_yank_paths,
                     ref saved_cut_paths,
+                    ref previous_dir,
+                    ref target_dir,
                     ..
                 } = action
                 {
@@ -1182,6 +1250,20 @@ pub fn action_handler(
                     let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                         MMAction::FmSetCutPaths(cuts.join("\n")),
                     )));
+                    if let Some(prev) = previous_dir {
+                        if let Some(target) = target_dir {
+                            if let Some(target_name) = target.file_name() {
+                                let name = target_name.to_string_lossy().to_string();
+                                *crate::start::TARGET_ITEM.lock().unwrap() = Some(name.clone());
+                                unsafe {
+                                    std::env::set_var("MM_TARGET_ITEM", name);
+                                }
+                            }
+                        }
+                        let _ = render_tx.send(RenderCommand::Action(Action::ChDir(
+                            prev.to_string_lossy().to_string(),
+                        )));
+                    }
                 }
 
                 let msg = match &action {
@@ -1192,7 +1274,9 @@ pub fn action_handler(
                             crate::fm::ClipOp::Copy => "copy",
                             crate::fm::ClipOp::Cut => "move",
                         };
-                        format!("{{yellow}}󰕌 Undone {op_word} of {count} {item_word} (clipboard restored){{reset}}")
+                        format!(
+                            "{{yellow}}󰕌 Undone {op_word} of {count} {item_word} (clipboard restored){{reset}}"
+                        )
                     }
                     crate::fm::UndoAction::DeletedFile { original, .. } => {
                         format!("{{yellow}}󰕌 Restored: {}{{reset}}", original.display())
@@ -1203,7 +1287,10 @@ pub fn action_handler(
                         format!("{{yellow}}󰕌 Restored {count} {item_word}{{reset}}")
                     }
                     crate::fm::UndoAction::CreatedFile { path } => {
-                        format!("{{yellow}}󰕌 Undone creation of: {}{{reset}}", path.display())
+                        format!(
+                            "{{yellow}}󰕌 Undone creation of: {}{{reset}}",
+                            path.display()
+                        )
                     }
                     crate::fm::UndoAction::Renamed { from, to } => {
                         format!(
@@ -1239,7 +1326,12 @@ pub fn action_handler(
                     error!("fm redo: {e}");
                 }
 
-                if let crate::fm::UndoAction::Paste { .. } = action {
+                if let crate::fm::UndoAction::Paste {
+                    ref items,
+                    ref target_dir,
+                    ..
+                } = action
+                {
                     if let Ok(mut cb) = clipboard.lock() {
                         *cb = None;
                     }
@@ -1251,6 +1343,20 @@ pub fn action_handler(
                     let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                         MMAction::FmSetCutPaths(String::new()),
                     )));
+                    if let Some(target) = target_dir {
+                        if let Some((_, dest)) = items.first() {
+                            if let Some(item_name) = dest.file_name() {
+                                let name = item_name.to_string_lossy().to_string();
+                                *crate::start::TARGET_ITEM.lock().unwrap() = Some(name.clone());
+                                unsafe {
+                                    std::env::set_var("MM_TARGET_ITEM", name);
+                                }
+                            }
+                        }
+                        let _ = render_tx.send(RenderCommand::Action(Action::ChDir(
+                            target.to_string_lossy().to_string(),
+                        )));
+                    }
                 }
 
                 let msg = match &action {
@@ -1308,12 +1414,20 @@ pub fn action_handler(
                         }
                     }
                 }
-                let verb = if last_state { "Bookmarked" } else { "Unbookmarked" };
+                let verb = if last_state {
+                    "Bookmarked"
+                } else {
+                    "Unbookmarked"
+                };
                 let is_dir = paths
                     .first()
                     .map(|p| std::path::Path::new(p).is_dir())
                     .unwrap_or(false);
-                let icon_str = if is_dir { "{yellow:󰮟}" } else { "{yellow:󱀻}" };
+                let icon_str = if is_dir {
+                    "{yellow:󰮟}"
+                } else {
+                    "{yellow:󱀻}"
+                };
                 let color = if last_state { icon_str } else { "{darkgray}" };
                 let msg = fm_notify_msg(verb, &paths, color);
                 show_styled_info_box(state, &msg);
@@ -1785,11 +1899,11 @@ mod tests {
 
     #[test]
     fn test_reload_next_and_prev_query_preservation() {
+        use matchmaker::Selector;
         use matchmaker::config::*;
         use matchmaker::nucleo::Worker;
         use matchmaker::render::State;
         use matchmaker::ui::{DisplayUI, PickerUI, UI};
-        use matchmaker::Selector;
         use std::sync::{Arc, Mutex};
 
         let (bind_tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -1826,11 +1940,7 @@ mod tests {
             bind_tx,
             render_tx,
             additional_commands: (
-                vec![
-                    "cmd0".to_string(),
-                    "cmd1".to_string(),
-                    "cmd2".to_string(),
-                ],
+                vec!["cmd0".to_string(), "cmd1".to_string(), "cmd2".to_string()],
                 0,
             ),
             output_template: None,
@@ -1931,11 +2041,11 @@ mod tests {
 
     #[test]
     fn test_fm_toggle_pin() {
+        use matchmaker::Selector;
         use matchmaker::config::*;
         use matchmaker::nucleo::Worker;
         use matchmaker::render::State;
         use matchmaker::ui::{DisplayUI, PickerUI, UI};
-        use matchmaker::Selector;
         use std::sync::{Arc, Mutex};
 
         let (bind_tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -1992,13 +2102,17 @@ mod tests {
             &controller_tx,
         );
 
-        let db_file = std::env::temp_dir().join(format!("test_frecency_{}.redb", std::process::id()));
+        let db_file =
+            std::env::temp_dir().join(format!("test_frecency_{}.redb", std::process::id()));
         let _ = std::fs::remove_file(&db_file);
         unsafe {
             std::env::set_var("MM_FRECENCY_DB", db_file.to_str().unwrap());
         }
 
-        let cwd = std::env::current_dir().unwrap().to_string_lossy().to_string();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let store = matchmaker::frecency::FrecencyStore::open();
         let initial_state = store.is_pinned(&cwd);
 
@@ -2044,12 +2158,16 @@ mod tests {
         let source_file = temp_dir.join("source.txt");
         std::fs::write(&source_file, "hello world").unwrap();
 
-        injector.push((None, sub_dir.to_string_lossy().to_string())).unwrap();
+        injector
+            .push((None, sub_dir.to_string_lossy().to_string()))
+            .unwrap();
         mm.worker.nucleo.tick(10);
 
         let mut state_obj = State::new();
-        let mut tui = matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
-        let mut matcher = matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
+        let mut tui =
+            matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
+        let mut matcher =
+            matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
 
         let hidden_columns = vec![false];
         let (mut ui, mut picker_ui, mut footer_ui, mut preview_ui) = UI::new(
@@ -2101,22 +2219,54 @@ mod tests {
         action_handler(MMAction::FmPasteInto, &mut mm_state, &mut action_context);
 
         let pasted_file = sub_dir.join("source.txt");
-        assert!(pasted_file.exists(), "Pasted file should exist inside target_folder");
-        assert_eq!(std::fs::read_to_string(&pasted_file).unwrap(), "hello world");
-        assert_eq!(undo_stack.lock().unwrap().len(), 1, "Undo stack should have 1 item");
-        assert!(clipboard.lock().unwrap().is_none(), "Clipboard should be cleared after paste");
-        assert!(mm_state.picker_ui.action_visible, "Action box should be visible for info notification");
+        assert!(
+            pasted_file.exists(),
+            "Pasted file should exist inside target_folder"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&pasted_file).unwrap(),
+            "hello world"
+        );
+        assert_eq!(
+            undo_stack.lock().unwrap().len(),
+            1,
+            "Undo stack should have 1 item"
+        );
+        assert!(
+            clipboard.lock().unwrap().is_none(),
+            "Clipboard should be cleared after paste"
+        );
+        assert!(
+            mm_state.picker_ui.action_visible,
+            "Action box should be visible for info notification"
+        );
 
         // Test Flash action
-        action_handler(MMAction::FmSetFlashCopy("target_folder".to_string()), &mut mm_state, &mut action_context);
-        let flash_op = mm_state.picker_ui.results.get_flash_op("target_folder", &temp_dir);
+        action_handler(
+            MMAction::FmSetFlashCopy("target_folder".to_string()),
+            &mut mm_state,
+            &mut action_context,
+        );
+        let flash_op = mm_state
+            .picker_ui
+            .results
+            .get_flash_op("target_folder", &temp_dir);
         assert_eq!(flash_op, Some(matchmaker::ui::results::FlashOp::Copy));
 
         // Test Undo
         action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
-        assert!(!pasted_file.exists(), "Pasted file should be removed after undo");
-        assert!(clipboard.lock().unwrap().is_some(), "Clipboard should be restored after undo");
-        assert!(mm_state.picker_ui.action_visible, "Action box should be visible with undo notification");
+        assert!(
+            !pasted_file.exists(),
+            "Pasted file should be removed after undo"
+        );
+        assert!(
+            clipboard.lock().unwrap().is_some(),
+            "Clipboard should be restored after undo"
+        );
+        assert!(
+            mm_state.picker_ui.action_visible,
+            "Action box should be visible with undo notification"
+        );
 
         // Test exact item counts in yank_paths and cut_paths
         action_handler(
@@ -2174,7 +2324,8 @@ mod tests {
             Default::default(),
         );
 
-        let temp_dir = std::env::temp_dir().join(format!("test_batch_paste_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_batch_paste_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
 
@@ -2185,12 +2336,16 @@ mod tests {
         std::fs::write(&file2, "content 2").unwrap();
         std::fs::create_dir_all(&target_dir).unwrap();
 
-        injector.push((None, target_dir.to_string_lossy().to_string())).unwrap();
+        injector
+            .push((None, target_dir.to_string_lossy().to_string()))
+            .unwrap();
         mm.worker.nucleo.tick(10);
 
         let mut state_obj = State::new();
-        let mut tui = matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
-        let mut matcher = matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
+        let mut tui =
+            matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
+        let mut matcher =
+            matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
 
         let hidden_columns = vec![false];
         let (mut ui, mut picker_ui, mut footer_ui, mut preview_ui) = UI::new(
@@ -2238,8 +2393,16 @@ mod tests {
             &controller_tx,
         );
 
-        mm_state.picker_ui.results.yank_paths.insert("file1.txt".to_string());
-        mm_state.picker_ui.results.yank_paths.insert("file2.txt".to_string());
+        mm_state
+            .picker_ui
+            .results
+            .yank_paths
+            .insert("file1.txt".to_string());
+        mm_state
+            .picker_ui
+            .results
+            .yank_paths
+            .insert("file2.txt".to_string());
 
         // Execute Paste Into target_dir
         action_handler(MMAction::FmPasteInto, &mut mm_state, &mut action_context);
@@ -2248,18 +2411,397 @@ mod tests {
         let pasted2 = target_dir.join("file2.txt");
         assert!(pasted1.exists(), "pasted1 should exist");
         assert!(pasted2.exists(), "pasted2 should exist");
-        assert!(clipboard.lock().unwrap().is_none(), "clipboard cleared after paste");
-        assert!(mm_state.picker_ui.results.yank_paths.is_empty(), "yank_paths cleared after paste");
-        assert!(mm_state.picker_ui.action_visible, "action box visible for feedback");
+        assert!(
+            clipboard.lock().unwrap().is_none(),
+            "clipboard cleared after paste"
+        );
+        assert!(
+            mm_state.picker_ui.results.yank_paths.is_empty(),
+            "yank_paths cleared after paste"
+        );
+        assert!(
+            mm_state.picker_ui.action_visible,
+            "action box visible for feedback"
+        );
 
         // Execute Undo
         action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
 
         assert!(!pasted1.exists(), "pasted1 should be removed on undo");
         assert!(!pasted2.exists(), "pasted2 should be removed on undo");
-        assert!(clipboard.lock().unwrap().is_some(), "clipboard restored on undo");
+        assert!(
+            clipboard.lock().unwrap().is_some(),
+            "clipboard restored on undo"
+        );
         assert_eq!(clipboard.lock().unwrap().as_ref().unwrap().items.len(), 2);
-        assert_eq!(mm_state.picker_ui.results.yank_paths.len(), 2, "yank_paths restored on undo");
+        assert_eq!(
+            mm_state.picker_ui.results.yank_paths.len(),
+            2,
+            "yank_paths restored on undo"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_fm_paste_into_chdir_and_undo_return_and_redo() {
+        use matchmaker::action::Action;
+        use matchmaker::message::RenderCommand;
+        use matchmaker::nucleo::injector::Injector;
+        use matchmaker::preview::AppendOnly;
+        use matchmaker::render::State;
+        use matchmaker::ui::UI;
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::mpsc;
+
+        let (mut mm, injector, _guard) = matchmaker::ConfigMatchmaker::new_from_config(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        );
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_paste_into_chdir_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let cwd = std::env::current_dir().unwrap_or_default();
+
+        let src_file = temp_dir.join("payload.txt");
+        let dest_folder = temp_dir.join("target_subfolder");
+        std::fs::write(&src_file, "payload data").unwrap();
+        std::fs::create_dir_all(&dest_folder).unwrap();
+
+        injector
+            .push((None, dest_folder.to_string_lossy().to_string()))
+            .unwrap();
+        mm.worker.nucleo.tick(10);
+
+        let mut state_obj = State::new();
+        let mut tui =
+            matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
+        let mut matcher =
+            matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
+
+        let hidden_columns = vec![false];
+        let (mut ui, mut picker_ui, mut footer_ui, mut preview_ui) = UI::new(
+            mm.render_config,
+            &mut matcher,
+            mm.worker,
+            mm.selector,
+            None,
+            &mut tui,
+            hidden_columns,
+        );
+
+        let (bind_tx, _) = mpsc::unbounded_channel();
+        let (render_tx, mut render_rx) = mpsc::unbounded_channel();
+        let (controller_tx, _) = mpsc::unbounded_channel();
+
+        let clipboard = Arc::new(Mutex::new(Some(crate::fm::FmClipboard {
+            items: vec![src_file.clone()],
+            op: crate::fm::ClipOp::Copy,
+        })));
+        let undo_stack = Arc::new(Mutex::new(Vec::new()));
+        let redo_stack = Arc::new(Mutex::new(Vec::new()));
+
+        let mut action_context = ActionContext {
+            bind_tx,
+            render_tx,
+            additional_commands: (vec!["cmd0".to_string()], 0),
+            output_template: None,
+            print_handle: AppendOnly::new(),
+            output_separator: "\n".to_string(),
+            clipboard: clipboard.clone(),
+            fm_notify: true,
+            undo_stack: undo_stack.clone(),
+            redo_stack: redo_stack.clone(),
+            fm_action: None,
+            mode_history: std::collections::HashMap::new(),
+            last_cwd: Some(cwd.clone()),
+        };
+
+        let mut mm_state = state_obj.dispatcher(
+            &mut ui,
+            &mut picker_ui,
+            &mut footer_ui,
+            &mut preview_ui,
+            &controller_tx,
+        );
+
+        // 1. Execute FmPasteInto
+        action_handler(MMAction::FmPasteInto, &mut mm_state, &mut action_context);
+
+        let pasted = dest_folder.join("payload.txt");
+        assert!(pasted.exists(), "Item should be copied into dest_folder");
+
+        // Check that undo stack recorded previous_dir and target_dir
+        {
+            let u = undo_stack.lock().unwrap();
+            assert_eq!(u.len(), 1);
+            if let crate::fm::UndoAction::Paste {
+                previous_dir,
+                target_dir,
+                ..
+            } = &u[0]
+            {
+                assert_eq!(previous_dir.as_ref(), Some(&cwd));
+                assert_eq!(target_dir.as_ref(), Some(&dest_folder));
+            } else {
+                panic!("Expected UndoAction::Paste");
+            }
+        }
+
+        // Drain render_rx and check that ChDir to dest_folder was sent
+        let mut chdir_dest_found = false;
+        while let Ok(cmd) = render_rx.try_recv() {
+            if let RenderCommand::Action(Action::ChDir(dir)) = cmd {
+                if dir == dest_folder.to_string_lossy().to_string() {
+                    chdir_dest_found = true;
+                }
+            }
+        }
+        assert!(
+            chdir_dest_found,
+            "FmPasteInto must send Action::ChDir to dest_folder"
+        );
+
+        // Check that TARGET_ITEM was set to the pasted file name
+        assert_eq!(
+            crate::start::TARGET_ITEM.lock().unwrap().as_deref(),
+            Some("payload.txt"),
+            "TARGET_ITEM should highlight pasted item inside dest_folder"
+        );
+
+        // 2. Execute FmUndo
+        action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
+        assert!(!pasted.exists(), "Pasted item should be deleted on undo");
+
+        // Drain render_rx and check that ChDir to previous_dir (cwd) was sent
+        let mut chdir_prev_found = false;
+        while let Ok(cmd) = render_rx.try_recv() {
+            if let RenderCommand::Action(Action::ChDir(dir)) = cmd {
+                if dir == cwd.to_string_lossy().to_string() {
+                    chdir_prev_found = true;
+                }
+            }
+        }
+        assert!(
+            chdir_prev_found,
+            "FmUndo must send Action::ChDir to previous_dir"
+        );
+
+        // Check that TARGET_ITEM was set to dest_folder name so it is selected back in previous_dir
+        assert_eq!(
+            crate::start::TARGET_ITEM.lock().unwrap().as_deref(),
+            Some("target_subfolder"),
+            "TARGET_ITEM should highlight target_subfolder when returning to parent on undo"
+        );
+
+        // 3. Execute FmRedo
+        action_handler(MMAction::FmRedo, &mut mm_state, &mut action_context);
+        assert!(pasted.exists(), "Pasted item should be restored on redo");
+
+        let mut chdir_redo_found = false;
+        while let Ok(cmd) = render_rx.try_recv() {
+            if let RenderCommand::Action(Action::ChDir(dir)) = cmd {
+                if dir == dest_folder.to_string_lossy().to_string() {
+                    chdir_redo_found = true;
+                }
+            }
+        }
+        assert!(
+            chdir_redo_found,
+            "FmRedo must send Action::ChDir to dest_folder"
+        );
+
+        assert_eq!(
+            crate::start::TARGET_ITEM.lock().unwrap().as_deref(),
+            Some("payload.txt"),
+            "TARGET_ITEM should highlight pasted item inside dest_folder on redo"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_fm_paste_into_cut_and_undo_return_and_redo() {
+        use matchmaker::action::Action;
+        use matchmaker::message::RenderCommand;
+        use matchmaker::nucleo::injector::Injector;
+        use matchmaker::preview::AppendOnly;
+        use matchmaker::render::State;
+        use matchmaker::ui::UI;
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::mpsc;
+
+        let (mut mm, injector, _guard) = matchmaker::ConfigMatchmaker::new_from_config(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        );
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_paste_into_cut_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let cwd = std::env::current_dir().unwrap_or_default();
+
+        let src_file = temp_dir.join("cut_payload.txt");
+        let dest_folder = temp_dir.join("cut_target_subfolder");
+        std::fs::write(&src_file, "cut payload data").unwrap();
+        std::fs::create_dir_all(&dest_folder).unwrap();
+
+        injector
+            .push((None, dest_folder.to_string_lossy().to_string()))
+            .unwrap();
+        mm.worker.nucleo.tick(10);
+
+        let mut state_obj = State::new();
+        let mut tui =
+            matchmaker::tui::Tui::new(matchmaker::config::TerminalConfig::default()).unwrap();
+        let mut matcher =
+            matchmaker::nucleo::nucleo::Matcher::new(matchmaker::nucleo::nucleo::Config::DEFAULT);
+
+        let hidden_columns = vec![false];
+        let (mut ui, mut picker_ui, mut footer_ui, mut preview_ui) = UI::new(
+            mm.render_config,
+            &mut matcher,
+            mm.worker,
+            mm.selector,
+            None,
+            &mut tui,
+            hidden_columns,
+        );
+
+        let (bind_tx, _) = mpsc::unbounded_channel();
+        let (render_tx, mut render_rx) = mpsc::unbounded_channel();
+        let (controller_tx, _) = mpsc::unbounded_channel();
+
+        let clipboard = Arc::new(Mutex::new(Some(crate::fm::FmClipboard {
+            items: vec![src_file.clone()],
+            op: crate::fm::ClipOp::Cut,
+        })));
+        let undo_stack = Arc::new(Mutex::new(Vec::new()));
+        let redo_stack = Arc::new(Mutex::new(Vec::new()));
+
+        let mut action_context = ActionContext {
+            bind_tx,
+            render_tx,
+            additional_commands: (vec!["cmd0".to_string()], 0),
+            output_template: None,
+            print_handle: AppendOnly::new(),
+            output_separator: "\n".to_string(),
+            clipboard: clipboard.clone(),
+            fm_notify: true,
+            undo_stack: undo_stack.clone(),
+            redo_stack: redo_stack.clone(),
+            fm_action: None,
+            mode_history: std::collections::HashMap::new(),
+            last_cwd: Some(cwd.clone()),
+        };
+
+        let mut mm_state = state_obj.dispatcher(
+            &mut ui,
+            &mut picker_ui,
+            &mut footer_ui,
+            &mut preview_ui,
+            &controller_tx,
+        );
+
+        // 1. Execute FmPasteInto (Cut)
+        action_handler(MMAction::FmPasteInto, &mut mm_state, &mut action_context);
+
+        let moved_file = dest_folder.join("cut_payload.txt");
+        assert!(moved_file.exists(), "Item should be moved into dest_folder");
+        assert!(
+            !src_file.exists(),
+            "Source file should no longer exist at original path"
+        );
+
+        // Drain render_rx and check that ChDir to dest_folder was sent
+        let mut chdir_dest_found = false;
+        while let Ok(cmd) = render_rx.try_recv() {
+            if let RenderCommand::Action(Action::ChDir(dir)) = cmd {
+                if dir == dest_folder.to_string_lossy().to_string() {
+                    chdir_dest_found = true;
+                }
+            }
+        }
+        assert!(
+            chdir_dest_found,
+            "FmPasteInto must send Action::ChDir to dest_folder"
+        );
+        assert_eq!(
+            crate::start::TARGET_ITEM.lock().unwrap().as_deref(),
+            Some("cut_payload.txt"),
+            "TARGET_ITEM should highlight moved item inside dest_folder"
+        );
+
+        // 2. Execute FmUndo
+        action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
+        assert!(
+            !moved_file.exists(),
+            "Moved file should no longer be in dest_folder"
+        );
+        assert!(
+            src_file.exists(),
+            "Source file should be moved back to original path"
+        );
+
+        let mut chdir_prev_found = false;
+        while let Ok(cmd) = render_rx.try_recv() {
+            if let RenderCommand::Action(Action::ChDir(dir)) = cmd {
+                if dir == cwd.to_string_lossy().to_string() {
+                    chdir_prev_found = true;
+                }
+            }
+        }
+        assert!(
+            chdir_prev_found,
+            "FmUndo must send Action::ChDir to previous_dir"
+        );
+        assert_eq!(
+            crate::start::TARGET_ITEM.lock().unwrap().as_deref(),
+            Some("cut_target_subfolder"),
+            "TARGET_ITEM should highlight cut_target_subfolder when returning to parent on undo"
+        );
+
+        // 3. Execute FmRedo
+        action_handler(MMAction::FmRedo, &mut mm_state, &mut action_context);
+        assert!(
+            moved_file.exists(),
+            "File should be moved into dest_folder again on redo"
+        );
+        assert!(
+            !src_file.exists(),
+            "Source file should not exist at original path on redo"
+        );
+
+        let mut chdir_redo_found = false;
+        while let Ok(cmd) = render_rx.try_recv() {
+            if let RenderCommand::Action(Action::ChDir(dir)) = cmd {
+                if dir == dest_folder.to_string_lossy().to_string() {
+                    chdir_redo_found = true;
+                }
+            }
+        }
+        assert!(
+            chdir_redo_found,
+            "FmRedo must send Action::ChDir to dest_folder"
+        );
+        assert_eq!(
+            crate::start::TARGET_ITEM.lock().unwrap().as_deref(),
+            Some("cut_payload.txt"),
+            "TARGET_ITEM should highlight moved item inside dest_folder on redo"
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

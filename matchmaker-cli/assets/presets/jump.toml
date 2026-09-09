@@ -79,67 +79,99 @@ side = "right"
 percentage = 50
 
 [binds]
-"tab" = "@reloadnext"
+# Modos de dados (ciclar fontes e favoritos)
+"tab"           = "@reloadnext"
 "shift-backtab" = "@reloadprev"
-"backtab" = "@reloadprev"
-"esc" = "ToggleFocus"
-"ctrl-f" = "@dirs"
-"ctrl-b" = "@bookmarks"
-"*" = "@bookmark"
-"ctrl-j" = "Down"
-"ctrl-k" = "Up"
-"alt-j" = "Down"
-"alt-k" = "Up"
-"ctrl-p" = "@paste_into"
-"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"alt-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"alt-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"ctrl-v" = "@paste_into"
-"ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
-"," = "SortMenu"
-"." = "NextColumn"
-">" = "PrevColumn"
-"\\" = "ToggleParentPeek"
+"backtab"       = "@reloadprev"
+"ctrl-f"        = "@dirs"
+"ctrl-b"        = "@bookmarks"
+"*"             = "@bookmark"
+
+# Foco e modos
+"esc"           = "ToggleFocus"
+
+# Navegação do cursor
+"ctrl-j"        = "Down"
+"ctrl-k"        = "Up"
+"alt-j"         = "Down"
+"alt-k"         = "Up"
+
+# Navegação de diretórios (entrar / descer)
+"ctrl-l"        = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-right"    = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"alt-l"         = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+
+# Navegação de diretórios (subir / parent)
+"ctrl-h"        = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-left"     = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"alt-h"         = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+
+# Histórico de ancestrais (subir múltiplos níveis)
+"ctrl-u"        = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
+
+# Editor, visualização e clipboard
+"ctrl-e"        = "Execute(nvim {+})"
+"ctrl-p"        = "SwitchPreview"
+"ctrl-v"        = "@paste_into"
 
 [ui.nav_binds]
-"tab" = "@reloadnext"
+# Modos de dados (ciclar fontes e favoritos)
+"tab"           = "@reloadnext"
 "shift-backtab" = "@reloadprev"
-"backtab" = "@reloadprev"
-" " = "Toggle"
-"esc" = "Quit"
-"q" = "Quit"
-"j" = "Down"
-"k" = "Up"
-"f" = "@dirs"
-"b" = "@bookmarks"
-"*" = "@bookmark"
-"l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"backspace" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"alt-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"alt-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
-"ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
-"p" = "@paste"
-"P" = "@paste_into"
-"ctrl-p" = "@paste_into"
-"ctrl-v" = "@paste_into"
-"y" = "@yank"
-"x" = "@cut"
-"u" = "@undo"
-"/" = "FocusFilter"
-"," = "SortMenu"
-"." = "NextColumn"
-">" = "PrevColumn"
-"\\" = "ToggleParentPeek"
-"ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
+"backtab"       = "@reloadprev"
+"f"             = "@dirs"
+"b"             = "@bookmarks"
+"*"             = "@bookmark"
+
+# Foco, seleção e saída
+"/"             = "FocusFilter"
+" "             = "Toggle"
+"esc"           = "Quit"
+"q"             = "Quit"
+
+# Navegação do cursor
+"j"             = "Down"
+"k"             = "Up"
+"ctrl-j"        = "Down"
+"ctrl-k"        = "Up"
+"alt-j"         = "Down"
+"alt-k"         = "Up"
+
+# Navegação de diretórios (entrar / descer)
+"l"             = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"right"         = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-l"        = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"ctrl-right"    = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"alt-l"         = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+
+# Navegação de diretórios (subir / parent)
+"h"             = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"left"          = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"backspace"     = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-h"        = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-left"     = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"alt-h"         = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+
+# Histórico de ancestrais (subir múltiplos níveis)
+"ctrl-u"        = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
+
+# Editor de texto
+"e"             = "Execute(nvim {+})"
+"ctrl-e"        = "Execute(nvim {+})"
+
+# Operações de arquivo (FM / Clipboard)
+"y"             = "@yank"
+"x"             = "@cut"
+"p"             = "@paste"
+"P"             = "@paste_into"
+"ctrl-v"        = "@paste_into"
+"u"             = "@undo"
+"ctrl-r"        = "@redo"
+
+# Menus e painéis
+"ctrl-p"        = "SwitchPreview"
+","             = "SortMenu"
+"\\"            = "ToggleParentPeek"
 
 [breadcrumb]
 show = true

@@ -328,8 +328,6 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             matchmaker::acs![Action::Semantic("fm_dragdrop".into())],
         );
         nb(",", matchmaker::acs![Action::SortMenu]);
-        nb(".", matchmaker::acs![Action::NextColumn]);
-        nb(">", matchmaker::acs![Action::PrevColumn]);
         nb("/", matchmaker::acs![Action::FocusFilter]);
         nb("\\", matchmaker::acs![Action::ToggleParentPeek]);
         nb("|", matchmaker::acs![Action::ToggleParentPeek]);

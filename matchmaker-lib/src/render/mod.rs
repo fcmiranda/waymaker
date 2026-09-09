@@ -2762,10 +2762,9 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             ("[j/k]", "Move", Color::Yellow),
             ("[h/l]", "Up/Dir", Color::Yellow),
             ("[C-h/l]", "Trav", Color::Green),
-            ("[p]", "Toggle", Color::Magenta),
+            ("[C-p]", "Toggle", Color::Blue),
             ("[J/K]", "Scroll", Color::Blue),
             ("[,]", "Sort", Color::Yellow),
-            ("[.]", "Cols", Color::Cyan),
             ("[\\]", "Pane", Color::Cyan),
         ]
     } else {
@@ -2773,7 +2772,6 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
             ("[/]", "Filter", Color::Cyan),
             ("[Space]", "Sel/Unsel", Color::Yellow),
             ("[,]", "Sort", Color::Yellow),
-            ("[.]", "Cols", Color::Cyan),
             ("[f]", "Frecency", Color::Cyan),
             ("[b]", "Bookmarks", Color::Magenta),
             ("[*]", "Bookmark", Color::Yellow),

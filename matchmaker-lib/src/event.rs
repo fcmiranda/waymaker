@@ -423,14 +423,24 @@ impl<A: ActionExt> EventLoop<A> {
                     }
                 }
                 Action::Semantic(s) => {
-                    if let Some(actions) = self.get_bind(TriggerKind::Semantic(s)) {
+                    if let Some(actions) = self.get_bind(TriggerKind::Semantic(s.clone())) {
                         self.send_actions(actions.clone(), key.clone());
+                    } else if let Some(k) = &key {
+                        self.send(RenderCommand::KeyAction {
+                            key: k.clone(),
+                            action: Action::Semantic(s),
+                        });
+                    } else {
+                        self.send(RenderCommand::Action(Action::Semantic(s)));
                     }
                 }
                 Action::SetMode(m) => {
                     if let Ok(mut mode) = crate::MODE.lock() {
                         *mode = m;
                     }
+                }
+                Action::Trace(t) => {
+                    self.send(RenderCommand::Action(Action::Trace(t)));
                 }
                 _ => {
                     if let Some(k) = &key {

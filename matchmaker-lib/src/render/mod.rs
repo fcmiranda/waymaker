@@ -398,13 +398,20 @@ fn apply_focus_binds<A: ActionExt>(
 
     let mut out = Vec::with_capacity(buffer.len());
     let mut sim_focus = initial_focus;
+    let mut last_consumed_nav_key: Option<String> = None;
 
     for cmd in buffer.drain(..) {
         match cmd {
             RenderCommand::Tick => {
+                last_consumed_nav_key = None;
                 out.push(RenderCommand::Tick);
             }
+            RenderCommand::Action(Action::Trace(t)) => {
+                // Traces do not reset last_consumed_nav_key as they can wrap actions
+                out.push(RenderCommand::Action(Action::Trace(t)));
+            }
             RenderCommand::Action(Action::ToggleFocus) => {
+                last_consumed_nav_key = None;
                 if sim_focus == Focus::Results {
                     if let Some(actions) = get_nav_bind(focus_binds, "esc") {
                         for action in actions.iter().cloned() {
@@ -425,18 +432,22 @@ fn apply_focus_binds<A: ActionExt>(
                 }
             }
             RenderCommand::Action(Action::FocusFilter) => {
+                last_consumed_nav_key = None;
                 sim_focus = Focus::Input;
                 out.push(RenderCommand::Action(Action::FocusFilter));
             }
             RenderCommand::Action(Action::FocusNav) => {
+                last_consumed_nav_key = None;
                 sim_focus = Focus::Results;
                 out.push(RenderCommand::Action(Action::FocusNav));
             }
             RenderCommand::Action(Action::ChDir(payload)) => {
+                last_consumed_nav_key = None;
                 sim_focus = Focus::Results;
                 out.push(RenderCommand::Action(Action::ChDir(payload)));
             }
             RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
+                last_consumed_nav_key = None;
                 let key = c.to_string();
                 process_results_nav_key(
                     &key,
@@ -449,6 +460,12 @@ fn apply_focus_binds<A: ActionExt>(
                 );
             }
             RenderCommand::KeyAction { key, action } if sim_focus == Focus::Results => {
+                if last_consumed_nav_key
+                    .as_deref()
+                    .is_some_and(|k| k.eq_ignore_ascii_case(&key))
+                {
+                    continue;
+                }
                 process_results_nav_key(
                     &key,
                     Some(action),
@@ -458,13 +475,20 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut sim_focus,
                     &mut out,
                 );
+                if get_nav_bind(focus_binds, &key).is_some() {
+                    last_consumed_nav_key = Some(key);
+                } else {
+                    last_consumed_nav_key = None;
+                }
             }
             RenderCommand::KeyAction { key: _, action } => {
                 // sim_focus == Focus::Input
+                last_consumed_nav_key = None;
                 update_sim_focus(&action, &mut sim_focus);
                 out.push(RenderCommand::Action(action));
             }
             RenderCommand::Action(Action::DeleteChar) if sim_focus == Focus::Results => {
+                last_consumed_nav_key = None;
                 process_results_nav_key(
                     "backspace",
                     Some(Action::DeleteChar),
@@ -476,6 +500,7 @@ fn apply_focus_binds<A: ActionExt>(
                 );
             }
             RenderCommand::Action(Action::BackwardChar) if sim_focus == Focus::Results => {
+                last_consumed_nav_key = None;
                 process_results_nav_key(
                     "left",
                     Some(Action::BackwardChar),
@@ -487,6 +512,7 @@ fn apply_focus_binds<A: ActionExt>(
                 );
             }
             RenderCommand::Action(Action::ForwardChar) if sim_focus == Focus::Results => {
+                last_consumed_nav_key = None;
                 process_results_nav_key(
                     "right",
                     Some(Action::ForwardChar),
@@ -497,7 +523,10 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut out,
                 );
             }
-            other => out.push(other),
+            other => {
+                last_consumed_nav_key = None;
+                out.push(other);
+            }
         }
     }
 
@@ -3314,6 +3343,112 @@ mod test {
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(0))));
+    }
+
+    #[test]
+    fn test_apply_focus_binds_tab_reloadnext_no_multiplication() {
+        use crate::action::{Actions, NullActionExt};
+        let mut focus_binds = std::collections::HashMap::new();
+        focus_binds.insert("tab".to_string(), Actions::from([Action::Semantic("reloadnext".to_string())]));
+
+        let mut pending = None;
+        let mut sort_menu_active = false;
+
+        // 1. Traces surrounding a KeyAction for "Tab" should not duplicate the nav_bind
+        let mut buffer = vec![
+            RenderCommand::<NullActionExt>::Action(Action::Trace("@@reloadnext".to_string())),
+            RenderCommand::<NullActionExt>::KeyAction {
+                key: "Tab".to_string(),
+                action: Action::Semantic("reloadnext".to_string()),
+            },
+            RenderCommand::<NullActionExt>::Action(Action::Trace(String::new())),
+        ];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        let reloadnext_count = buffer
+            .iter()
+            .filter(|cmd| match cmd {
+                RenderCommand::Action(Action::Semantic(s)) => s == "reloadnext",
+                _ => false,
+            })
+            .count();
+        assert_eq!(reloadnext_count, 1, "Tab in Focus::Results must trigger reloadnext exactly once");
+
+        // 2. Multiple consecutive KeyActions with same key (e.g. from multi-action bind)
+        // must execute the nav_bind only once
+        let mut buffer = vec![
+            RenderCommand::<NullActionExt>::KeyAction {
+                key: "Tab".to_string(),
+                action: Action::Toggle,
+            },
+            RenderCommand::<NullActionExt>::KeyAction {
+                key: "Tab".to_string(),
+                action: Action::Down(1),
+            },
+        ];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        let reloadnext_count = buffer
+            .iter()
+            .filter(|cmd| match cmd {
+                RenderCommand::Action(Action::Semantic(s)) => s == "reloadnext",
+                _ => false,
+            })
+            .count();
+        assert_eq!(reloadnext_count, 1, "Multi-action Tab must not duplicate nav_bind execution");
+
+        // 3. Unmapped multi-action key in Focus::Results preserves all fallback actions
+        let mut buffer = vec![
+            RenderCommand::<NullActionExt>::KeyAction {
+                key: "alt-l".to_string(),
+                action: Action::Cancel,
+            },
+            RenderCommand::<NullActionExt>::KeyAction {
+                key: "alt-l".to_string(),
+                action: Action::Pos(0),
+            },
+        ];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 2, "Unmapped key must preserve all fallback actions");
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Cancel)));
+        assert!(matches!(buffer[1], RenderCommand::Action(Action::Pos(0))));
+
+        // 4. In Focus::Input, Tab executes the action directly
+        let mut buffer = vec![
+            RenderCommand::<NullActionExt>::KeyAction {
+                key: "Tab".to_string(),
+                action: Action::Semantic("reloadnext".to_string()),
+            },
+        ];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Semantic(ref s)) if s == "reloadnext"));
     }
 }
 

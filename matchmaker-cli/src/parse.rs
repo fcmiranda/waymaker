@@ -29,6 +29,7 @@ static ALIASES: &[(&str, &str)] = &[
     ("nav-marker", "ui.nav_marker"),
     ("nav-prompt", "ui.nav_prompt"),
     ("nav-hints", "ui.nav_hints"),
+    ("nav-hints-columns", "ui.nav_hints_columns"),
     ("parent-peek", "ui.parent_peek.enabled"),
     ("parent-peek-pct", "ui.parent_peek.pct"),
     ("parent-peek-color", "ui.parent_peek.parent_color"),

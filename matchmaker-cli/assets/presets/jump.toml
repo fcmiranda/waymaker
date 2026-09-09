@@ -7,6 +7,8 @@ nav_focus_on_start = "picker"
 nav_bar = "Plain"
 nav_color = "Black"
 nav_notify = true
+nav_hints = true
+nav_hints_columns = 4
 
 [ui.parent_peek]
 enabled = true

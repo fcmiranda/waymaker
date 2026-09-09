@@ -1939,7 +1939,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     } else if footer_ui.show {
                         footer_ui.height()
                     } else if show_nav_hints {
-                        1
+                        let count = if ui.config.nav_basic {
+                            BASIC_NAV_HINTS.len()
+                        } else {
+                            NAV_HINTS.len()
+                        };
+                        ui.config.nav_hints_height(count)
                     } else {
                         0
                     };
@@ -2243,7 +2248,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     } else {
                         render_display(frame, footer, &mut footer_ui, &picker_ui.results);
                         if show_nav_hints && footer.height > 0 {
-                            render_nav_hints(frame, footer, ui.config.nav_basic);
+                            render_nav_hints(frame, footer, ui.config.nav_basic, ui.config.nav_hints_columns);
                         }
                     }
                     if parent_peek_rect.width > 0 {
@@ -2751,64 +2756,104 @@ fn render_sort_menu(frame: &mut Frame, area: Rect, cfg: &crate::config::SortMenu
     }
 }
 
-fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool) {
+pub const BASIC_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
+    ("[/]", "Filter", ratatui::style::Color::Cyan),
+    ("[j/k]", "Move", ratatui::style::Color::Yellow),
+    ("[h/l]", "Up/Dir", ratatui::style::Color::Yellow),
+    ("[C-h/l]", "Trav", ratatui::style::Color::Green),
+    ("[C-p]", "Preview", ratatui::style::Color::Blue),
+    ("[J/K]", "Scroll", ratatui::style::Color::Blue),
+    ("[,]", "Sort", ratatui::style::Color::Yellow),
+    ("[\\]", "Pane", ratatui::style::Color::Cyan),
+];
+
+pub const NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
+    ("[/]", "Filter", ratatui::style::Color::Cyan),
+    ("[Space]", "Select", ratatui::style::Color::Yellow),
+    ("[,]", "Sort", ratatui::style::Color::Yellow),
+    ("[f]", "Frecency", ratatui::style::Color::Cyan),
+    ("[b]", "Bookmarks", ratatui::style::Color::Magenta),
+    ("[*]", "Bookmark", ratatui::style::Color::Yellow),
+    ("[e]", "Edit", ratatui::style::Color::Green),
+    ("[a]", "Add", ratatui::style::Color::Green),
+    ("[r]", "Rename", ratatui::style::Color::Yellow),
+    ("[d]", "Trash", ratatui::style::Color::Red),
+    ("[y/x]", "Copy/Cut", ratatui::style::Color::Green),
+    ("[p/P]", "Paste", ratatui::style::Color::Magenta),
+    ("[u]", "Undo", ratatui::style::Color::Blue),
+    ("[z/Z]", "Zip", ratatui::style::Color::Blue),
+    ("[\\]", "Pane", ratatui::style::Color::Cyan),
+    ("[C-p]", "Preview", ratatui::style::Color::Blue),
+];
+
+fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usize) {
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
     let hints: &[(&str, &str, Color)] = if is_basic {
-        &[
-            ("[/]", "Filter", Color::Cyan),
-            ("[j/k]", "Move", Color::Yellow),
-            ("[h/l]", "Up/Dir", Color::Yellow),
-            ("[C-h/l]", "Trav", Color::Green),
-            ("[C-p]", "Toggle", Color::Blue),
-            ("[J/K]", "Scroll", Color::Blue),
-            ("[,]", "Sort", Color::Yellow),
-            ("[\\]", "Pane", Color::Cyan),
-        ]
+        BASIC_NAV_HINTS
     } else {
-        &[
-            ("[/]", "Filter", Color::Cyan),
-            ("[Space]", "Sel/Unsel", Color::Yellow),
-            ("[,]", "Sort", Color::Yellow),
-            ("[f]", "Frecency", Color::Cyan),
-            ("[b]", "Bookmarks", Color::Magenta),
-            ("[*]", "Bookmark", Color::Yellow),
-            ("[a]", "Add", Color::Green),
-            ("[r]", "Rename", Color::Yellow),
-            ("[d]", "Trash", Color::Red),
-            ("[y/x]", "Copy/Cut", Color::Green),
-            ("[p]", "Paste", Color::Magenta),
-            ("[P]", "PasteInto", Color::Magenta),
-            ("[u]", "Undo", Color::Blue),
-            ("[z/Z]", "Zip/Unzip", Color::Blue),
-            ("[D]", "Drag", Color::Magenta),
-            ("[\\]", "Pane", Color::Cyan),
-            ("[C-p]", "Toggle", Color::Blue),
-        ]
+        NAV_HINTS
     };
 
-    let mut spans = Vec::new();
-    let mut total_w = 0;
-    let max_w = area.width as usize;
+    let cols = if columns == 0 { 4 } else { columns };
 
-    for (key, label, color) in hints {
-        let key_span = Span::styled(
-            format!(" {key}"),
-            Style::default().fg(*color).add_modifier(Modifier::BOLD),
-        );
-        let label_span = Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray));
-        let pair_w = key_span.width() + label_span.width();
-        if total_w + pair_w > max_w {
-            break;
+    if cols <= 1 {
+        let mut spans = Vec::new();
+        let mut total_w = 0;
+        let max_w = area.width as usize;
+
+        for (key, label, color) in hints {
+            let key_span = Span::styled(
+                format!(" {key}"),
+                Style::default().fg(*color).add_modifier(Modifier::BOLD),
+            );
+            let label_span = Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray));
+            let pair_w = key_span.width() + label_span.width();
+            if total_w + pair_w > max_w {
+                break;
+            }
+            total_w += pair_w;
+            spans.push(key_span);
+            spans.push(label_span);
         }
-        total_w += pair_w;
-        spans.push(key_span);
-        spans.push(label_span);
-    }
 
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    } else {
+        let col_w = (area.width as usize) / cols;
+        if col_w == 0 {
+            return;
+        }
+
+        let num_rows = (hints.len() + cols - 1) / cols;
+        let mut lines = Vec::with_capacity(num_rows);
+
+        for row in 0..num_rows {
+            let mut line_spans = Vec::new();
+            for col in 0..cols {
+                let idx = row * cols + col;
+                if idx < hints.len() {
+                    let (key, label, color) = hints[idx];
+                    let key_span = Span::styled(
+                        format!(" {key}"),
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
+                    );
+                    let label_span =
+                        Span::styled(format!(" {label}"), Style::default().fg(Color::White));
+                    let used_w = key_span.width() + label_span.width();
+                    line_spans.push(key_span);
+                    line_spans.push(label_span);
+                    if col + 1 < cols && used_w < col_w {
+                        line_spans.push(Span::raw(" ".repeat(col_w - used_w)));
+                    }
+                }
+            }
+            lines.push(Line::from(line_spans));
+        }
+
+        frame.render_widget(Paragraph::new(lines), area);
+    }
 }
 
 fn render_parent_peek(frame: &mut Frame, area: Rect, cfg: &crate::config::ParentPeekConfig) {
@@ -3447,6 +3492,29 @@ mod test {
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Semantic(ref s)) if s == "reloadnext"));
+    }
+
+    #[test]
+    fn test_nav_hints_grid_height_and_columns() {
+        use crate::config::UiConfig;
+        let mut ui = UiConfig::default();
+        assert!(ui.nav_hints);
+        assert_eq!(ui.nav_hints_columns, 4);
+
+        // In 4 columns:
+        // Full hints (16 items) -> (16 + 4 - 1) / 4 = 4 rows
+        assert_eq!(ui.nav_hints_height(NAV_HINTS.len()), 4);
+
+        // Basic hints (8 items) -> (8 + 4 - 1) / 4 = 2 rows
+        assert_eq!(ui.nav_hints_height(BASIC_NAV_HINTS.len()), 2);
+
+        // If columns configured to 1 -> 1 row
+        ui.nav_hints_columns = 1;
+        assert_eq!(ui.nav_hints_height(NAV_HINTS.len()), 1);
+
+        // If nav_hints disabled -> 0 rows
+        ui.nav_hints = false;
+        assert_eq!(ui.nav_hints_height(NAV_HINTS.len()), 0);
     }
 }
 

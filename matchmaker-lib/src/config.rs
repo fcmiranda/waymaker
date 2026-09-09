@@ -344,6 +344,12 @@ pub struct UiConfig {
     #[serde(alias = "fm_hints")]
     pub nav_hints: bool,
 
+    /// Number of columns to display in the navigation hints grid in the footer.
+    /// If 0 or 1, renders as a single row.
+    /// Default: 4.
+    #[serde(alias = "hints_columns")]
+    pub nav_hints_columns: usize,
+
     /// Configuration for the 3-pane Parent Peek left directory pane.
     #[partial(recurse)]
     #[serde(deserialize_with = "deserialize_parent_peek", default)]
@@ -374,6 +380,24 @@ impl UiConfig {
             }
         }
         self.default_sort
+    }
+
+    /// Calculate the required height in rows for the navigation hints footer.
+    pub fn nav_hints_height(&self, item_count: usize) -> u16 {
+        if !self.nav_hints {
+            return 0;
+        }
+        let cols = if self.nav_hints_columns == 0 {
+            4
+        } else {
+            self.nav_hints_columns
+        };
+        if cols <= 1 {
+            1
+        } else {
+            let rows = (item_count + cols - 1) / cols;
+            rows.max(1) as u16
+        }
     }
 }
 
@@ -440,6 +464,7 @@ impl Default for UiConfig {
             nav_basic: false,
             nav_focus_on_start: NavFocus::Filter,
             nav_hints: true,
+            nav_hints_columns: 4,
             parent_peek: ParentPeekConfig::default(),
             sort_menu: SortMenuConfig::default(),
             folder_rules: Vec::new(),

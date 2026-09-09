@@ -121,6 +121,10 @@ nav_basic = false
 # Valores: true, false | Default: true
 nav_hints = true
 
+# Número de colunas para as dicas de atalhos no rodapé (se <= 1, exibe em linha única).
+# Valores: número inteiro | Default: 4
+nav_hints_columns = 4
+
 # Borda externa do container global da UI.
 [ui.border]
 # Tipo de borda: "Plain", "Rounded", "Double", "Thick", "None" | Default: "None"

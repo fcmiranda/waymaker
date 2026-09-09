@@ -2322,7 +2322,9 @@ mod tests {
             });
         }
 
-        worker.nucleo.tick(10);
+        while worker.nucleo.snapshot().item_count() < paths.len() as u32 {
+            worker.nucleo.tick(10);
+        }
 
         for (idx, expected) in paths.iter().enumerate() {
             let nth = worker.get_nth(idx as u32);

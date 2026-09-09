@@ -418,6 +418,8 @@ impl Default for UiConfig {
             "b".to_string(),
             Actions::from([Action::Semantic("bookmarks".to_string())]),
         );
+        nav_binds.insert("esc".to_string(), Actions::from([Action::Quit(130)]));
+        nav_binds.insert("q".to_string(), Actions::from([Action::Quit(130)]));
         nav_binds.insert(
             "*".to_string(),
             Actions::from([Action::Semantic("bookmark".to_string())]),

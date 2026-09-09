@@ -301,6 +301,8 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
                 .entry(k.to_string())
                 .or_insert(actions);
         };
+        nb("esc", matchmaker::acs![Action::Quit(130)]);
+        nb("q", matchmaker::acs![Action::Quit(130)]);
         nb("d", matchmaker::acs![Action::Semantic("fm_delete".into())]);
         nb("a", matchmaker::acs![Action::Semantic("fm_create".into())]);
         nb("r", matchmaker::acs![Action::Semantic("fm_rename".into())]);

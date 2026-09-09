@@ -184,7 +184,7 @@ fn apply_sort_menu<A: ActionExt>(buffer: &mut Vec<RenderCommand<A>>, sort_menu_a
                 // Escape or Cancel closes sort menu without exiting the picker
                 *sort_menu_active = false;
             }
-            RenderCommand::KeyAction { key, .. } if key == "esc" => {
+            RenderCommand::KeyAction { key, .. } if key.eq_ignore_ascii_case("esc") => {
                 // Escape closes sort menu without exiting the picker
                 *sort_menu_active = false;
             }
@@ -213,10 +213,34 @@ fn get_nav_bind<'a>(
     focus_binds: &'a std::collections::HashMap<String, crate::action::Actions<NullActionExt>>,
     key: &str,
 ) -> Option<&'a crate::action::Actions<NullActionExt>> {
-    focus_binds
-        .get(key)
-        .or_else(|| (key == "space").then(|| focus_binds.get(" ")).flatten())
-        .or_else(|| (key == " ").then(|| focus_binds.get("space")).flatten())
+    if let Some(actions) = focus_binds.get(key) {
+        return Some(actions);
+    }
+    if key.eq_ignore_ascii_case("space") {
+        if let Some(actions) = focus_binds.get(" ") {
+            return Some(actions);
+        }
+    } else if key == " " {
+        if let Some(actions) = focus_binds
+            .get("space")
+            .or_else(|| focus_binds.get("Space"))
+        {
+            return Some(actions);
+        }
+    }
+    // For multi-character keys (e.g. "Esc", "Backspace", "Tab", "Ctrl-l", "Left", "Right"),
+    // check case-insensitively since crokey capitalizes key names while config/users often use lowercase.
+    if key.chars().count() > 1 {
+        let lower = key.to_ascii_lowercase();
+        if let Some(actions) = focus_binds.get(&lower) {
+            return Some(actions);
+        }
+        return focus_binds
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, actions)| actions);
+    }
+    None
 }
 
 fn update_sim_focus<A: ActionExt>(action: &Action<A>, sim_focus: &mut Focus) {
@@ -312,8 +336,12 @@ fn process_results_nav_key<A: ActionExt>(
             } else if let Some(action) = fallback_action {
                 match &action {
                     Action::ToggleFocus => {
-                        *sim_focus = Focus::Input;
-                        out.push(RenderCommand::Action(Action::ToggleFocus));
+                        if key.eq_ignore_ascii_case("esc") {
+                            out.push(RenderCommand::Action(Action::Quit(130)));
+                        } else {
+                            *sim_focus = Focus::Input;
+                            out.push(RenderCommand::Action(Action::ToggleFocus));
+                        }
                     }
                     Action::FocusFilter => {
                         *sim_focus = Focus::Input;
@@ -377,14 +405,16 @@ fn apply_focus_binds<A: ActionExt>(
                 out.push(RenderCommand::Tick);
             }
             RenderCommand::Action(Action::ToggleFocus) => {
-                if sim_focus == Focus::Results
-                    && let Some(actions) = get_nav_bind(focus_binds, "esc")
-                {
-                    for action in actions.iter().cloned() {
-                        if let Some(action) = action_from_null::<A>(action) {
-                            update_sim_focus(&action, &mut sim_focus);
-                            out.push(RenderCommand::Action(action));
+                if sim_focus == Focus::Results {
+                    if let Some(actions) = get_nav_bind(focus_binds, "esc") {
+                        for action in actions.iter().cloned() {
+                            if let Some(action) = action_from_null::<A>(action) {
+                                update_sim_focus(&action, &mut sim_focus);
+                                out.push(RenderCommand::Action(action));
+                            }
                         }
+                    } else {
+                        out.push(RenderCommand::Action(Action::Quit(130)));
                     }
                 } else {
                     sim_focus = match sim_focus {
@@ -3104,25 +3134,28 @@ mod test {
         let mut pending = None;
         let mut sort_menu_active = false;
 
-        // 1. Esc in Focus::Results with "esc" = "Quit" in nav_binds must emit Action::Quit(1), not ToggleFocus
-        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
-            key: "esc".to_string(),
-            action: Action::ToggleFocus,
-        }];
-        apply_focus_binds(
-            &mut buffer,
-            Focus::Results,
-            &focus_binds,
-            false,
-            &mut pending,
-            &mut sort_menu_active,
-        );
-        assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(1))));
+        // 1. Esc in Focus::Results with "esc" = "Quit" in nav_binds must emit Action::Quit(1)
+        // Works both with lowercase "esc" and crokey's capitalized "Esc"
+        for esc_key in ["esc", "Esc"] {
+            let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+                key: esc_key.to_string(),
+                action: Action::ToggleFocus,
+            }];
+            apply_focus_binds(
+                &mut buffer,
+                Focus::Results,
+                &focus_binds,
+                false,
+                &mut pending,
+                &mut sort_menu_active,
+            );
+            assert_eq!(buffer.len(), 1);
+            assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(1))));
+        }
 
         // 2. Esc in Focus::Input must toggle focus to Results
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
-            key: "esc".to_string(),
+            key: "Esc".to_string(),
             action: Action::ToggleFocus,
         }];
         apply_focus_binds(
@@ -3139,31 +3172,33 @@ mod test {
             RenderCommand::Action(Action::ToggleFocus)
         ));
 
-        // 3. Backspace in Focus::Results must run custom nav_binds (ChDir(..), Cancel, Reload, FocusNav)
-        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
-            key: "backspace".to_string(),
-            action: Action::DeleteChar,
-        }];
-        apply_focus_binds(
-            &mut buffer,
-            Focus::Results,
-            &focus_binds,
-            false,
-            &mut pending,
-            &mut sort_menu_active,
-        );
-        assert_eq!(buffer.len(), 4);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::ChDir(_))));
-        assert!(matches!(buffer[1], RenderCommand::Action(Action::Cancel)));
-        assert!(matches!(
-            buffer[2],
-            RenderCommand::Action(Action::Reload(_))
-        ));
-        assert!(matches!(buffer[3], RenderCommand::Action(Action::FocusNav)));
+        // 3. Backspace in Focus::Results must run custom nav_binds (case-insensitive)
+        for bs_key in ["backspace", "Backspace"] {
+            let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+                key: bs_key.to_string(),
+                action: Action::DeleteChar,
+            }];
+            apply_focus_binds(
+                &mut buffer,
+                Focus::Results,
+                &focus_binds,
+                false,
+                &mut pending,
+                &mut sort_menu_active,
+            );
+            assert_eq!(buffer.len(), 4);
+            assert!(matches!(buffer[0], RenderCommand::Action(Action::ChDir(_))));
+            assert!(matches!(buffer[1], RenderCommand::Action(Action::Cancel)));
+            assert!(matches!(
+                buffer[2],
+                RenderCommand::Action(Action::Reload(_))
+            ));
+            assert!(matches!(buffer[3], RenderCommand::Action(Action::FocusNav)));
+        }
 
         // 4. Backspace in Focus::Input must delete char
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
-            key: "backspace".to_string(),
+            key: "Backspace".to_string(),
             action: Action::DeleteChar,
         }];
         apply_focus_binds(
@@ -3180,25 +3215,27 @@ mod test {
             RenderCommand::Action(Action::DeleteChar)
         ));
 
-        // 5. Esc in Focus::Results WITHOUT "esc" in nav_binds toggles focus to Input
-        let empty_binds = HashMap::new();
-        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
-            key: "esc".to_string(),
-            action: Action::ToggleFocus,
-        }];
-        apply_focus_binds(
-            &mut buffer,
-            Focus::Results,
-            &empty_binds,
-            false,
-            &mut pending,
-            &mut sort_menu_active,
-        );
-        assert_eq!(buffer.len(), 1);
-        assert!(matches!(
-            buffer[0],
-            RenderCommand::Action(Action::ToggleFocus)
-        ));
+        // 5. Esc in Focus::Results WITHOUT "esc" in nav_binds must quit with 130 instead of trapping focus
+        for esc_key in ["esc", "Esc"] {
+            let empty_binds = HashMap::new();
+            let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+                key: esc_key.to_string(),
+                action: Action::ToggleFocus,
+            }];
+            apply_focus_binds(
+                &mut buffer,
+                Focus::Results,
+                &empty_binds,
+                false,
+                &mut pending,
+                &mut sort_menu_active,
+            );
+            assert_eq!(buffer.len(), 1);
+            assert!(matches!(
+                buffer[0],
+                RenderCommand::Action(Action::Quit(130))
+            ));
+        }
     }
 
     #[test]

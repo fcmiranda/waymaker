@@ -343,10 +343,10 @@ pub fn action_handler(
             )));
 
             if state.ui.config.nav_mode {
-                let focus_to_set = if index != 0 {
-                    matchmaker::render::Focus::Input
-                } else if let Some(saved) = mode_history.get(&index) {
+                let focus_to_set = if let Some(saved) = mode_history.get(&index) {
                     saved.focus
+                } else if index == 1 {
+                    matchmaker::render::Focus::Input
                 } else {
                     matchmaker::render::Focus::Results
                 };
@@ -444,10 +444,10 @@ pub fn action_handler(
             )));
 
             if state.ui.config.nav_mode {
-                let focus_to_set = if index != 0 {
-                    matchmaker::render::Focus::Input
-                } else if let Some(saved) = mode_history.get(&index) {
+                let focus_to_set = if let Some(saved) = mode_history.get(&index) {
                     saved.focus
+                } else if index == 1 {
+                    matchmaker::render::Focus::Input
                 } else {
                     matchmaker::render::Focus::Results
                 };
@@ -1184,16 +1184,7 @@ pub fn action_handler(
                 };
                 let color = if had_error { "red" } else { "cyan" };
                 let msg = if is_subfolder {
-                    let clean_dest = dest_display_name
-                        .trim()
-                        .trim_start_matches("./")
-                        .trim_end_matches('/')
-                        .trim_end_matches('\\');
-                    let target_display = if std::path::Path::new(clean_dest).is_absolute() {
-                        format!("{clean_dest}/")
-                    } else {
-                        format!("./{clean_dest}/")
-                    };
+                    let target_display = abbreviate_target_dir_display(&dest_display_name);
                     format!(
                         "{{{color}:{icon} {verb} {count} {item_word} into {target_display} (u to undo)}}"
                     )
@@ -1668,6 +1659,32 @@ fn show_styled_info_box(state: &mut MMState<'_, '_>, message: &str) {
     state.needs_redraw = true;
 }
 
+pub(crate) fn abbreviate_target_dir_display(dest_display_name: &str) -> String {
+    let clean = dest_display_name
+        .trim()
+        .trim_start_matches("./")
+        .trim_end_matches('/')
+        .trim_end_matches('\\');
+
+    let p = std::path::Path::new(clean);
+    let segments: Vec<&str> = p
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+
+    if segments.len() > 3 {
+        let n = segments.len();
+        format!(".../{}/{}/{}", segments[n - 3], segments[n - 2], segments[n - 1])
+    } else if p.is_absolute() {
+        format!("{clean}/")
+    } else {
+        format!("./{clean}/")
+    }
+}
+
 fn close_action_box(state: &mut MMState<'_, '_>, fm_action: &mut Option<FmActionMode>) {
     state.picker_ui.action_visible = false;
     matchmaker::ACTION_BOX_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -2041,6 +2058,16 @@ mod tests {
         let mode_0_hist = action_context.mode_history.get(&0).unwrap();
         assert_eq!(mode_0_hist.focus, matchmaker::render::Focus::Results);
         assert_eq!(mm_state.focus, matchmaker::render::Focus::Input);
+
+        // Switch to mode 2 (Bookmarks) - when no prior nav_mode history, should default to Focus::Results
+        action_context.mode_history.remove(&2);
+        action_handler(
+            MMAction::ReloadNext(Some(2)),
+            &mut mm_state,
+            &mut action_context,
+        );
+        assert_eq!(action_context.additional_commands.1, 2);
+        assert_eq!(mm_state.focus, matchmaker::render::Focus::Results);
 
         // Switch back to mode 0 - should restore Nav mode (Focus::Results)
         action_handler(
@@ -2832,5 +2859,35 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_abbreviate_target_dir_display() {
+        // 1 segment relative
+        assert_eq!(abbreviate_target_dir_display("target_folder"), "./target_folder/");
+        // 1 segment relative with leading ./ and trailing /
+        assert_eq!(abbreviate_target_dir_display("./target_folder/"), "./target_folder/");
+        // 2 segments relative
+        assert_eq!(abbreviate_target_dir_display("sub/folder"), "./sub/folder/");
+        // 3 segments relative
+        assert_eq!(abbreviate_target_dir_display("a/b/c"), "./a/b/c/");
+        // 4 segments relative -> abbreviate to .../parent2/parent1/current
+        assert_eq!(abbreviate_target_dir_display("a/b/c/d"), ".../b/c/d");
+        // Deep relative
+        assert_eq!(abbreviate_target_dir_display("a/b/c/d/e/f"), ".../d/e/f");
+
+        // 1 segment absolute
+        assert_eq!(abbreviate_target_dir_display("/folder"), "/folder/");
+        // 2 segments absolute
+        assert_eq!(abbreviate_target_dir_display("/usr/bin"), "/usr/bin/");
+        // 3 segments absolute
+        assert_eq!(abbreviate_target_dir_display("/home/user/docs"), "/home/user/docs/");
+        // 4 segments absolute -> abbreviate
+        assert_eq!(abbreviate_target_dir_display("/home/user/code/project"), ".../user/code/project");
+        // Deep absolute path
+        assert_eq!(
+            abbreviate_target_dir_display("/home/fecavmi/dev/github/matchmaker/matchmaker-cli/src"),
+            ".../matchmaker/matchmaker-cli/src"
+        );
     }
 }

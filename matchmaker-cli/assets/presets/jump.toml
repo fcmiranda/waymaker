@@ -3,6 +3,7 @@
 
 [ui]
 nav_mode = true
+nav_focus_on_start = "picker"
 nav_bar = "Plain"
 nav_color = "Black"
 nav_notify = true
@@ -45,6 +46,7 @@ typo_tolerance = true
 dir_first = true
 
 [results]
+scroll_wrap = true
 max = 15
 reverse = false
 icons = true
@@ -76,16 +78,24 @@ side = "right"
 percentage = 50
 
 [binds]
+"tab" = "@reloadnext"
+"shift-backtab" = "@reloadprev"
+"backtab" = "@reloadprev"
 "ctrl-f" = "@dirs"
 "ctrl-b" = "@bookmarks"
 "*" = "@bookmark"
 "ctrl-j" = "Down"
 "ctrl-k" = "Up"
-"ctrl-p" = "SwitchPreview"
+"alt-j" = "Down"
+"alt-k" = "Up"
+"ctrl-p" = "@paste_into"
 "ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
 "ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"alt-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"alt-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
 "ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"ctrl-v" = "@paste_into"
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 "," = "SortMenu"
 "." = "NextColumn"
@@ -93,6 +103,9 @@ percentage = 50
 "\\" = "ToggleParentPeek"
 
 [ui.nav_binds]
+"tab" = "@reloadnext"
+"shift-backtab" = "@reloadprev"
+"backtab" = "@reloadprev"
 "j" = "Down"
 "k" = "Up"
 "f" = "@dirs"
@@ -105,10 +118,14 @@ percentage = 50
 "backspace" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "ctrl-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
 "ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
+"alt-l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
+"alt-h" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "ctrl-right" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)", "FocusNav"]
 "ctrl-left" = ["ChDir(..)", "Cancel", "Reload", "FocusNav"]
 "p" = "@paste"
 "P" = "@paste_into"
+"ctrl-p" = "@paste_into"
+"ctrl-v" = "@paste_into"
 "y" = "@yank"
 "x" = "@cut"
 "u" = "@undo"
@@ -117,7 +134,6 @@ percentage = 50
 "." = "NextColumn"
 ">" = "PrevColumn"
 "\\" = "ToggleParentPeek"
-"ctrl-p" = "SwitchPreview"
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
 [breadcrumb]

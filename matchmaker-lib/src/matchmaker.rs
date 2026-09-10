@@ -1247,7 +1247,8 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
                                     "md" | "markdown" | "mdown" | "mkd" | "mmd" | "mermaid"
                                 )
                             {
-                                msg = Some(PreviewMessage::Markdown(p.to_string_lossy().to_string()));
+                                let width = state.previewer_area().map(|r| r.width as usize);
+                                msg = Some(PreviewMessage::Markdown(p.to_string_lossy().to_string(), width));
                             }
                         }
                     }

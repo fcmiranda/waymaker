@@ -492,14 +492,18 @@ pub fn expand_indents<'a>(
 
 /// Convert a Ratatui `Text` into an ANSI-escaped string for terminal stdout.
 pub fn text_to_ansi(text: &Text<'_>) -> String {
+    use std::fmt::Write;
     let mut out = String::new();
+    let mut prefix = String::with_capacity(32);
+
     for (i, line) in text.lines.iter().enumerate() {
         if i > 0 {
             out.push('\n');
         }
         for span in &line.spans {
             let style = span.style;
-            let mut prefix = String::new();
+            prefix.clear();
+
             if style.add_modifier.contains(Modifier::BOLD) {
                 prefix.push_str("\x1b[1m");
             }
@@ -537,8 +541,12 @@ pub fn text_to_ansi(text: &Text<'_>) -> String {
                     Color::LightBlue => prefix.push_str("\x1b[94m"),
                     Color::LightMagenta => prefix.push_str("\x1b[95m"),
                     Color::LightCyan => prefix.push_str("\x1b[96m"),
-                    Color::Indexed(idx) => prefix.push_str(&format!("\x1b[38;5;{idx}m")),
-                    Color::Rgb(r, g, b) => prefix.push_str(&format!("\x1b[38;2;{r};{g};{b}m")),
+                    Color::Indexed(idx) => {
+                        let _ = write!(prefix, "\x1b[38;5;{idx}m");
+                    }
+                    Color::Rgb(r, g, b) => {
+                        let _ = write!(prefix, "\x1b[38;2;{r};{g};{b}m");
+                    }
                 }
             }
 
@@ -560,15 +568,21 @@ pub fn text_to_ansi(text: &Text<'_>) -> String {
                     Color::LightBlue => prefix.push_str("\x1b[104m"),
                     Color::LightMagenta => prefix.push_str("\x1b[105m"),
                     Color::LightCyan => prefix.push_str("\x1b[106m"),
-                    Color::Indexed(idx) => prefix.push_str(&format!("\x1b[48;5;{idx}m")),
-                    Color::Rgb(r, g, b) => prefix.push_str(&format!("\x1b[48;2;{r};{g};{b}m")),
+                    Color::Indexed(idx) => {
+                        let _ = write!(prefix, "\x1b[48;5;{idx}m");
+                    }
+                    Color::Rgb(r, g, b) => {
+                        let _ = write!(prefix, "\x1b[48;2;{r};{g};{b}m");
+                    }
                 }
             }
 
             if prefix.is_empty() {
                 out.push_str(&span.content);
             } else {
-                out.push_str(&format!("{prefix}{}\x1b[0m", span.content));
+                out.push_str(&prefix);
+                out.push_str(&span.content);
+                out.push_str("\x1b[0m");
             }
         }
     }

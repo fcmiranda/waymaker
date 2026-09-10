@@ -162,6 +162,26 @@ fn parse_preview_width_from_args(args: &[String]) -> Option<usize> {
         .or_else(|| ratatui::crossterm::terminal::size().map(|(w, _)| w as usize).ok())
 }
 
+fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "-w" || arg == "--width" {
+            i += 2;
+            continue;
+        }
+        if arg.starts_with("--width=") || arg == "--ascii" {
+            i += 1;
+            continue;
+        }
+        if arg == "-" || !arg.starts_with('-') {
+            return Some(arg.as_str());
+        }
+        i += 1;
+    }
+    None
+}
+
 fn handle_frecency_cli(args: &[String]) -> bool {
     if args.is_empty() {
         return false;
@@ -172,13 +192,17 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             let path = std::path::Path::new(path_str);
             let opts = matchmaker::utils::tree::TreeOptions::default();
             let ansi_output = matchmaker::utils::tree::render_dir_tree_ansi(path, &opts);
-            print!("{ansi_output}");
+            if ansi_output.ends_with('\n') {
+                print!("{ansi_output}");
+            } else {
+                println!("{ansi_output}");
+            }
             true
         }
         "md" | "markdown" | "preview-md" | "preview-markdown" => {
             let ascii = args.iter().any(|a| a == "--ascii");
             let width = parse_preview_width_from_args(args);
-            let path_arg = args.iter().skip(1).find(|a| !a.starts_with('-') || *a == "-");
+            let path_arg = parse_subcommand_path_arg(args);
             let content = if let Some(p) = path_arg {
                 if p == "-" {
                     let mut buf = String::new();
@@ -205,13 +229,17 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 show_line_numbers: false,
             };
             let ansi_output = matchmaker::utils::markdown::render_markdown_ansi(&content, &opts);
-            print!("{ansi_output}");
+            if ansi_output.ends_with('\n') {
+                print!("{ansi_output}");
+            } else {
+                println!("{ansi_output}");
+            }
             true
         }
         "mermaid" | "preview-mermaid" | "mmd" => {
             let ascii = args.iter().any(|a| a == "--ascii");
             let width = parse_preview_width_from_args(args);
-            let path_arg = args.iter().skip(1).find(|a| !a.starts_with('-') || *a == "-");
+            let path_arg = parse_subcommand_path_arg(args);
             let content = if let Some(p) = path_arg {
                 if p == "-" {
                     let mut buf = String::new();
@@ -238,7 +266,11 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 title: Some("Mermaid Diagram".to_string()),
             };
             let ansi_output = matchmaker::utils::mermaid::render_mermaid_ansi(&content, &opts);
-            print!("{ansi_output}");
+            if ansi_output.ends_with('\n') {
+                print!("{ansi_output}");
+            } else {
+                println!("{ansi_output}");
+            }
             true
         }
 

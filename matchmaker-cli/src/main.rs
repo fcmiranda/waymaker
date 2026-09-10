@@ -145,6 +145,23 @@ fn display_doc(cli: &Cli) {
     }
 }
 
+fn parse_preview_width_from_args(args: &[String]) -> Option<usize> {
+    for i in 0..args.len() {
+        if args[i] == "-w" || args[i] == "--width" {
+            if let Some(w) = args.get(i + 1).and_then(|s| s.parse::<usize>().ok()) {
+                return Some(w);
+            }
+        } else if let Some(w) = args[i].strip_prefix("--width=").and_then(|s| s.parse::<usize>().ok()) {
+            return Some(w);
+        }
+    }
+    std::env::var("COLUMNS")
+        .ok()
+        .and_then(|c| c.parse::<usize>().ok())
+        .filter(|&w| w > 0)
+        .or_else(|| ratatui::crossterm::terminal::size().map(|(w, _)| w as usize).ok())
+}
+
 fn handle_frecency_cli(args: &[String]) -> bool {
     if args.is_empty() {
         return false;
@@ -158,6 +175,73 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             print!("{ansi_output}");
             true
         }
+        "md" | "markdown" | "preview-md" | "preview-markdown" => {
+            let ascii = args.iter().any(|a| a == "--ascii");
+            let width = parse_preview_width_from_args(args);
+            let path_arg = args.iter().skip(1).find(|a| !a.starts_with('-') || *a == "-");
+            let content = if let Some(p) = path_arg {
+                if p == "-" {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    std::fs::read_to_string(p).unwrap_or_else(|e| format!("Error reading {p}: {e}"))
+                }
+            } else {
+                use std::io::IsTerminal;
+                if !std::io::stdin().is_terminal() {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    eprintln!("Usage: mm md <file.md> [--width <N>] [--ascii]");
+                    return true;
+                }
+            };
+            let opts = matchmaker::utils::markdown::MarkdownOptions {
+                max_width: width,
+                render_mermaid: true,
+                mermaid_ascii: ascii,
+                show_line_numbers: false,
+            };
+            let ansi_output = matchmaker::utils::markdown::render_markdown_ansi(&content, &opts);
+            print!("{ansi_output}");
+            true
+        }
+        "mermaid" | "preview-mermaid" | "mmd" => {
+            let ascii = args.iter().any(|a| a == "--ascii");
+            let width = parse_preview_width_from_args(args);
+            let path_arg = args.iter().skip(1).find(|a| !a.starts_with('-') || *a == "-");
+            let content = if let Some(p) = path_arg {
+                if p == "-" {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    std::fs::read_to_string(p).unwrap_or_else(|e| format!("Error reading {p}: {e}"))
+                }
+            } else {
+                use std::io::IsTerminal;
+                if !std::io::stdin().is_terminal() {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    eprintln!("Usage: mm mermaid <file.mmd> [--width <N>] [--ascii]");
+                    return true;
+                }
+            };
+            let opts = matchmaker::utils::mermaid::MermaidOptions {
+                max_width: width,
+                ascii,
+                show_box: true,
+                title: Some("Mermaid Diagram".to_string()),
+            };
+            let ansi_output = matchmaker::utils::mermaid::render_mermaid_ansi(&content, &opts);
+            print!("{ansi_output}");
+            true
+        }
+
         "add" => {
             let path = args.get(1).cloned().unwrap_or_else(|| {
                 std::env::current_dir()
@@ -606,4 +690,43 @@ mod tests {
             Action::Custom(crate::action::MMAction::Unbind("Synced".to_string()))
         );
     }
+
+    #[test]
+    fn test_cli_markdown_subcommand() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let md_path = temp_dir.join("test.md");
+        std::fs::write(
+            &md_path,
+            "# CLI Test\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n- [x] Done",
+        )
+        .unwrap();
+
+        let args = vec![
+            "md".to_string(),
+            md_path.to_str().unwrap().to_string(),
+            "--width=60".to_string(),
+        ];
+        assert!(handle_frecency_cli(&args));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_cli_mermaid_subcommand() {
+        let temp_dir = std::env::temp_dir().join("mm_test_mermaid");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let mmd_path = temp_dir.join("test.mmd");
+        std::fs::write(&mmd_path, "graph TD\n  Start --> Stop").unwrap();
+
+        let args = vec![
+            "mermaid".to_string(),
+            mmd_path.to_str().unwrap().to_string(),
+            "--ascii".to_string(),
+        ];
+        assert!(handle_frecency_cli(&args));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }
+

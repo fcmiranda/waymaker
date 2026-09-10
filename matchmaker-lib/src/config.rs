@@ -1477,6 +1477,9 @@ pub struct PreviewConfig {
     pub zoom: Option<f32>,
     /// Resize/fit mode for media previews: "crop", "fit", or "scale" (default: "crop")
     pub media_fit: Option<String>,
+    /// Whether to enable native markdown rendering with embedded Mermaid diagrams
+    #[partial(alias = "md")]
+    pub markdown: bool,
 }
 
 impl PreviewConfig {
@@ -1507,9 +1510,11 @@ impl Default for PreviewConfig {
             media_size: None,
             zoom: None,
             media_fit: None,
+            markdown: true,
         }
     }
 }
+
 
 /// Determines the initial scroll offset of the preview window.
 #[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]

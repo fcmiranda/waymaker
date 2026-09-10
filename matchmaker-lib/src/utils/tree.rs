@@ -54,40 +54,9 @@ pub fn render_dir_tree(dir: &Path, opts: &TreeOptions) -> Text<'static> {
 /// Render a directory tree as ANSI colored string for terminal stdout.
 pub fn render_dir_tree_ansi(dir: &Path, opts: &TreeOptions) -> String {
     let text = render_dir_tree(dir, opts);
-    let mut out = String::new();
-    for line in text.lines {
-        for span in line.spans {
-            let style = span.style;
-            let mut prefix = String::new();
-            if style.add_modifier.contains(Modifier::BOLD) {
-                prefix.push_str("\x1b[1m");
-            }
-            if let Some(fg) = style.fg {
-                match fg {
-                    Color::Black => prefix.push_str("\x1b[30m"),
-                    Color::Red => prefix.push_str("\x1b[31m"),
-                    Color::Green => prefix.push_str("\x1b[32m"),
-                    Color::Yellow => prefix.push_str("\x1b[33m"),
-                    Color::Blue => prefix.push_str("\x1b[34m"),
-                    Color::Magenta => prefix.push_str("\x1b[35m"),
-                    Color::Cyan => prefix.push_str("\x1b[36m"),
-                    Color::Gray | Color::White => prefix.push_str("\x1b[37m"),
-                    Color::DarkGray => prefix.push_str("\x1b[90m"),
-                    Color::Rgb(r, g, b) => prefix.push_str(&format!("\x1b[38;2;{r};{g};{b}m")),
-                    Color::Indexed(i) => prefix.push_str(&format!("\x1b[38;5;{i}m")),
-                    _ => {}
-                }
-            }
-            if prefix.is_empty() {
-                out.push_str(&span.content);
-            } else {
-                out.push_str(&format!("{prefix}{}\x1b[0m", span.content));
-            }
-        }
-        out.push('\n');
-    }
-    out
+    super::text::text_to_ansi(&text)
 }
+
 
 fn build_tree(
     dir: &Path,

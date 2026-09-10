@@ -23,6 +23,7 @@ pub enum PreviewMessage {
     Run(String, EnvVars),
     Set(Text<'static>),
     Media(String),
+    Markdown(String),
     Unset,
     #[default]
     Stop,
@@ -180,7 +181,11 @@ impl Previewer {
             } else if let PreviewMessage::Media(cmd) = &m {
                 is_debouncable = true;
                 key = cmd.clone();
+            } else if let PreviewMessage::Markdown(cmd) = &m {
+                is_debouncable = true;
+                key = cmd.clone();
             }
+
 
             if is_debouncable {
                 if !self.config.always_trigger && self.last == key {
@@ -368,15 +373,65 @@ impl Previewer {
                         });
                         continue;
                     }
+                    PreviewMessage::Markdown(ref path) => {
+                        self.clear_image();
+                        self.clear_string();
+                        self.lines.clear();
+                        self.dispatch_kill();
+                        self.last = path.clone();
+                        let path = path.clone();
+                        let string_state = self.string.clone();
+                        let changed = self.changed.clone();
+                        let rx = self.rx.clone();
+
+                        tokio::task::spawn_blocking(move || {
+                            if rx.has_changed().unwrap_or(false) {
+                                return;
+                            }
+
+                            let p = std::path::Path::new(&path);
+                            let is_mermaid = p
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .is_some_and(|ext| {
+                                    matches!(ext.to_lowercase().as_str(), "mmd" | "mermaid")
+                                });
+
+                            let rendered_text = if is_mermaid {
+                                let opts = crate::utils::mermaid::MermaidOptions::default();
+                                crate::utils::mermaid::render_mermaid_file(p, &opts)
+                                    .unwrap_or_else(|err| {
+                                        Text::from(format!("Error reading Mermaid file: {err}"))
+                                    })
+                            } else {
+                                let opts = crate::utils::markdown::MarkdownOptions::default();
+                                crate::utils::markdown::render_markdown_file(p, &opts)
+                                    .unwrap_or_else(|err| {
+                                        Text::from(format!("Error reading Markdown file: {err}"))
+                                    })
+                            };
+
+                            if rx.has_changed().unwrap_or(false) {
+                                return;
+                            }
+
+                            if let Ok(mut guard) = string_state.lock() {
+                                *guard = Some(rendered_text);
+                                changed.store(true, Ordering::Release);
+                            }
+                        });
+                        continue;
+                    }
                     _ => {}
                 }
             }
 
-            if !matches!(m, PreviewMessage::Media(_)) {
+            if !matches!(m, PreviewMessage::Media(_) | PreviewMessage::Markdown(_)) {
                 self.dispatch_kill();
                 self.clear_string();
                 self.clear_image();
             }
+
 
             match m {
                 PreviewMessage::Run(cmd, variables) => {

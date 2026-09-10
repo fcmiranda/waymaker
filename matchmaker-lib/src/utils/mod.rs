@@ -8,5 +8,8 @@ pub mod text;
 mod types;
 pub use types::*;
 
+pub mod markdown;
+pub mod mermaid;
 pub mod string;
 pub mod tree;
+

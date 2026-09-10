@@ -242,7 +242,8 @@ impl Cli {
             ]
             .contains(&s.as_ref())
                 || s.strip_prefix('-')
-                    .is_some_and(|x| x.chars().all(|c| c == 'v') || x.chars().all(|c| c == 'q'))
+                    .is_some_and(|x| !x.is_empty() && (x.chars().all(|c| c == 'v') || x.chars().all(|c| c == 'q')))
+
             {
                 clap_args.push(arg);
                 continue;

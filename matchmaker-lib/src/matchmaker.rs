@@ -1186,9 +1186,10 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
             let m = state.preview_payload().clone()
             {
                 let media = state.preview_ui.as_ref().map(|p| p.config.media).unwrap_or(false);
+                let markdown = state.preview_ui.as_ref().map(|p| p.config.markdown).unwrap_or(true);
                 let mut msg = None;
 
-                if media {
+                if media || markdown {
                     let raw_item = use_formatter(&formatter, state, "{=1}", None);
                     let mut trimmed = raw_item.trim();
                     let raw_all;
@@ -1216,31 +1217,42 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
 
                     if let Some(p) = clean_path && p.is_file() {
                         if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                            if matches!(
-                                ext.to_lowercase().as_str(),
-                                "png"
-                                    | "jpg"
-                                    | "jpeg"
-                                    | "gif"
-                                    | "webp"
-                                    | "bmp"
-                                    | "ico"
-                                    | "tiff"
-                                    | "pdf"
-                                    | "mp4"
-                                    | "mkv"
-                                    | "webm"
-                                    | "mov"
-                                    | "avi"
-                                    | "flv"
-                                    | "m4v"
-                                    | "wmv"
-                            ) {
+                            let ext_lower = ext.to_lowercase();
+                            if media
+                                && matches!(
+                                    ext_lower.as_str(),
+                                    "png"
+                                        | "jpg"
+                                        | "jpeg"
+                                        | "gif"
+                                        | "webp"
+                                        | "bmp"
+                                        | "ico"
+                                        | "tiff"
+                                        | "pdf"
+                                        | "mp4"
+                                        | "mkv"
+                                        | "webm"
+                                        | "mov"
+                                        | "avi"
+                                        | "flv"
+                                        | "m4v"
+                                        | "wmv"
+                                )
+                            {
                                 msg = Some(PreviewMessage::Media(p.to_string_lossy().to_string()));
+                            } else if markdown
+                                && matches!(
+                                    ext_lower.as_str(),
+                                    "md" | "markdown" | "mdown" | "mkd" | "mmd" | "mermaid"
+                                )
+                            {
+                                msg = Some(PreviewMessage::Markdown(p.to_string_lossy().to_string()));
                             }
                         }
                     }
                 }
+
 
                 let cmd = use_formatter(&formatter, state, &m, None);
                 if cmd.is_empty() && msg.is_none() {

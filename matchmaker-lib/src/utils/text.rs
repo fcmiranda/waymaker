@@ -490,12 +490,91 @@ pub fn expand_indents<'a>(
     Line::from(new_spans)
 }
 
-// pub fn apply_to_lines(text: &mut Text<'_>, transform: impl Fn(Line<'_>) -> Line<'_>) {
-//     for line in text.lines.iter_mut() {
-//         let owned_line = std::mem::take(line);
-//         *line = transform(owned_line);
-//     }
-// }
+/// Convert a Ratatui `Text` into an ANSI-escaped string for terminal stdout.
+pub fn text_to_ansi(text: &Text<'_>) -> String {
+    let mut out = String::new();
+    for (i, line) in text.lines.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        for span in &line.spans {
+            let style = span.style;
+            let mut prefix = String::new();
+            if style.add_modifier.contains(Modifier::BOLD) {
+                prefix.push_str("\x1b[1m");
+            }
+            if style.add_modifier.contains(Modifier::DIM) {
+                prefix.push_str("\x1b[2m");
+            }
+            if style.add_modifier.contains(Modifier::ITALIC) {
+                prefix.push_str("\x1b[3m");
+            }
+            if style.add_modifier.contains(Modifier::UNDERLINED) {
+                prefix.push_str("\x1b[4m");
+            }
+            if style.add_modifier.contains(Modifier::REVERSED) {
+                prefix.push_str("\x1b[7m");
+            }
+            if style.add_modifier.contains(Modifier::CROSSED_OUT) {
+                prefix.push_str("\x1b[9m");
+            }
+
+            if let Some(fg) = style.fg {
+                match fg {
+                    Color::Reset => prefix.push_str("\x1b[39m"),
+                    Color::Black => prefix.push_str("\x1b[30m"),
+                    Color::Red => prefix.push_str("\x1b[31m"),
+                    Color::Green => prefix.push_str("\x1b[32m"),
+                    Color::Yellow => prefix.push_str("\x1b[33m"),
+                    Color::Blue => prefix.push_str("\x1b[34m"),
+                    Color::Magenta => prefix.push_str("\x1b[35m"),
+                    Color::Cyan => prefix.push_str("\x1b[36m"),
+                    Color::Gray | Color::White => prefix.push_str("\x1b[37m"),
+                    Color::DarkGray => prefix.push_str("\x1b[90m"),
+                    Color::LightRed => prefix.push_str("\x1b[91m"),
+                    Color::LightGreen => prefix.push_str("\x1b[92m"),
+                    Color::LightYellow => prefix.push_str("\x1b[93m"),
+                    Color::LightBlue => prefix.push_str("\x1b[94m"),
+                    Color::LightMagenta => prefix.push_str("\x1b[95m"),
+                    Color::LightCyan => prefix.push_str("\x1b[96m"),
+                    Color::Indexed(idx) => prefix.push_str(&format!("\x1b[38;5;{idx}m")),
+                    Color::Rgb(r, g, b) => prefix.push_str(&format!("\x1b[38;2;{r};{g};{b}m")),
+                }
+            }
+
+            if let Some(bg) = style.bg {
+                match bg {
+                    Color::Reset => prefix.push_str("\x1b[49m"),
+                    Color::Black => prefix.push_str("\x1b[40m"),
+                    Color::Red => prefix.push_str("\x1b[41m"),
+                    Color::Green => prefix.push_str("\x1b[42m"),
+                    Color::Yellow => prefix.push_str("\x1b[43m"),
+                    Color::Blue => prefix.push_str("\x1b[44m"),
+                    Color::Magenta => prefix.push_str("\x1b[45m"),
+                    Color::Cyan => prefix.push_str("\x1b[46m"),
+                    Color::Gray | Color::White => prefix.push_str("\x1b[47m"),
+                    Color::DarkGray => prefix.push_str("\x1b[100m"),
+                    Color::LightRed => prefix.push_str("\x1b[101m"),
+                    Color::LightGreen => prefix.push_str("\x1b[102m"),
+                    Color::LightYellow => prefix.push_str("\x1b[103m"),
+                    Color::LightBlue => prefix.push_str("\x1b[104m"),
+                    Color::LightMagenta => prefix.push_str("\x1b[105m"),
+                    Color::LightCyan => prefix.push_str("\x1b[106m"),
+                    Color::Indexed(idx) => prefix.push_str(&format!("\x1b[48;5;{idx}m")),
+                    Color::Rgb(r, g, b) => prefix.push_str(&format!("\x1b[48;2;{r};{g};{b}m")),
+                }
+            }
+
+            if prefix.is_empty() {
+                out.push_str(&span.content);
+            } else {
+                out.push_str(&format!("{prefix}{}\x1b[0m", span.content));
+            }
+        }
+    }
+    out
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -686,4 +765,19 @@ mod tests {
         let sliced = slice_ratatui_text(&text, 5..5);
         assert_eq!(sliced, Text::default());
     }
+
+    #[test]
+    fn test_text_to_ansi() {
+        let text = Text::from(vec![
+            Line::from(vec![
+                Span::styled("Hello ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw("World"),
+            ]),
+            Line::from(vec![Span::styled("Second", Style::default().bg(Color::Blue))]),
+        ]);
+        let ansi = text_to_ansi(&text);
+        assert!(ansi.contains("\x1b[1m\x1b[31mHello \x1b[0mWorld"));
+        assert!(ansi.contains("\x1b[44mSecond\x1b[0m"));
+    }
 }
+

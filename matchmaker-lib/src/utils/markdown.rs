@@ -368,7 +368,8 @@ impl<'a> MarkdownRenderer<'a> {
                     self.current_link_text.push_str(&text);
                 }
                 let style = self.current_style();
-                self.current_line.push(Span::styled(text.into_string(), style));
+                self.current_line
+                    .push(Span::styled(text.into_string(), style));
             }
             Event::Code(code) => {
                 self.ensure_pending_prefix();
@@ -392,7 +393,9 @@ impl<'a> MarkdownRenderer<'a> {
                 if checked {
                     self.current_line.push(Span::styled(
                         "[✓] ",
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
                     ));
                 } else {
                     self.current_line
@@ -435,11 +438,7 @@ impl<'a> MarkdownRenderer<'a> {
                     HeadingLevel::H5 => (Color::Blue, "##### "),
                     HeadingLevel::H6 => (Color::DarkGray, "###### "),
                 };
-                self.push_style(
-                    Style::default()
-                        .fg(color)
-                        .add_modifier(Modifier::BOLD),
-                );
+                self.push_style(Style::default().fg(color).add_modifier(Modifier::BOLD));
                 self.current_line.push(Span::styled(
                     prefix,
                     Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -488,7 +487,8 @@ impl<'a> MarkdownRenderer<'a> {
                         let prefix_str = format!("{num}. ");
                         let w = UnicodeWidthStr::width(prefix_str.as_str());
                         self.list_continuation_indent = depth * 2 + w;
-                        let bullet_span = Span::styled(prefix_str, Style::default().fg(Color::Cyan));
+                        let bullet_span =
+                            Span::styled(prefix_str, Style::default().fg(Color::Cyan));
                         self.pending_item_prefix = Some((depth, bullet_span));
                     } else {
                         let bullet = match depth % 3 {
@@ -593,7 +593,9 @@ impl<'a> MarkdownRenderer<'a> {
                 let label = if alt.is_empty() { "image" } else { &alt };
                 let img_span = Span::styled(
                     format!("🖼  [{label}]({url})"),
-                    Style::default().fg(Color::LightMagenta).add_modifier(Modifier::ITALIC),
+                    Style::default()
+                        .fg(Color::LightMagenta)
+                        .add_modifier(Modifier::ITALIC),
                 );
                 self.current_line.push(img_span);
             }
@@ -690,13 +692,10 @@ impl<'a> MarkdownRenderer<'a> {
             return;
         }
 
-        let num_cols = tbl.alignments.len().max(
-            tbl.rows
-                .iter()
-                .map(|r| r.len())
-                .max()
-                .unwrap_or(0),
-        );
+        let num_cols = tbl
+            .alignments
+            .len()
+            .max(tbl.rows.iter().map(|r| r.len()).max().unwrap_or(0));
         if num_cols == 0 {
             return;
         }
@@ -716,7 +715,9 @@ impl<'a> MarkdownRenderer<'a> {
             if max_w > border_overhead {
                 let max_content_budget = max_w - border_overhead;
                 while col_widths.iter().sum::<usize>() > max_content_budget {
-                    if let Some((max_idx, &max_val)) = col_widths.iter().enumerate().max_by_key(|entry| *entry.1) {
+                    if let Some((max_idx, &max_val)) =
+                        col_widths.iter().enumerate().max_by_key(|entry| *entry.1)
+                    {
                         if max_val <= 3 {
                             break;
                         }
@@ -729,7 +730,9 @@ impl<'a> MarkdownRenderer<'a> {
         }
 
         let border_style = Style::default().fg(Color::DarkGray);
-        let header_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+        let header_style = Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD);
         let cell_style = Style::default().fg(Color::White);
 
         // Build top border: ┌──────┬──────┐
@@ -742,7 +745,8 @@ impl<'a> MarkdownRenderer<'a> {
                 top_border.push('┐');
             }
         }
-        self.lines.push(Line::from(Span::styled(top_border, border_style)));
+        self.lines
+            .push(Line::from(Span::styled(top_border, border_style)));
 
         for (row_idx, row) in tbl.rows.iter().enumerate() {
             let is_header = row_idx == 0;
@@ -788,7 +792,8 @@ impl<'a> MarkdownRenderer<'a> {
                 bot_border.push('┘');
             }
         }
-        self.lines.push(Line::from(Span::styled(bot_border, border_style)));
+        self.lines
+            .push(Line::from(Span::styled(bot_border, border_style)));
         self.lines.push(Line::default());
     }
 
@@ -852,7 +857,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Title"));
@@ -869,7 +879,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Architecture"));
@@ -886,7 +901,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Name"));
@@ -905,7 +925,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("[ ]"));
@@ -929,7 +954,10 @@ mod tests {
             ..Default::default()
         };
         let text = render_markdown(md, &opts);
-        assert!(text.lines.len() > 1, "Expected multiple lines due to wrapping");
+        assert!(
+            text.lines.len() > 1,
+            "Expected multiple lines due to wrapping"
+        );
         for line in &text.lines {
             let w: usize = line
                 .spans
@@ -948,11 +976,22 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!joined.contains("• [ ]"), "Task list should not contain both bullet and checkbox");
-        assert!(!joined.contains("• [✓]"), "Task list should not contain both bullet and checkbox");
+        assert!(
+            !joined.contains("• [ ]"),
+            "Task list should not contain both bullet and checkbox"
+        );
+        assert!(
+            !joined.contains("• [✓]"),
+            "Task list should not contain both bullet and checkbox"
+        );
         assert!(joined.contains("[ ] Unfinished task"));
         assert!(joined.contains("[✓] Finished task"));
     }
@@ -965,7 +1004,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("🖼  [Architecture Diagram](https://example.com/arch.png)"));
@@ -978,7 +1022,10 @@ mod tests {
         let text = render_markdown(md, &opts);
         for line in &text.lines {
             let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            assert!(joined.starts_with('▌'), "Every blockquote line must have the vertical bar: {joined}");
+            assert!(
+                joined.starts_with('▌'),
+                "Every blockquote line must have the vertical bar: {joined}"
+            );
         }
     }
 
@@ -991,7 +1038,10 @@ mod tests {
         for line in &text.lines {
             if is_line_blank(line) {
                 consecutive_blank += 1;
-                assert!(consecutive_blank <= 1, "Encountered more than one consecutive blank line");
+                assert!(
+                    consecutive_blank <= 1,
+                    "Encountered more than one consecutive blank line"
+                );
             } else {
                 consecutive_blank = 0;
             }
@@ -1016,7 +1066,10 @@ mod tests {
             .collect();
         let expected_w = widths[0];
         for (idx, w) in widths.iter().enumerate() {
-            assert_eq!(*w, expected_w, "Line {idx} width ({w}) does not match top border width ({expected_w})");
+            assert_eq!(
+                *w, expected_w,
+                "Line {idx} width ({w}) does not match top border width ({expected_w})"
+            );
         }
     }
 }

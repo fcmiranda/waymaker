@@ -57,7 +57,6 @@ pub fn render_dir_tree_ansi(dir: &Path, opts: &TreeOptions) -> String {
     super::text::text_to_ansi(&text)
 }
 
-
 fn build_tree(
     dir: &Path,
     prefix: &str,

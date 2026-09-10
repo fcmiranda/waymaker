@@ -224,12 +224,16 @@ mod tests {
             panic!("Error parsing asset jump.toml: {e}");
         }
 
-        let dotfiles_str =
-            std::fs::read_to_string("/home/fecavmi/.dotfiles/main/matchmaker/.config/matchmaker/presets/jump.toml")
-                .unwrap();
+        let dotfiles_str = std::fs::read_to_string(
+            "/home/fecavmi/.dotfiles/main/matchmaker/.config/matchmaker/presets/jump.toml",
+        )
+        .unwrap();
         let res_dotfiles: Result<PartialConfig, _> = toml::from_str(&dotfiles_str);
         if let Err(e) = &res_dotfiles {
-            eprintln!("=== TOML ERROR ON DOTFILES JUMP ===\n{}\n================", e);
+            eprintln!(
+                "=== TOML ERROR ON DOTFILES JUMP ===\n{}\n================",
+                e
+            );
             panic!("Error parsing dotfiles jump.toml: {e}");
         }
     }
@@ -244,7 +248,9 @@ mod tests {
         let jump_partial: PartialConfig = toml::from_str(jump_str).unwrap();
 
         let mut config = Config::default();
-        if let Ok(user_str) = std::fs::read_to_string("/home/fecavmi/.config/matchmaker/config.toml") {
+        if let Ok(user_str) =
+            std::fs::read_to_string("/home/fecavmi/.config/matchmaker/config.toml")
+        {
             if let Ok(user_partial) = toml::from_str::<PartialConfig>(&user_str) {
                 config.apply(user_partial);
             }
@@ -252,17 +258,30 @@ mod tests {
         config.apply(jump_partial);
 
         // Check that 'tab' is present in nav_binds and binds
-        assert!(config.render.ui.nav_binds.contains_key("tab"), "nav_binds should have 'tab'");
+        assert!(
+            config.render.ui.nav_binds.contains_key("tab"),
+            "nav_binds should have 'tab'"
+        );
         let tab_trigger: matchmaker::binds::Trigger = "tab".parse().unwrap();
-        assert!(config.binds.contains_key(&tab_trigger), "binds should have 'tab'");
+        assert!(
+            config.binds.contains_key(&tab_trigger),
+            "binds should have 'tab'"
+        );
 
         let sem_trigger: matchmaker::binds::Trigger = "@reloadnext".parse().unwrap();
-        config.binds.entry(sem_trigger).or_insert(matchmaker::acs![Action::Custom(crate::action::MMAction::ReloadNext(None))]);
+        config
+            .binds
+            .entry(sem_trigger)
+            .or_insert(matchmaker::acs![Action::Custom(
+                crate::action::MMAction::ReloadNext(None)
+            )]);
         config.binds.resolve_semantics();
 
         let tab_bind_after = &config.binds[&tab_trigger];
         // After resolution, the actions should contain ReloadNext
-        let has_reloadnext = tab_bind_after.iter().any(|a| matches!(a, Action::Custom(crate::action::MMAction::ReloadNext(None))));
+        let has_reloadnext = tab_bind_after
+            .iter()
+            .any(|a| matches!(a, Action::Custom(crate::action::MMAction::ReloadNext(None))));
         assert!(has_reloadnext, "tab binding should resolve to ReloadNext");
     }
 }

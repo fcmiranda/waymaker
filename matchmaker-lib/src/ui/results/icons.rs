@@ -21,7 +21,10 @@ impl ResultsUI {
         if set.is_empty() || col0_name.is_empty() {
             return false;
         }
-        let trimmed = col0_name.trim().trim_end_matches('/').trim_end_matches('\\');
+        let trimmed = col0_name
+            .trim()
+            .trim_end_matches('/')
+            .trim_end_matches('\\');
         if set.contains(col0_name) || set.contains(trimmed) {
             return true;
         }
@@ -410,9 +413,8 @@ pub(super) fn insert_icon_span(
 
 pub(crate) fn bookmark_color(results_config: &crate::config::ResultsConfig, name: &str) -> Color {
     let trimmed = name.trim();
-    let is_dir = trimmed.ends_with('/')
-        || trimmed.ends_with('\\')
-        || std::path::Path::new(trimmed).is_dir();
+    let is_dir =
+        trimmed.ends_with('/') || trimmed.ends_with('\\') || std::path::Path::new(trimmed).is_dir();
     if is_dir {
         results_config
             .bookmark_folder_icon_style

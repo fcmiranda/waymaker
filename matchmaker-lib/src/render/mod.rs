@@ -2248,7 +2248,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     } else {
                         render_display(frame, footer, &mut footer_ui, &picker_ui.results);
                         if show_nav_hints && footer.height > 0 {
-                            render_nav_hints(frame, footer, ui.config.nav_basic, ui.config.nav_hints_columns);
+                            render_nav_hints(
+                                frame,
+                                footer,
+                                ui.config.nav_basic,
+                                ui.config.nav_hints_columns,
+                            );
                         }
                     }
                     if parent_peek_rect.width > 0 {
@@ -2791,11 +2796,7 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usiz
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
-    let hints: &[(&str, &str, Color)] = if is_basic {
-        BASIC_NAV_HINTS
-    } else {
-        NAV_HINTS
-    };
+    let hints: &[(&str, &str, Color)] = if is_basic { BASIC_NAV_HINTS } else { NAV_HINTS };
 
     let cols = if columns == 0 { 4 } else { columns };
 
@@ -2809,7 +2810,8 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usiz
                 format!(" {key}"),
                 Style::default().fg(*color).add_modifier(Modifier::BOLD),
             );
-            let label_span = Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray));
+            let label_span =
+                Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray));
             let pair_w = key_span.width() + label_span.width();
             if total_w + pair_w > max_w {
                 break;
@@ -3333,7 +3335,10 @@ mod test {
             &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleFocus)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::ToggleFocus)
+        ));
 
         // 2. In Results mode, ToggleFocus is intercepted and replaced by nav_binds["esc"] (Quit)
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::ToggleFocus)];
@@ -3372,7 +3377,10 @@ mod test {
             &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::FocusFilter)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::FocusFilter)
+        ));
 
         // 5. In Results mode, DeleteChar triggers 'backspace' bind
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::DeleteChar)];
@@ -3392,7 +3400,10 @@ mod test {
     fn test_apply_focus_binds_tab_reloadnext_no_multiplication() {
         use crate::action::{Actions, NullActionExt};
         let mut focus_binds = std::collections::HashMap::new();
-        focus_binds.insert("tab".to_string(), Actions::from([Action::Semantic("reloadnext".to_string())]));
+        focus_binds.insert(
+            "tab".to_string(),
+            Actions::from([Action::Semantic("reloadnext".to_string())]),
+        );
 
         let mut pending = None;
         let mut sort_menu_active = false;
@@ -3421,7 +3432,10 @@ mod test {
                 _ => false,
             })
             .count();
-        assert_eq!(reloadnext_count, 1, "Tab in Focus::Results must trigger reloadnext exactly once");
+        assert_eq!(
+            reloadnext_count, 1,
+            "Tab in Focus::Results must trigger reloadnext exactly once"
+        );
 
         // 2. Multiple consecutive KeyActions with same key (e.g. from multi-action bind)
         // must execute the nav_bind only once
@@ -3450,7 +3464,10 @@ mod test {
                 _ => false,
             })
             .count();
-        assert_eq!(reloadnext_count, 1, "Multi-action Tab must not duplicate nav_bind execution");
+        assert_eq!(
+            reloadnext_count, 1,
+            "Multi-action Tab must not duplicate nav_bind execution"
+        );
 
         // 3. Unmapped multi-action key in Focus::Results preserves all fallback actions
         let mut buffer = vec![
@@ -3471,17 +3488,19 @@ mod test {
             &mut pending,
             &mut sort_menu_active,
         );
-        assert_eq!(buffer.len(), 2, "Unmapped key must preserve all fallback actions");
+        assert_eq!(
+            buffer.len(),
+            2,
+            "Unmapped key must preserve all fallback actions"
+        );
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Cancel)));
         assert!(matches!(buffer[1], RenderCommand::Action(Action::Pos(0))));
 
         // 4. In Focus::Input, Tab executes the action directly
-        let mut buffer = vec![
-            RenderCommand::<NullActionExt>::KeyAction {
-                key: "Tab".to_string(),
-                action: Action::Semantic("reloadnext".to_string()),
-            },
-        ];
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "Tab".to_string(),
+            action: Action::Semantic("reloadnext".to_string()),
+        }];
         apply_focus_binds(
             &mut buffer,
             Focus::Input,
@@ -3491,7 +3510,9 @@ mod test {
             &mut sort_menu_active,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::Semantic(ref s)) if s == "reloadnext"));
+        assert!(
+            matches!(buffer[0], RenderCommand::Action(Action::Semantic(ref s)) if s == "reloadnext")
+        );
     }
 
     #[test]

@@ -1515,7 +1515,6 @@ impl Default for PreviewConfig {
     }
 }
 
-
 /// Determines the initial scroll offset of the preview window.
 #[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

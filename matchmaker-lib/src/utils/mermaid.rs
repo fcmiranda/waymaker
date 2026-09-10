@@ -67,7 +67,9 @@ fn style_mermaid_output(rendered: &str, opts: &MermaidOptions) -> Text<'static> 
     let mut lines = Vec::new();
 
     let border_style = Style::default().fg(Color::Cyan);
-    let text_style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+    let text_style = Style::default()
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
 
     let content_width = raw_lines
         .iter()
@@ -101,7 +103,9 @@ fn style_mermaid_output(rendered: &str, opts: &MermaidOptions) -> Text<'static> 
             top.push('╮');
             lines.push(Line::from(Span::styled(
                 top,
-                Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
             )));
         }
     }
@@ -183,27 +187,83 @@ fn style_mermaid_output(rendered: &str, opts: &MermaidOptions) -> Text<'static> 
 /// Check if a character is a diagram border, connector, or edge glyph.
 fn is_diagram_glyph(ch: char, ascii: bool) -> bool {
     if ascii {
-        return matches!(ch, '+' | '-' | '|' | '>' | '<' | '^' | 'v' | '\\' | '/' | '*');
+        return matches!(
+            ch,
+            '+' | '-' | '|' | '>' | '<' | '^' | 'v' | '\\' | '/' | '*'
+        );
     }
     matches!(
         ch,
         '─' | '│'
-            | '┌' | '┐' | '└' | '┘'
-            | '├' | '┤' | '┬' | '┴' | '┼'
-            | '╭' | '╮' | '╯' | '╰'
-            | '═' | '║'
-            | '╒' | '╕' | '╘' | '╛'
-            | '╞' | '╡' | '╤' | '╧' | '╪'
-            | '╔' | '╗' | '╚' | '╝'
-            | '╠' | '╣' | '╦' | '╩' | '╬'
-            | '▲' | '▼' | '◄' | '►'
-            | '▸' | '▾' | '▴' | '◀' | '▶'
-            | '△' | '▽' | '▷' | '◁' | '◂'
-            | '◆' | '◇' | '○' | '●'
-            | '╱' | '╲'
-            | '┄' | '┆' | '┈' | '┊' | '╌' | '╎' | '╍' | '╏'
-            | '╴' | '╵' | '╶' | '╷'
-            | '█' | '░' | '▒' | '▓'
+            | '┌'
+            | '┐'
+            | '└'
+            | '┘'
+            | '├'
+            | '┤'
+            | '┬'
+            | '┴'
+            | '┼'
+            | '╭'
+            | '╮'
+            | '╯'
+            | '╰'
+            | '═'
+            | '║'
+            | '╒'
+            | '╕'
+            | '╘'
+            | '╛'
+            | '╞'
+            | '╡'
+            | '╤'
+            | '╧'
+            | '╪'
+            | '╔'
+            | '╗'
+            | '╚'
+            | '╝'
+            | '╠'
+            | '╣'
+            | '╦'
+            | '╩'
+            | '╬'
+            | '▲'
+            | '▼'
+            | '◄'
+            | '►'
+            | '▸'
+            | '▾'
+            | '▴'
+            | '◀'
+            | '▶'
+            | '△'
+            | '▽'
+            | '▷'
+            | '◁'
+            | '◂'
+            | '◆'
+            | '◇'
+            | '○'
+            | '●'
+            | '╱'
+            | '╲'
+            | '┄'
+            | '┆'
+            | '┈'
+            | '┊'
+            | '╌'
+            | '╎'
+            | '╍'
+            | '╏'
+            | '╴'
+            | '╵'
+            | '╶'
+            | '╷'
+            | '█'
+            | '░'
+            | '▒'
+            | '▓'
     )
 }
 
@@ -313,7 +373,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Start"));
@@ -329,7 +394,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Left"));
@@ -354,7 +424,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Mermaid Syntax Warning"));
@@ -391,10 +466,18 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.is_ascii(), "Rendered ASCII diagram with box must be pure ASCII");
+        assert!(
+            joined.is_ascii(),
+            "Rendered ASCII diagram with box must be pure ASCII"
+        );
         assert!(joined.contains("+-[ ASCII Box Test ]"));
         assert!(joined.contains("Step 1"));
         assert!(joined.contains("Step 2"));
@@ -402,7 +485,8 @@ mod tests {
 
     #[test]
     fn test_render_box_symmetric_width() {
-        let src = "graph LR\n    Alpha[Start Here] --> Beta[A Somewhat Longer Step] --> Gamma[Done]";
+        let src =
+            "graph LR\n    Alpha[Start Here] --> Beta[A Somewhat Longer Step] --> Gamma[Done]";
         let opts = MermaidOptions {
             show_box: true,
             title: Some("Symmetry Test".to_string()),
@@ -437,7 +521,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Animal"));
@@ -452,7 +541,12 @@ mod tests {
         let joined = text
             .lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("Alice"));

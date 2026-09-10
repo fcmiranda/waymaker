@@ -476,5 +476,3 @@ fn test_results_ui_cut_and_yanked_navbar_and_flash_icons() {
     let row2_icon_cell = &buf_post_flash[(row2_icon_x, 2)];
     assert_eq!(row2_icon_cell.fg, Color::Yellow);
 }
-
-

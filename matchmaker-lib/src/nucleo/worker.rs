@@ -44,11 +44,7 @@ fn get_item_tier_and_clean_path<'a>(raw_str: &'a str, dir_first: bool) -> (u8, &
         let is_dir = raw_str.ends_with('/')
             || raw_str.ends_with('\\')
             || std::path::Path::new(clean).is_dir();
-        if is_dir {
-            (0, clean)
-        } else {
-            (1, clean)
-        }
+        if is_dir { (0, clean) } else { (1, clean) }
     } else {
         (2, clean)
     }
@@ -643,16 +639,13 @@ impl<T: SSS> Worker<T> {
                 b.score.cmp(&a.score)
             });
 
-            decorated
-                .get(n as usize)
-                .map(|d| d.item.data)
-                .or_else(|| {
-                    if is_query_empty && self.mode_index != 0 {
-                        snapshot.get_item(n).map(|item| item.data)
-                    } else {
-                        snapshot.get_matched_item(n).map(|item| item.data)
-                    }
-                })
+            decorated.get(n as usize).map(|d| d.item.data).or_else(|| {
+                if is_query_empty && self.mode_index != 0 {
+                    snapshot.get_item(n).map(|item| item.data)
+                } else {
+                    snapshot.get_matched_item(n).map(|item| item.data)
+                }
+            })
         } else if is_query_empty && self.mode_index != 0 {
             snapshot.get_item(n).map(|item| item.data)
         } else {

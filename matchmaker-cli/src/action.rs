@@ -1278,10 +1278,7 @@ pub fn action_handler(
                         format!("{{yellow:󰕌 Restored {count} {item_word}}}")
                     }
                     crate::fm::UndoAction::CreatedFile { path } => {
-                        format!(
-                            "{{yellow:󰕌 Undone creation of: {}}}",
-                            path.display()
-                        )
+                        format!("{{yellow:󰕌 Undone creation of: {}}}", path.display())
                     }
                     crate::fm::UndoAction::Renamed { from, to } => {
                         format!(
@@ -1677,7 +1674,12 @@ pub(crate) fn abbreviate_target_dir_display(dest_display_name: &str) -> String {
 
     if segments.len() > 3 {
         let n = segments.len();
-        format!(".../{}/{}/{}", segments[n - 3], segments[n - 2], segments[n - 1])
+        format!(
+            ".../{}/{}/{}",
+            segments[n - 3],
+            segments[n - 2],
+            segments[n - 1]
+        )
     } else if p.is_absolute() {
         format!("{clean}/")
     } else {
@@ -2576,10 +2578,16 @@ mod tests {
 
         let pasted = dest_folder.join("payload.txt");
         assert!(pasted.exists(), "Item should be copied into dest_folder");
-        assert!(mm_state.picker_ui.action_visible, "Info box should be visible on paste into");
+        assert!(
+            mm_state.picker_ui.action_visible,
+            "Info box should be visible on paste into"
+        );
         let paste_prompt = mm_state.picker_ui.action.prompt();
         assert_eq!(paste_prompt.spans.len(), 1);
-        assert_eq!(paste_prompt.spans[0].style.fg, Some(ratatui::style::Color::Cyan));
+        assert_eq!(
+            paste_prompt.spans[0].style.fg,
+            Some(ratatui::style::Color::Cyan)
+        );
         assert!(paste_prompt.spans[0].content.contains("Pasted 1 item into"));
 
         // Check that undo stack recorded previous_dir and target_dir
@@ -2623,10 +2631,16 @@ mod tests {
         // 2. Execute FmUndo
         action_handler(MMAction::FmUndo, &mut mm_state, &mut action_context);
         assert!(!pasted.exists(), "Pasted item should be deleted on undo");
-        assert!(mm_state.picker_ui.action_visible, "Info box should be visible on undo");
+        assert!(
+            mm_state.picker_ui.action_visible,
+            "Info box should be visible on undo"
+        );
         let undo_prompt = mm_state.picker_ui.action.prompt();
         assert_eq!(undo_prompt.spans.len(), 1);
-        assert_eq!(undo_prompt.spans[0].style.fg, Some(ratatui::style::Color::Yellow));
+        assert_eq!(
+            undo_prompt.spans[0].style.fg,
+            Some(ratatui::style::Color::Yellow)
+        );
         assert!(undo_prompt.spans[0].content.contains("Undone copy"));
 
         // Drain render_rx and check that ChDir to previous_dir (cwd) was sent
@@ -2653,10 +2667,16 @@ mod tests {
         // 3. Execute FmRedo
         action_handler(MMAction::FmRedo, &mut mm_state, &mut action_context);
         assert!(pasted.exists(), "Pasted item should be restored on redo");
-        assert!(mm_state.picker_ui.action_visible, "Info box should be visible on redo");
+        assert!(
+            mm_state.picker_ui.action_visible,
+            "Info box should be visible on redo"
+        );
         let redo_prompt = mm_state.picker_ui.action.prompt();
         assert_eq!(redo_prompt.spans.len(), 1);
-        assert_eq!(redo_prompt.spans[0].style.fg, Some(ratatui::style::Color::Cyan));
+        assert_eq!(
+            redo_prompt.spans[0].style.fg,
+            Some(ratatui::style::Color::Cyan)
+        );
         assert!(redo_prompt.spans[0].content.contains("Redone"));
 
         let mut chdir_redo_found = false;
@@ -2863,9 +2883,15 @@ mod tests {
     #[test]
     fn test_abbreviate_target_dir_display() {
         // 1 segment relative
-        assert_eq!(abbreviate_target_dir_display("target_folder"), "./target_folder/");
+        assert_eq!(
+            abbreviate_target_dir_display("target_folder"),
+            "./target_folder/"
+        );
         // 1 segment relative with leading ./ and trailing /
-        assert_eq!(abbreviate_target_dir_display("./target_folder/"), "./target_folder/");
+        assert_eq!(
+            abbreviate_target_dir_display("./target_folder/"),
+            "./target_folder/"
+        );
         // 2 segments relative
         assert_eq!(abbreviate_target_dir_display("sub/folder"), "./sub/folder/");
         // 3 segments relative
@@ -2880,9 +2906,15 @@ mod tests {
         // 2 segments absolute
         assert_eq!(abbreviate_target_dir_display("/usr/bin"), "/usr/bin/");
         // 3 segments absolute
-        assert_eq!(abbreviate_target_dir_display("/home/user/docs"), "/home/user/docs/");
+        assert_eq!(
+            abbreviate_target_dir_display("/home/user/docs"),
+            "/home/user/docs/"
+        );
         // 4 segments absolute -> abbreviate
-        assert_eq!(abbreviate_target_dir_display("/home/user/code/project"), ".../user/code/project");
+        assert_eq!(
+            abbreviate_target_dir_display("/home/user/code/project"),
+            ".../user/code/project"
+        );
         // Deep absolute path
         assert_eq!(
             abbreviate_target_dir_display("/home/fecavmi/dev/github/matchmaker/matchmaker-cli/src"),

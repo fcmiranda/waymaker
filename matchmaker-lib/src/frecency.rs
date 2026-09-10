@@ -335,7 +335,9 @@ impl FrecencyStore {
 
         let canonical_path = path.canonicalize().unwrap_or_else(|_| {
             if let Some(parent) = path.parent() {
-                let p = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+                let p = parent
+                    .canonicalize()
+                    .unwrap_or_else(|_| parent.to_path_buf());
                 if let Some(name) = path.file_name() {
                     p.join(name)
                 } else {
@@ -416,7 +418,9 @@ impl FrecencyStore {
         // 4. If primary DB opened, cache it as a Weak reference
         if let Some(ref d) = db {
             if shadow_guard.is_none() {
-                let actual_canonical = path.canonicalize().unwrap_or_else(|_| canonical_path.clone());
+                let actual_canonical = path
+                    .canonicalize()
+                    .unwrap_or_else(|_| canonical_path.clone());
                 let mut lock = FRECENCY_DB_INSTANCES.lock().unwrap();
                 let map = lock.get_or_insert_with(rustc_hash::FxHashMap::default);
                 map.insert(actual_canonical, Arc::downgrade(d));
@@ -1206,13 +1210,16 @@ mod tests {
         primary_store.add(test_path)?;
         primary_store.pin(test_path)?;
 
-        let temp_shadow = std::env::temp_dir().join(format!("test_shadow_{}.redb", current_unix_nanos()));
+        let temp_shadow =
+            std::env::temp_dir().join(format!("test_shadow_{}.redb", current_unix_nanos()));
         fs::copy(&db_path, &temp_shadow)?;
         let shadow_db = Database::create(&temp_shadow)?;
         let shadow_store = FrecencyStore {
             db: Some(Arc::new(shadow_db)),
             db_path: Some(db_path.clone()),
-            _shadow_guard: Some(Arc::new(ShadowFileGuard { temp_path: temp_shadow.clone() })),
+            _shadow_guard: Some(Arc::new(ShadowFileGuard {
+                temp_path: temp_shadow.clone(),
+            })),
         };
 
         assert!(shadow_store.is_shadow());
@@ -1221,7 +1228,10 @@ mod tests {
         assert_eq!(shadow_store.list_pins(), vec![test_path.to_string()]);
 
         drop(shadow_store);
-        assert!(!temp_shadow.exists(), "Shadow temp file must be cleaned up on drop");
+        assert!(
+            !temp_shadow.exists(),
+            "Shadow temp file must be cleaned up on drop"
+        );
 
         drop(primary_store);
         let _ = fs::remove_dir_all(&temp_dir);

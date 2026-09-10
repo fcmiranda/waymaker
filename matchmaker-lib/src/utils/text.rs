@@ -589,7 +589,6 @@ pub fn text_to_ansi(text: &Text<'_>) -> String {
     out
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -784,14 +783,19 @@ mod tests {
     fn test_text_to_ansi() {
         let text = Text::from(vec![
             Line::from(vec![
-                Span::styled("Hello ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Hello ",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("World"),
             ]),
-            Line::from(vec![Span::styled("Second", Style::default().bg(Color::Blue))]),
+            Line::from(vec![Span::styled(
+                "Second",
+                Style::default().bg(Color::Blue),
+            )]),
         ]);
         let ansi = text_to_ansi(&text);
         assert!(ansi.contains("\x1b[1m\x1b[31mHello \x1b[0mWorld"));
         assert!(ansi.contains("\x1b[44mSecond\x1b[0m"));
     }
 }
-

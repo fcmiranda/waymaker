@@ -2068,4 +2068,3 @@ mod tests {
         assert_eq!(config.render.preview.media_size, Some(1280));
     }
 }
-

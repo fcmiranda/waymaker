@@ -143,7 +143,10 @@ impl StatusUI {
                 return Some(Style::default());
             }
 
-            if let Some(bg_token) = token.strip_prefix("bg=").or_else(|| token.strip_prefix("bg:")) {
+            if let Some(bg_token) = token
+                .strip_prefix("bg=")
+                .or_else(|| token.strip_prefix("bg:"))
+            {
                 if let Ok(color) = Color::from_str(bg_token) {
                     style = style.bg(color);
                     bg_set = true;
@@ -152,7 +155,10 @@ impl StatusUI {
                 }
             }
 
-            if let Some(fg_token) = token.strip_prefix("fg=").or_else(|| token.strip_prefix("fg:")) {
+            if let Some(fg_token) = token
+                .strip_prefix("fg=")
+                .or_else(|| token.strip_prefix("fg:"))
+            {
                 if let Ok(color) = Color::from_str(fg_token) {
                     style = style.fg(color);
                     fg_set = true;
@@ -220,11 +226,7 @@ impl StatusUI {
             };
         }
 
-        if matched_any {
-            Some(style)
-        } else {
-            None
-        }
+        if matched_any { Some(style) } else { None }
     }
 
     /// Converts a template string into a `Span` with colors and modifiers.

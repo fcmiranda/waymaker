@@ -151,7 +151,10 @@ fn parse_preview_width_from_args(args: &[String]) -> Option<usize> {
             if let Some(w) = args.get(i + 1).and_then(|s| s.parse::<usize>().ok()) {
                 return Some(w);
             }
-        } else if let Some(w) = args[i].strip_prefix("--width=").and_then(|s| s.parse::<usize>().ok()) {
+        } else if let Some(w) = args[i]
+            .strip_prefix("--width=")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
             return Some(w);
         }
     }
@@ -159,7 +162,11 @@ fn parse_preview_width_from_args(args: &[String]) -> Option<usize> {
         .ok()
         .and_then(|c| c.parse::<usize>().ok())
         .filter(|&w| w > 0)
-        .or_else(|| ratatui::crossterm::terminal::size().map(|(w, _)| w as usize).ok())
+        .or_else(|| {
+            ratatui::crossterm::terminal::size()
+                .map(|(w, _)| w as usize)
+                .ok()
+        })
 }
 
 fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
@@ -761,4 +768,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-

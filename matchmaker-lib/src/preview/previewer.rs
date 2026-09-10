@@ -186,7 +186,6 @@ impl Previewer {
                 key = format!("{cmd}:{width:?}");
             }
 
-
             if is_debouncable {
                 if !self.config.always_trigger && self.last == key {
                     continue;
@@ -351,7 +350,8 @@ impl Previewer {
                                 }
                                 img.map(|i| {
                                     let max_dim = media_size;
-                                    if max_dim > 0 && (i.width() > max_dim || i.height() > max_dim) {
+                                    if max_dim > 0 && (i.width() > max_dim || i.height() > max_dim)
+                                    {
                                         i.thumbnail(max_dim, max_dim)
                                     } else {
                                         i
@@ -392,10 +392,8 @@ impl Previewer {
                             }
 
                             let p = std::path::Path::new(&path);
-                            let is_mermaid = p
-                                .extension()
-                                .and_then(|e| e.to_str())
-                                .is_some_and(|ext| {
+                            let is_mermaid =
+                                p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
                                     matches!(ext.to_lowercase().as_str(), "mmd" | "mermaid")
                                 });
 
@@ -406,10 +404,9 @@ impl Previewer {
                                     title: Some("Mermaid Diagram".to_string()),
                                     ..Default::default()
                                 };
-                                crate::utils::mermaid::render_mermaid_file(p, &opts)
-                                    .unwrap_or_else(|err| {
-                                        Text::from(format!("Error reading Mermaid file: {err}"))
-                                    })
+                                crate::utils::mermaid::render_mermaid_file(p, &opts).unwrap_or_else(
+                                    |err| Text::from(format!("Error reading Mermaid file: {err}")),
+                                )
                             } else {
                                 let opts = crate::utils::markdown::MarkdownOptions {
                                     max_width: width,
@@ -444,7 +441,6 @@ impl Previewer {
                 self.clear_string();
                 self.clear_image();
             }
-
 
             match m {
                 PreviewMessage::Run(cmd, variables) => {

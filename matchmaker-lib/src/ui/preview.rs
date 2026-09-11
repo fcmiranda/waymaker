@@ -154,6 +154,14 @@ impl PreviewUI {
                 p.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
             }
             picker = Some(p);
+            if std::env::var("TMUX").is_ok() {
+                let _ = std::process::Command::new("tmux")
+                    .args(["set", "-p", "allow-passthrough", "all"])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
         }
 
         let zoom = config.zoom.unwrap_or(1.0);
@@ -919,7 +927,7 @@ fn query_tty_picker(timeout: std::time::Duration) -> anyhow::Result<ratatui_imag
 
     if is_tmux {
         let _ = std::process::Command::new("tmux")
-            .args(["set", "-p", "allow-passthrough", "on"])
+            .args(["set", "-p", "allow-passthrough", "all"])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -951,6 +959,18 @@ fn query_tty_picker(timeout: std::time::Duration) -> anyhow::Result<ratatui_imag
     }
 
     if full_buf.is_empty() {
+        if is_tmux || std::env::var("GHOSTTY_RESOURCES_DIR").is_ok() {
+            #[allow(deprecated)]
+            let mut picker = ratatui_image::picker::Picker::from_fontsize(ratatui_image::FontSize::new(10, 20));
+            picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
+            let _ = std::process::Command::new("tmux")
+                .args(["set", "-p", "allow-passthrough", "all"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            return Ok(picker);
+        }
         anyhow::bail!("No response from /dev/tty");
     }
 
@@ -983,6 +1003,14 @@ fn query_tty_picker(timeout: std::time::Duration) -> anyhow::Result<ratatui_imag
     #[allow(deprecated)]
     let mut picker = ratatui_image::picker::Picker::from_fontsize(font_size);
     picker.set_protocol_type(proto);
+    if is_tmux {
+        let _ = std::process::Command::new("tmux")
+            .args(["set", "-p", "allow-passthrough", "all"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
     Ok(picker)
 }
 

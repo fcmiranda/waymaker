@@ -184,7 +184,7 @@ impl PreviewUI {
             title: None,
             picker,
             zoom,
-            show_diagram: true,
+            show_diagram: false,
             image_state: None,
             current_image_id: 0,
         }
@@ -245,6 +245,10 @@ impl PreviewUI {
     // -------- Setting getters -----------
     /// Set the dynamic item title shown in the preview border.
     pub fn set_title(&mut self, title: Option<String>) {
+        if self.title != title {
+            self.show_diagram = false;
+            self.zoom = 1.0;
+        }
         self.title = title;
     }
 
@@ -635,13 +639,13 @@ impl PreviewUI {
                 && let Some(picker) = self.picker.as_ref()
             {
                 let zoom = self.zoom;
-                let display_img = if zoom != 1.0 {
+                let display_img = if (zoom - 1.0).abs() > 0.001 {
                     let center_x = img.width() / 2;
                     let center_y = img.height() / 2;
-                    let crop_w = (img.width() as f32 / zoom) as u32;
-                    let crop_h = (img.height() as f32 / zoom) as u32;
-                    let x = center_x.saturating_sub(crop_w / 2);
-                    let y = center_y.saturating_sub(crop_h / 2);
+                    let crop_w = ((img.width() as f32 / zoom) as u32).clamp(1, img.width());
+                    let crop_h = ((img.height() as f32 / zoom) as u32).clamp(1, img.height());
+                    let x = center_x.saturating_sub(crop_w / 2).min(img.width() - crop_w);
+                    let y = center_y.saturating_sub(crop_h / 2).min(img.height() - crop_h);
                     img.crop_imm(x, y, crop_w, crop_h)
                 } else {
                     img

@@ -332,11 +332,11 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::PreviewDown(0)));
                 return;
             }
-            "p" | "P" | "ctrl-p" => {
-                out.push(RenderCommand::Action(Action::CyclePreview));
+            "y" => {
+                out.push(RenderCommand::Action(Action::Accept));
                 return;
             }
-            k if k.eq_ignore_ascii_case("esc") || k == "h" => {
+            k if k.eq_ignore_ascii_case("esc") || k == "h" || k == "enter" => {
                 out.push(RenderCommand::Action(Action::CyclePreview));
                 return;
             }
@@ -588,9 +588,8 @@ fn apply_focus_binds<A: ActionExt>(
                 if preview_fullscreen
                     && (key.eq_ignore_ascii_case("esc")
                         || matches!(action, Action::ToggleFocus)
-                        || key == "ctrl-p"
-                        || key == "p"
-                        || key == "P")
+                        || key == "enter"
+                        || key == "h")
                 {
                     out.push(RenderCommand::Action(Action::CyclePreview));
                     continue;
@@ -1279,7 +1278,10 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                         Action::PreviewZoomIn | Action::DiagramZoomIn => {
                             if let Some(p) = preview_ui.as_mut() {
-                                p.zoom *= 1.25_f32;
+                                p.zoom /= 1.25_f32;
+                                if p.zoom < 0.25 {
+                                    p.zoom = 0.25;
+                                }
                                 p.view
                                     .image_id
                                     .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -1291,10 +1293,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                         Action::PreviewZoomOut | Action::DiagramZoomOut => {
                             if let Some(p) = preview_ui.as_mut() {
-                                p.zoom /= 1.25_f32;
-                                if p.zoom < 0.25 {
-                                    p.zoom = 0.25;
-                                }
+                                p.zoom = (p.zoom * 1.25_f32).min(5.0);
                                 p.view
                                     .image_id
                                     .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -3043,7 +3042,7 @@ pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[+/-]", "Zoom", ratatui::style::Color::Green),
     ("[0/z]", "Reset", ratatui::style::Color::Blue),
     ("[d]", "Text/Image", ratatui::style::Color::Magenta),
-    ("[esc]", "Back", ratatui::style::Color::Red),
+    ("[esc/enter]", "Back", ratatui::style::Color::Red),
 ];
 
 fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usize, preview_fullscreen: bool) {
@@ -3908,6 +3907,40 @@ mod test {
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleDiagram)));
+
+        // enter when preview_fullscreen is true -> CyclePreview
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "enter".to_string(),
+            action: Action::CyclePreview,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+
+        // y when preview_fullscreen is true -> Accept
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "y".to_string(),
+            action: Action::Char('y'),
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::Accept)));
     }
 }
 

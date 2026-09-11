@@ -263,15 +263,6 @@ where
 
         self.terminal.show_cursor()._wlog();
 
-        let is_tmux = std::env::var("TMUX").is_ok();
-        let kitty_clear = if is_tmux {
-            "\x1bPtmux;\x1b\x1b_Ga=d,d=A\x1b\x1b\\\x1b\\"
-        } else {
-            "\x1b_Ga=d,d=A\x1b\\"
-        };
-        use std::io::Write;
-        let _ = std::io::stdout().write_all(kitty_clear.as_bytes());
-        let _ = std::io::stdout().flush();
 
         disable_raw_mode()._wlog();
 

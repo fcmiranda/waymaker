@@ -163,6 +163,55 @@ pub fn render_mermaid_file_to_image(path: &Path, scale: f32) -> Option<image::Dy
     render_mermaid_to_image(&content, scale)
 }
 
+/// Encode PNG bytes into a Kitty Graphics Protocol escape sequence string.
+/// Handles tmux passthrough wrapping if running inside tmux.
+pub fn encode_kitty_graphics(png_bytes: &[u8]) -> String {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
+    let is_tmux = std::env::var("TMUX").is_ok();
+    let (start, escape, end) = if is_tmux {
+        ("\x1bPtmux;", "\x1b\x1b", "\x1b\\")
+    } else {
+        ("", "\x1b", "")
+    };
+
+    let chunk_size = 4096;
+    let mut out = String::new();
+    let chunks: Vec<&[u8]> = b64.as_bytes().chunks(chunk_size).collect();
+    let chunk_count = chunks.len();
+
+    for (i, chunk) in chunks.into_iter().enumerate() {
+        let more = if chunk_count > i + 1 { 1 } else { 0 };
+        let chunk_str = std::str::from_utf8(chunk).unwrap_or("");
+        out.push_str(start);
+        if i == 0 {
+            out.push_str(&format!(
+                "{escape}_Ga=T,f=100,m={more};{chunk_str}{escape}\\"
+            ));
+        } else {
+            out.push_str(&format!("{escape}_Gm={more};{chunk_str}{escape}\\"));
+        }
+        out.push_str(end);
+    }
+    out.push('\n');
+    out
+}
+
+/// Render a Mermaid diagram source string directly to a Kitty Graphics Protocol escape sequence.
+///
+/// Returns `None` if rendering or PNG encoding fails.
+pub fn render_mermaid_to_kitty(src: &str, scale: f32) -> Option<String> {
+    let img = render_mermaid_to_image(src, scale)?;
+    let mut png_bytes = Vec::new();
+    img.write_to(
+        &mut std::io::Cursor::new(&mut png_bytes),
+        image::ImageFormat::Png,
+    )
+    .ok()?;
+
+    Some(encode_kitty_graphics(&png_bytes))
+}
+
 use unicode_width::UnicodeWidthStr;
 
 /// Style the plain-text diagram output with theme colors for box borders, connectors, and labels.

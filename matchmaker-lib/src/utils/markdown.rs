@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
-use super::mermaid::{MermaidOptions, render_mermaid};
+use super::mermaid::{MermaidOptions, render_mermaid, render_mermaid_to_kitty};
 use super::text::text_to_ansi;
 
 /// Options for Markdown rendering.
@@ -19,6 +19,8 @@ pub struct MarkdownOptions {
     pub mermaid_ascii: bool,
     /// Whether to show line numbers in standard code blocks.
     pub show_line_numbers: bool,
+    /// Whether to render embedded Mermaid diagrams as Kitty Graphics Protocol images.
+    pub mermaid_image: bool,
 }
 
 impl Default for MarkdownOptions {
@@ -28,6 +30,7 @@ impl Default for MarkdownOptions {
             render_mermaid: true,
             mermaid_ascii: false,
             show_line_numbers: false,
+            mermaid_image: false,
         }
     }
 }
@@ -657,6 +660,14 @@ impl<'a> MarkdownRenderer<'a> {
     fn finish_code_block(&mut self, cb: CodeBlockState) {
         match cb {
             CodeBlockState::Mermaid { buffer } => {
+                if self.opts.mermaid_image && !self.opts.mermaid_ascii {
+                    if let Some(kitty) = render_mermaid_to_kitty(&buffer, 1.0) {
+                        self.diagram_offsets.push(self.lines.len());
+                        self.lines.push(Line::from(Span::raw(kitty)));
+                        self.lines.push(Line::default());
+                        return;
+                    }
+                }
                 let mermaid_opts = MermaidOptions {
                     max_width: self.opts.max_width,
                     ascii: self.opts.mermaid_ascii,

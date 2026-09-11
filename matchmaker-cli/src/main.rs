@@ -207,6 +207,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             true
         }
         "md" | "markdown" | "preview-md" | "preview-markdown" => {
+            let text_only = args.iter().any(|a| a == "--text");
             let ascii = args.iter().any(|a| a == "--ascii");
             let width = parse_preview_width_from_args(args);
             let path_arg = parse_subcommand_path_arg(args);
@@ -225,7 +226,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
-                    eprintln!("Usage: mm md <file.md> [--width <N>] [--ascii]");
+                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii]");
                     return true;
                 }
             };
@@ -234,6 +235,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 render_mermaid: true,
                 mermaid_ascii: ascii,
                 show_line_numbers: false,
+                mermaid_image: !ascii && !text_only,
             };
             let ansi_output = matchmaker::utils::markdown::render_markdown_ansi(&content, &opts);
             if ansi_output.ends_with('\n') {
@@ -244,6 +246,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             true
         }
         "mermaid" | "preview-mermaid" | "mmd" => {
+            let text_only = args.iter().any(|a| a == "--text");
             let ascii = args.iter().any(|a| a == "--ascii");
             let width = parse_preview_width_from_args(args);
             let path_arg = parse_subcommand_path_arg(args);
@@ -262,10 +265,22 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
-                    eprintln!("Usage: mm mermaid <file.mmd> [--width <N>] [--ascii]");
+                    eprintln!("Usage: mm mermaid <file.mmd> [--width <N>] [--text] [--ascii]");
                     return true;
                 }
             };
+            if !ascii && !text_only {
+                if let Some(kitty) =
+                    matchmaker::utils::mermaid::render_mermaid_to_kitty(&content, 1.0)
+                {
+                    if kitty.ends_with('\n') {
+                        print!("{kitty}");
+                    } else {
+                        println!("{kitty}");
+                    }
+                    return true;
+                }
+            }
             let opts = matchmaker::utils::mermaid::MermaidOptions {
                 max_width: width,
                 ascii,

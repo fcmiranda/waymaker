@@ -167,7 +167,7 @@ impl PreviewUI {
             title: None,
             picker,
             zoom,
-            show_diagram: false,
+            show_diagram: true,
             image_state: None,
             current_image_id: 0,
             pending_protocol_rx: Some(pending_protocol_rx),
@@ -341,6 +341,14 @@ impl PreviewUI {
 
     pub fn has_markdown(&self) -> bool {
         self.view.has_string()
+    }
+
+    pub fn has_diagram(&self) -> bool {
+        self.view
+            .diagram_sources
+            .lock()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
     }
 
     // ----- config && getters ---------
@@ -649,16 +657,41 @@ impl PreviewUI {
     fn title_text(&self) -> Option<String> {
         let configured_title = self.setting().and_then(|s| s.title.as_deref());
         let dynamic = self.title.as_deref().unwrap_or_default();
-        match configured_title {
-            None => Some(dynamic.to_string()),
-            Some("") => None,
-            Some("{item}") => Some(dynamic.to_string()),
-            Some(t) if t.contains("{item}") => Some(t.replace("{item}", dynamic)),
-            Some("$currentItemName") => Some(dynamic.to_string()),
+        let mut base_title = match configured_title {
+            None => dynamic.to_string(),
+            Some("") => String::new(),
+            Some("{item}") => dynamic.to_string(),
+            Some(t) if t.contains("{item}") => t.replace("{item}", dynamic),
+            Some("$currentItemName") => dynamic.to_string(),
             Some(t) if t.contains("$currentItemName") => {
-                Some(t.replace("$currentItemName", dynamic))
+                t.replace("$currentItemName", dynamic)
             }
-            Some(t) => Some(t.to_string()),
+            Some(t) => t.to_string(),
+        };
+
+        if self.show_diagram {
+            if let Ok(sources) = self.view.diagram_sources.lock() {
+                let total = sources.len();
+                if total > 0 {
+                    let cur = self
+                        .view
+                        .current_diagram_idx
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        + 1;
+                    let diag_badge = format!(" [Diagram {cur}/{total}]");
+                    if base_title.is_empty() {
+                        base_title = diag_badge.trim().to_string();
+                    } else {
+                        base_title.push_str(&diag_badge);
+                    }
+                }
+            }
+        }
+
+        if base_title.is_empty() {
+            None
+        } else {
+            Some(base_title)
         }
     }
 

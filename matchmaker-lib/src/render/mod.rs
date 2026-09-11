@@ -332,11 +332,11 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::PreviewDown(0)));
                 return;
             }
-            "p" | "P" => {
+            "p" | "P" | "ctrl-p" => {
                 out.push(RenderCommand::Action(Action::CyclePreview));
                 return;
             }
-            "esc" | "h" => {
+            k if k.eq_ignore_ascii_case("esc") || k == "h" => {
                 out.push(RenderCommand::Action(Action::CyclePreview));
                 return;
             }
@@ -507,6 +507,10 @@ fn apply_focus_binds<A: ActionExt>(
             }
             RenderCommand::Action(Action::ToggleFocus) => {
                 last_consumed_nav_key = None;
+                if preview_fullscreen {
+                    out.push(RenderCommand::Action(Action::CyclePreview));
+                    continue;
+                }
                 if sim_focus == Focus::Results {
                     if let Some(actions) = get_nav_bind(focus_binds, "esc") {
                         for action in actions.iter().cloned() {
@@ -578,9 +582,19 @@ fn apply_focus_binds<A: ActionExt>(
                     last_consumed_nav_key = None;
                 }
             }
-            RenderCommand::KeyAction { key: _, action } => {
+            RenderCommand::KeyAction { key, action } => {
                 // sim_focus == Focus::Input
                 last_consumed_nav_key = None;
+                if preview_fullscreen
+                    && (key.eq_ignore_ascii_case("esc")
+                        || matches!(action, Action::ToggleFocus)
+                        || key == "ctrl-p"
+                        || key == "p"
+                        || key == "P")
+                {
+                    out.push(RenderCommand::Action(Action::CyclePreview));
+                    continue;
+                }
                 update_sim_focus(&action, &mut sim_focus);
                 out.push(RenderCommand::Action(action));
             }
@@ -2114,19 +2128,23 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     }
 
                     let show_sort_menu = state.sort_menu_active;
-                    let show_nav_hints = ui.config.nav_mode
-                        && (ui.config.nav_hints || state.preview_fullscreen)
-                        && (state.focus == Focus::Results || state.preview_fullscreen)
-                        && !footer_ui.show;
+                    let show_nav_hints = if state.preview_fullscreen {
+                        true
+                    } else {
+                        ui.config.nav_mode
+                            && ui.config.nav_hints
+                            && state.focus == Focus::Results
+                            && !footer_ui.show
+                    };
 
-                    let effective_footer_height = if show_sort_menu {
+                    let effective_footer_height = if state.preview_fullscreen {
+                        ui.config.nav_hints_height(PREVIEW_NAV_HINTS.len()).max(1)
+                    } else if show_sort_menu {
                         ui.config.sort_menu.height(SORT_MENU_ITEMS.len())
                     } else if footer_ui.show {
                         footer_ui.height()
                     } else if show_nav_hints {
-                        let count = if state.preview_fullscreen {
-                            PREVIEW_NAV_HINTS.len()
-                        } else if ui.config.nav_basic {
+                        let count = if ui.config.nav_basic {
                             BASIC_NAV_HINTS.len()
                         } else {
                             NAV_HINTS.len()
@@ -2198,37 +2216,48 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         preview_ui.as_mut()
                         && preview_ui.visible()
                     {
-                        // Temporarily widen the gap so the counter fits horizontally.
-                        let original_gap = preview_ui.setting().map(|s| s.layout.gap).unwrap_or(0);
-                        let effective_gap = original_gap.max(if _counter_gap_width > 0 {
-                            _counter_gap_width + 2
+                        if state.preview_fullscreen {
+                            let mut full_area = _area;
+                            let footer = split(
+                                &mut full_area,
+                                effective_footer_height,
+                                false,
+                            );
+                            let preview = full_area;
+                            [preview, Rect::default(), footer, Rect::default()]
                         } else {
-                            0
-                        });
-                        if let Some(s) = preview_ui.setting_mut() {
-                            s.layout.gap = effective_gap;
-                        }
-                        let [preview, mut picker_area, gap_area] = preview_ui.split(_area);
-                        // Restore the configured gap so nothing else is affected.
-                        if let Some(s) = preview_ui.setting_mut() {
-                            s.layout.gap = original_gap;
-                        }
-
-                        if state.iterations == 0 && _area.width < 30 && picker_area.width <= 5 {
-                            warn!("UI too narrow, hiding preview");
-                            preview_ui.show(false);
-
-                            [Rect::default(), _area, footer, Rect::default()]
-                        } else {
-                            if !is_full_footer {
-                                footer = split(
-                                    &mut picker_area,
-                                    effective_footer_height,
-                                    picker_ui.reverse(),
-                                );
+                            // Temporarily widen the gap so the counter fits horizontally.
+                            let original_gap = preview_ui.setting().map(|s| s.layout.gap).unwrap_or(0);
+                            let effective_gap = original_gap.max(if _counter_gap_width > 0 {
+                                _counter_gap_width + 2
+                            } else {
+                                0
+                            });
+                            if let Some(s) = preview_ui.setting_mut() {
+                                s.layout.gap = effective_gap;
+                            }
+                            let [preview, mut picker_area, gap_area] = preview_ui.split(_area);
+                            // Restore the configured gap so nothing else is affected.
+                            if let Some(s) = preview_ui.setting_mut() {
+                                s.layout.gap = original_gap;
                             }
 
-                            [preview, picker_area, footer, gap_area]
+                            if state.iterations == 0 && _area.width < 30 && picker_area.width <= 5 {
+                                warn!("UI too narrow, hiding preview");
+                                preview_ui.show(false);
+
+                                [Rect::default(), _area, footer, Rect::default()]
+                            } else {
+                                if !is_full_footer {
+                                    footer = split(
+                                        &mut picker_area,
+                                        effective_footer_height,
+                                        picker_ui.reverse(),
+                                    );
+                                }
+
+                                [preview, picker_area, footer, gap_area]
+                            }
                         }
                     } else {
                         [Rect::default(), _area, footer, Rect::default()]
@@ -2391,46 +2420,62 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                     }
 
-                    if picker_ui.breadcrumb_config.show && !breadcrumb_spans.is_empty() {
-                        let target_rect = if is_global_breadcrumb {
-                            global_breadcrumb_rect
-                        } else {
-                            breadcrumb
-                        };
+                    if !state.preview_fullscreen {
+                        if picker_ui.breadcrumb_config.show && !breadcrumb_spans.is_empty() {
+                            let target_rect = if is_global_breadcrumb {
+                                global_breadcrumb_rect
+                            } else {
+                                breadcrumb
+                            };
 
-                        if target_rect.height > 0 {
-                            let p = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
-                                breadcrumb_spans,
-                            ));
-                            frame.render_widget(p, target_rect);
+                            if target_rect.height > 0 {
+                                let p = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
+                                    breadcrumb_spans,
+                                ));
+                                frame.render_widget(p, target_rect);
+                            }
+                        }
+                        if picker_ui.query.config.show {
+                            cursor_y_offset = render_input(
+                                frame,
+                                input,
+                                &mut picker_ui.query,
+                                status_inline_label,
+                                input_focus_info,
+                            )
+                            .y;
+                        } else {
+                            cursor_y_offset = input.y;
+                        }
+                        // When status_inline is active, skip the separate status row.
+                        if !picker_ui.query.config.status_inline {
+                            render_status(frame, status, &picker_ui.results, ui.area().width);
+                        }
+                        render_results(
+                            frame,
+                            results,
+                            &mut picker_ui,
+                            &mut click,
+                            results_focus_info,
+                            state.reloading,
+                        );
+                        render_display(frame, header, &mut picker_ui.header, &picker_ui.results);
+                        if parent_peek_rect.width > 0 {
+                            render_parent_peek(frame, parent_peek_rect, &ui.config.parent_peek);
                         }
                     }
-                    if picker_ui.query.config.show {
-                        cursor_y_offset = render_input(
-                            frame,
-                            input,
-                            &mut picker_ui.query,
-                            status_inline_label,
-                            input_focus_info,
-                        )
-                        .y;
-                    } else {
-                        cursor_y_offset = input.y;
-                    }
-                    // When status_inline is active, skip the separate status row.
-                    if !picker_ui.query.config.status_inline {
-                        render_status(frame, status, &picker_ui.results, ui.area().width);
-                    }
-                    render_results(
-                        frame,
-                        results,
-                        &mut picker_ui,
-                        &mut click,
-                        results_focus_info,
-                        state.reloading,
-                    );
-                    render_display(frame, header, &mut picker_ui.header, &picker_ui.results);
-                    if show_sort_menu && footer.height > 0 {
+
+                    if state.preview_fullscreen {
+                        if footer.height > 0 {
+                            render_nav_hints(
+                                frame,
+                                footer,
+                                false,
+                                ui.config.nav_hints_columns,
+                                true,
+                            );
+                        }
+                    } else if show_sort_menu && footer.height > 0 {
                         render_sort_menu(frame, footer, &ui.config.sort_menu);
                     } else {
                         render_display(frame, footer, &mut footer_ui, &picker_ui.results);
@@ -2440,12 +2485,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 footer,
                                 ui.config.nav_basic,
                                 ui.config.nav_hints_columns,
-                                state.preview_fullscreen,
+                                false,
                             );
                         }
-                    }
-                    if parent_peek_rect.width > 0 {
-                        render_parent_peek(frame, parent_peek_rect, &ui.config.parent_peek);
                     }
                     if let Some(preview_ui) = preview_ui.as_mut() {
                         state.update_preview_visible(preview_ui);
@@ -2689,10 +2731,13 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
     assert!(ui.visible()); // don't call if not visible.
 
     let has_markdown = ui.has_markdown();
+    let has_diagram = ui.has_diagram();
+    let is_diagram_image = has_markdown && has_diagram && ui.show_diagram;
+    let image_state_ready = ui.get_image_state().is_some();
     let is_image = if has_markdown {
-        ui.show_diagram && ui.get_image_state().is_some()
+        is_diagram_image && image_state_ready
     } else {
-        ui.get_image_state().is_some()
+        image_state_ready
     };
     if is_image {
         let block = ui.make_block();
@@ -2705,11 +2750,11 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
             frame.render_widget(b, area);
         }
 
-        let media_fit_str = ui.config.media_fit.as_deref().unwrap_or("crop");
+        let media_fit_str = ui.config.media_fit.as_deref().unwrap_or("fit");
         let resize_mode = match media_fit_str.to_lowercase().as_str() {
-            "fit" | "contain" => ratatui_image::Resize::Fit(None),
+            "crop" | "cover" => ratatui_image::Resize::Crop(None),
             "scale" | "stretch" => ratatui_image::Resize::Scale(None),
-            "crop" | "cover" | _ => ratatui_image::Resize::Crop(None),
+            "fit" | "contain" | _ => ratatui_image::Resize::Fit(None),
         };
 
         if let Some(state) = ui.get_image_state() {
@@ -2991,8 +3036,8 @@ pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[n/N]", "Diagram", ratatui::style::Color::Cyan),
     ("[+/-]", "Zoom", ratatui::style::Color::Green),
     ("[0/z]", "Reset", ratatui::style::Color::Blue),
-    ("[d]", "ToggleImage", ratatui::style::Color::Magenta),
-    ("[p/esc]", "Back", ratatui::style::Color::Magenta),
+    ("[d]", "Text/Image", ratatui::style::Color::Magenta),
+    ("[esc]", "Back", ratatui::style::Color::Red),
 ];
 
 fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usize, preview_fullscreen: bool) {
@@ -3770,6 +3815,93 @@ mod test {
         // If nav_hints disabled -> 0 rows
         ui.nav_hints = false;
         assert_eq!(ui.nav_hints_height(NAV_HINTS.len()), 0);
+    }
+
+    #[test]
+    fn test_preview_fullscreen_key_navigation() {
+        use crate::action::NullActionExt;
+        let focus_binds = std::collections::HashMap::new();
+        let mut pending = None;
+        let mut sort_menu_active = false;
+
+        // Esc in Results when preview_fullscreen is true -> CyclePreview
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "esc".to_string(),
+            action: Action::ToggleFocus,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+
+        // Esc in Input when preview_fullscreen is true -> CyclePreview
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "esc".to_string(),
+            action: Action::ToggleFocus,
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+
+        // ToggleFocus action directly when preview_fullscreen is true -> CyclePreview
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::ToggleFocus)];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+
+        // j / k when preview_fullscreen is true -> PreviewDown / PreviewUp
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "j".to_string(),
+            action: Action::Down(1),
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(1))));
+
+        // d when preview_fullscreen is true -> ToggleDiagram
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('d'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleDiagram)));
     }
 }
 

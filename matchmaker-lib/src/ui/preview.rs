@@ -42,6 +42,7 @@ pub struct PreviewUI {
 
     picker: Option<ratatui_image::picker::Picker>,
     pub zoom: f32,
+    pub show_diagram: bool,
     pub image_state: Option<ratatui_image::protocol::StatefulProtocol>,
     current_image_id: u64,
     pending_protocol_rx: Option<
@@ -166,6 +167,7 @@ impl PreviewUI {
             title: None,
             picker,
             zoom,
+            show_diagram: false,
             image_state: None,
             current_image_id: 0,
             pending_protocol_rx: Some(pending_protocol_rx),
@@ -319,6 +321,26 @@ impl PreviewUI {
             }
         }
         self.current_dimension = None;
+    }
+
+    pub fn is_fullscreen(&self) -> bool {
+        self.setting()
+            .map(|s| s.layout.percentage.inner() >= 90)
+            .unwrap_or(false)
+    }
+
+    pub fn toggle_diagram(&mut self) {
+        self.show_diagram = !self.show_diagram;
+        self.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        self.view
+            .changed
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub fn has_markdown(&self) -> bool {
+        self.view.has_string()
     }
 
     // ----- config && getters ---------

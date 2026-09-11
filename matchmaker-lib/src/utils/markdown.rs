@@ -672,7 +672,7 @@ impl<'a> MarkdownRenderer<'a> {
                     max_width: self.opts.max_width,
                     ascii: self.opts.mermaid_ascii,
                     show_box: true,
-                    title: Some("Mermaid Diagram".to_string()),
+                    title: Some("Mermaid Diagram (Press 'd' to view image)".to_string()),
                 };
                 let diagram_text = render_mermaid(&buffer, &mermaid_opts);
                 self.diagram_offsets.push(self.lines.len());

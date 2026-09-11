@@ -17,9 +17,19 @@ pub struct Preview {
     /// Line offsets (0-based) in the rendered Text where each Mermaid diagram block starts.
     /// Updated on every Markdown re-render. Empty when not viewing a Markdown file.
     pub diagram_offsets: Arc<Mutex<Vec<usize>>>,
+    /// Extracted Mermaid diagram source strings for the current Markdown file.
+    pub diagram_sources: Arc<Mutex<Vec<String>>>,
+    /// Index of the currently displayed diagram.
+    pub current_diagram_idx: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Preview {
+    pub fn has_string(&self) -> bool {
+        unwrap!(self.string.lock().prefix("Previewer panicked")._elog())
+            .as_ref()
+            .is_some()
+    }
+
     pub fn results(&self) -> Text<'_> {
         if let Some(s) = unwrap!(self.string.lock().prefix("Previewer panicked")._elog()).as_ref() {
             s.clone()
@@ -80,6 +90,8 @@ impl Preview {
         image_id: Arc<AtomicU64>,
         changed: Arc<AtomicBool>,
         diagram_offsets: Arc<Mutex<Vec<usize>>>,
+        diagram_sources: Arc<Mutex<Vec<String>>>,
+        current_diagram_idx: Arc<std::sync::atomic::AtomicUsize>,
     ) -> Self {
         Self {
             lines,
@@ -88,6 +100,8 @@ impl Preview {
             image_id,
             changed,
             diagram_offsets,
+            diagram_sources,
+            current_diagram_idx,
         }
     }
 }

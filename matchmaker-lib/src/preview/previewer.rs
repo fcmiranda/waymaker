@@ -51,6 +51,10 @@ pub struct Previewer {
     /// Each entry is the 0-based line index in the rendered Text where a diagram starts.
     /// Shared with `Preview` so the render loop can navigate between diagrams.
     pub diagram_offsets: Arc<Mutex<Vec<usize>>>,
+    /// Extracted Mermaid diagram source strings for the current Markdown file.
+    pub diagram_sources: Arc<Mutex<Vec<String>>>,
+    /// Index of the currently displayed diagram.
+    pub current_diagram_idx: Arc<std::sync::atomic::AtomicUsize>,
 
     paused: bool,
     /// Maintain a queue of child processes to improve cleanup reliability
@@ -116,6 +120,8 @@ impl Previewer {
             image_id: Arc::new(AtomicU64::new(1)),
             changed: Default::default(),
             diagram_offsets: Default::default(),
+            diagram_sources: Default::default(),
+            current_diagram_idx: Default::default(),
             paused: false,
 
             procs: Vec::new(),
@@ -136,6 +142,8 @@ impl Previewer {
             self.image_id.clone(),
             self.changed.clone(),
             self.diagram_offsets.clone(),
+            self.diagram_sources.clone(),
+            self.current_diagram_idx.clone(),
         )
     }
 
@@ -389,12 +397,19 @@ impl Previewer {
                         if let Ok(mut offsets) = self.diagram_offsets.lock() {
                             offsets.clear();
                         }
+                        if let Ok(mut sources) = self.diagram_sources.lock() {
+                            sources.clear();
+                        }
+                        self.current_diagram_idx
+                            .store(0, std::sync::atomic::Ordering::Release);
                         self.last = format!("{path}:{width:?}");
                         let path = path.clone();
                         let string_state = self.string.clone();
                         let image_state = self.image.clone();
                         let image_id = self.image_id.clone();
                         let diagram_offsets_state = self.diagram_offsets.clone();
+                        let diagram_sources_state = self.diagram_sources.clone();
+                        let current_diagram_idx_state = self.current_diagram_idx.clone();
                         let changed = self.changed.clone();
                         let rx = self.rx.clone();
                         let event_tx = self.event_controller_tx.clone();
@@ -475,6 +490,35 @@ impl Previewer {
 
                                 if rx.has_changed().unwrap_or(false) {
                                     return;
+                                }
+
+                                // If media is enabled, extract and prepare diagram image
+                                if media_enabled {
+                                    if let Ok(content) = std::fs::read_to_string(p) {
+                                        let diagrams =
+                                            crate::utils::markdown::extract_mermaid_blocks(&content);
+                                        let sources: Vec<String> =
+                                            diagrams.into_iter().map(|(_, s)| s).collect();
+                                        if let Some(first_diag) = sources.first() {
+                                            if let Some(rendered_img) =
+                                                crate::utils::mermaid::render_mermaid_to_image(
+                                                    first_diag, 1.0,
+                                                )
+                                            {
+                                                if let Ok(mut guard) = image_state.lock() {
+                                                    *guard = Some(rendered_img);
+                                                    image_id.fetch_add(1, Ordering::Release);
+                                                }
+                                            }
+                                        }
+                                        if let Ok(mut src_guard) = diagram_sources_state.lock() {
+                                            *src_guard = sources;
+                                        }
+                                        current_diagram_idx_state.store(
+                                            0,
+                                            std::sync::atomic::Ordering::Release,
+                                        );
+                                    }
                                 }
 
                                 // Store diagram offsets for navigation

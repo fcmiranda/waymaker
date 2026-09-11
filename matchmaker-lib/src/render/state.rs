@@ -52,6 +52,7 @@ pub struct State {
     pub(crate) col: Option<usize>,
     pub(crate) iterations: u32,
     pub(crate) preview_visible: bool,
+    pub(crate) preview_fullscreen: bool,
     pub(crate) layout: Layout,
     pub(crate) dragging: Option<Position>,
     pub(crate) overlay_index: Option<usize>,
@@ -137,6 +138,7 @@ impl State {
             envs: Default::default(),
             preview_set_payload: None,
             preview_visible: false,
+            preview_fullscreen: false,
             stashed_preview_visibility: None,
             layout: Layout::default(),
             dragging: None,
@@ -291,6 +293,7 @@ impl State {
     /// Emit PreviewChange event on change to visible
     pub(crate) fn update_preview_visible(&mut self, preview_ui: &PreviewUI) -> bool {
         let visible = preview_ui.visible();
+        self.preview_fullscreen = visible && preview_ui.is_fullscreen();
         let changed = self.preview_visible.cmp_replace(visible);
         if changed && visible {
             self.insert(Event::PreviewChange);

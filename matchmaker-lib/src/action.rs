@@ -122,6 +122,12 @@ pub enum Action<A: ActionExt = NullActionExt> {
     DiagramZoomIn,
     /// Zoom out diagram preview
     DiagramZoomOut,
+    /// Reset zoom for diagram preview
+    DiagramResetZoom,
+    /// Reset zoom for preview
+    PreviewResetZoom,
+    /// Toggle between document text and diagram image view
+    ToggleDiagram,
 
     /// Cycle columns
     NextColumn,
@@ -495,8 +501,8 @@ enum_from_str_display!(
     HalfPageDown, HalfPageUp,
 
     ToggleWrap, TogglePreviewWrap, ToggleActionBox, ToggleFocus, FocusFilter, FocusNav, ToggleParentPeek, ToggleFooter, ToggleHeader, CyclePreview, PreviewJump,
-    PreviewZoomIn, PreviewZoomOut,
-    NextDiagram, PrevDiagram, DiagramZoomIn, DiagramZoomOut,
+    PreviewZoomIn, PreviewZoomOut, PreviewResetZoom,
+    NextDiagram, PrevDiagram, DiagramZoomIn, DiagramZoomOut, DiagramResetZoom, ToggleDiagram,
 
     PreviewHalfPageUp, PreviewHalfPageDown,
 
@@ -788,5 +794,17 @@ mod tests {
         let zoom_out: Action = Action::from_str("DiagramZoomOut").unwrap();
         assert_eq!(zoom_out, Action::DiagramZoomOut);
         assert_eq!(zoom_out.to_string(), "DiagramZoomOut");
+
+        let reset_zoom: Action = Action::from_str("DiagramResetZoom").unwrap();
+        assert_eq!(reset_zoom, Action::DiagramResetZoom);
+        assert_eq!(reset_zoom.to_string(), "DiagramResetZoom");
+
+        let prev_reset: Action = Action::from_str("PreviewResetZoom").unwrap();
+        assert_eq!(prev_reset, Action::PreviewResetZoom);
+        assert_eq!(prev_reset.to_string(), "PreviewResetZoom");
+
+        let toggle_diag: Action = Action::from_str("ToggleDiagram").unwrap();
+        assert_eq!(toggle_diag, Action::ToggleDiagram);
+        assert_eq!(toggle_diag.to_string(), "ToggleDiagram");
     }
 }

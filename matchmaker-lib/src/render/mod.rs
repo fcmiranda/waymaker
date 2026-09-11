@@ -75,6 +75,9 @@ fn action_from_null<A: ActionExt>(action: Action<NullActionExt>) -> Option<Actio
         Action::PrevDiagram => Action::PrevDiagram,
         Action::DiagramZoomIn => Action::DiagramZoomIn,
         Action::DiagramZoomOut => Action::DiagramZoomOut,
+        Action::DiagramResetZoom => Action::DiagramResetZoom,
+        Action::PreviewResetZoom => Action::PreviewResetZoom,
+        Action::ToggleDiagram => Action::ToggleDiagram,
         Action::NextColumn => Action::NextColumn,
         Action::PrevColumn => Action::PrevColumn,
         Action::SwitchColumn(x) => Action::SwitchColumn(x),
@@ -273,7 +276,94 @@ fn process_results_nav_key<A: ActionExt>(
     sort_menu_active: &mut bool,
     sim_focus: &mut Focus,
     out: &mut Vec<RenderCommand<A>>,
+    preview_fullscreen: bool,
 ) {
+    if preview_fullscreen {
+        match key {
+            "j" => {
+                out.push(RenderCommand::Action(Action::PreviewDown(1)));
+                return;
+            }
+            "k" => {
+                out.push(RenderCommand::Action(Action::PreviewUp(1)));
+                return;
+            }
+            "J" | "shift-j" => {
+                out.push(RenderCommand::Action(Action::PreviewDown(5)));
+                return;
+            }
+            "K" | "shift-k" => {
+                out.push(RenderCommand::Action(Action::PreviewUp(5)));
+                return;
+            }
+            "ctrl-d" => {
+                out.push(RenderCommand::Action(Action::PreviewHalfPageDown));
+                return;
+            }
+            "ctrl-u" | "u" => {
+                out.push(RenderCommand::Action(Action::PreviewHalfPageUp));
+                return;
+            }
+            "d" | "m" => {
+                out.push(RenderCommand::Action(Action::ToggleDiagram));
+                return;
+            }
+            "n" | "]" => {
+                out.push(RenderCommand::Action(Action::NextDiagram));
+                return;
+            }
+            "N" | "[" => {
+                out.push(RenderCommand::Action(Action::PrevDiagram));
+                return;
+            }
+            "+" | "=" => {
+                out.push(RenderCommand::Action(Action::DiagramZoomIn));
+                return;
+            }
+            "-" => {
+                out.push(RenderCommand::Action(Action::DiagramZoomOut));
+                return;
+            }
+            "0" | "z" => {
+                out.push(RenderCommand::Action(Action::DiagramResetZoom));
+                return;
+            }
+            "G" => {
+                out.push(RenderCommand::Action(Action::PreviewDown(0)));
+                return;
+            }
+            "p" | "P" => {
+                out.push(RenderCommand::Action(Action::CyclePreview));
+                return;
+            }
+            "esc" | "h" => {
+                out.push(RenderCommand::Action(Action::CyclePreview));
+                return;
+            }
+            _ => {}
+        }
+    } else {
+        // Non-fullscreen preview scrolling and diagram controls fallback
+        if (key == "J" || key == "shift-j")
+            && !focus_binds.contains_key("J")
+            && !focus_binds.contains_key("shift-j")
+        {
+            out.push(RenderCommand::Action(Action::PreviewDown(5)));
+            return;
+        }
+        if (key == "K" || key == "shift-k")
+            && !focus_binds.contains_key("K")
+            && !focus_binds.contains_key("shift-k")
+        {
+            out.push(RenderCommand::Action(Action::PreviewUp(5)));
+            return;
+        }
+        if key == "d" && !focus_binds.contains_key("d") {
+            out.push(RenderCommand::Action(Action::ToggleDiagram));
+            return;
+        }
+    }
+
     if key == "," {
         *pending_nav_key = None;
         *sort_menu_active = true;
@@ -385,6 +475,7 @@ fn apply_focus_binds<A: ActionExt>(
     overlay_active: bool,
     pending_nav_key: &mut Option<char>,
     sort_menu_active: &mut bool,
+    preview_fullscreen: bool,
 ) {
     if overlay_active {
         for cmd in buffer {
@@ -461,6 +552,7 @@ fn apply_focus_binds<A: ActionExt>(
                     sort_menu_active,
                     &mut sim_focus,
                     &mut out,
+                    preview_fullscreen,
                 );
             }
             RenderCommand::KeyAction { key, action } if sim_focus == Focus::Results => {
@@ -478,6 +570,7 @@ fn apply_focus_binds<A: ActionExt>(
                     sort_menu_active,
                     &mut sim_focus,
                     &mut out,
+                    preview_fullscreen,
                 );
                 if get_nav_bind(focus_binds, &key).is_some() {
                     last_consumed_nav_key = Some(key);
@@ -501,6 +594,7 @@ fn apply_focus_binds<A: ActionExt>(
                     sort_menu_active,
                     &mut sim_focus,
                     &mut out,
+                    preview_fullscreen,
                 );
             }
             RenderCommand::Action(Action::BackwardChar) if sim_focus == Focus::Results => {
@@ -513,6 +607,7 @@ fn apply_focus_binds<A: ActionExt>(
                     sort_menu_active,
                     &mut sim_focus,
                     &mut out,
+                    preview_fullscreen,
                 );
             }
             RenderCommand::Action(Action::ForwardChar) if sim_focus == Focus::Results => {
@@ -525,6 +620,7 @@ fn apply_focus_binds<A: ActionExt>(
                     sort_menu_active,
                     &mut sim_focus,
                     &mut out,
+                    preview_fullscreen,
                 );
             }
             other => {
@@ -661,6 +757,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         || overlay_ui.as_ref().map_or(false, |o| o.index().is_some()),
                     &mut state.pending_nav_key,
                     &mut state.sort_menu_active,
+                    state.preview_fullscreen,
                 );
             }
 
@@ -1175,6 +1272,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 p.view
                                     .changed
                                     .store(true, std::sync::atomic::Ordering::Release);
+                                tui.redraw();
                             }
                         }
                         Action::PreviewZoomOut | Action::DiagramZoomOut => {
@@ -1189,6 +1287,25 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 p.view
                                     .changed
                                     .store(true, std::sync::atomic::Ordering::Release);
+                                tui.redraw();
+                            }
+                        }
+                        Action::PreviewResetZoom | Action::DiagramResetZoom => {
+                            if let Some(p) = preview_ui.as_mut() {
+                                p.zoom = 1.0_f32;
+                                p.view
+                                    .image_id
+                                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                                p.view
+                                    .changed
+                                    .store(true, std::sync::atomic::Ordering::Release);
+                                tui.redraw();
+                            }
+                        }
+                        Action::ToggleDiagram => {
+                            if let Some(p) = preview_ui.as_mut() {
+                                p.toggle_diagram();
+                                tui.redraw();
                             }
                         }
                         Action::PreviewHalfPageUp | Action::PreviewHalfPageDown => {
@@ -1225,23 +1342,52 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                     .unwrap_or_default();
                                 if !offsets.is_empty() {
                                     let current = p.current_offset();
-                                    let target = if matches!(action, Action::NextDiagram) {
+                                    let (target, next_idx) = if matches!(action, Action::NextDiagram) {
                                         // Find first offset strictly greater than current scroll
-                                        offsets
-                                            .iter()
-                                            .find(|&&o| o > current)
-                                            .copied()
-                                            .unwrap_or(*offsets.first().unwrap()) // wrap around
+                                        let found = offsets.iter().copied().enumerate().find(|(_, o)| *o > current);
+                                        if let Some((idx, o)) = found {
+                                            (o, idx)
+                                        } else {
+                                            (*offsets.first().unwrap(), 0)
+                                        }
                                     } else {
                                         // Find last offset strictly less than current scroll
-                                        offsets
-                                            .iter()
-                                            .rev()
-                                            .find(|&&o| o < current)
-                                            .copied()
-                                            .unwrap_or(*offsets.last().unwrap()) // wrap around
+                                        let found = offsets.iter().copied().enumerate().rfind(|(_, o)| *o < current);
+                                        if let Some((idx, o)) = found {
+                                            (o, idx)
+                                        } else {
+                                            (*offsets.last().unwrap(), offsets.len() - 1)
+                                        }
                                     };
                                     p.scroll_to(target);
+
+                                    // Update active diagram image from sources if available
+                                    if let Ok(sources) = p.view.diagram_sources.lock() {
+                                        if let Some(src) = sources.get(next_idx) {
+                                            p.view.current_diagram_idx.store(
+                                                next_idx,
+                                                std::sync::atomic::Ordering::Release,
+                                            );
+                                            if let Some(img) =
+                                                crate::utils::mermaid::render_mermaid_to_image(
+                                                    src, p.zoom,
+                                                )
+                                            {
+                                                if let Ok(mut guard) = p.view.image.lock() {
+                                                    *guard = Some(img);
+                                                    p.view.image_id.fetch_add(
+                                                        1,
+                                                        std::sync::atomic::Ordering::Release,
+                                                    );
+                                                    p.view.changed.store(
+                                                        true,
+                                                        std::sync::atomic::Ordering::Release,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    tui.redraw();
                                 }
                             }
                         }
@@ -1250,9 +1396,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         Action::CyclePreview => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.cycle_layout();
+                                p.current_dimension = None;
+                                p.view.changed.store(true, std::sync::atomic::Ordering::Release);
                                 if !p.command().is_empty() {
                                     state.update_preview_payload(p.command());
                                 }
+                                tui.redraw();
                             }
                         }
 
@@ -1966,8 +2115,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                     let show_sort_menu = state.sort_menu_active;
                     let show_nav_hints = ui.config.nav_mode
-                        && ui.config.nav_hints
-                        && state.focus == Focus::Results
+                        && (ui.config.nav_hints || state.preview_fullscreen)
+                        && (state.focus == Focus::Results || state.preview_fullscreen)
                         && !footer_ui.show;
 
                     let effective_footer_height = if show_sort_menu {
@@ -1975,7 +2124,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     } else if footer_ui.show {
                         footer_ui.height()
                     } else if show_nav_hints {
-                        let count = if ui.config.nav_basic {
+                        let count = if state.preview_fullscreen {
+                            PREVIEW_NAV_HINTS.len()
+                        } else if ui.config.nav_basic {
                             BASIC_NAV_HINTS.len()
                         } else {
                             NAV_HINTS.len()
@@ -2063,7 +2214,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             s.layout.gap = original_gap;
                         }
 
-                        if state.iterations == 0 && picker_area.width <= 5 {
+                        if state.iterations == 0 && _area.width < 30 && picker_area.width <= 5 {
                             warn!("UI too narrow, hiding preview");
                             preview_ui.show(false);
 
@@ -2289,6 +2440,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 footer,
                                 ui.config.nav_basic,
                                 ui.config.nav_hints_columns,
+                                state.preview_fullscreen,
                             );
                         }
                     }
@@ -2536,7 +2688,12 @@ fn find_interaction(setting: &crate::config::InteractionRegionSetting, x: u16) -
 fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
     assert!(ui.visible()); // don't call if not visible.
 
-    let is_image = ui.get_image_state().is_some();
+    let has_markdown = ui.has_markdown();
+    let is_image = if has_markdown {
+        ui.show_diagram && ui.get_image_state().is_some()
+    } else {
+        ui.get_image_state().is_some()
+    };
     if is_image {
         let block = ui.make_block();
         let inner_area = if let Some(b) = &block {
@@ -2827,12 +2984,29 @@ pub const NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[C-p]", "Preview", ratatui::style::Color::Blue),
 ];
 
-fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usize) {
+pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
+    ("[j/k]", "Scroll", ratatui::style::Color::Yellow),
+    ("[J/K]", "Jump5", ratatui::style::Color::Yellow),
+    ("[C-d/u]", "HalfPg", ratatui::style::Color::Yellow),
+    ("[n/N]", "Diagram", ratatui::style::Color::Cyan),
+    ("[+/-]", "Zoom", ratatui::style::Color::Green),
+    ("[0/z]", "Reset", ratatui::style::Color::Blue),
+    ("[d]", "ToggleImage", ratatui::style::Color::Magenta),
+    ("[p/esc]", "Back", ratatui::style::Color::Magenta),
+];
+
+fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usize, preview_fullscreen: bool) {
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
-    let hints: &[(&str, &str, Color)] = if is_basic { BASIC_NAV_HINTS } else { NAV_HINTS };
+    let hints: &[(&str, &str, Color)] = if preview_fullscreen {
+        PREVIEW_NAV_HINTS
+    } else if is_basic {
+        BASIC_NAV_HINTS
+    } else {
+        NAV_HINTS
+    };
 
     let cols = if columns == 0 { 4 } else { columns };
 
@@ -3066,6 +3240,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3083,6 +3258,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3100,6 +3276,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3117,6 +3294,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3137,6 +3315,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(0))));
@@ -3154,6 +3333,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(-1))));
@@ -3168,6 +3348,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::SortMenu)));
@@ -3182,6 +3363,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3200,6 +3382,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3218,6 +3401,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 0);
         assert!(!sort_menu_active);
@@ -3258,6 +3442,7 @@ mod test {
                 false,
                 &mut pending,
                 &mut sort_menu_active,
+            false,
             );
             assert_eq!(buffer.len(), 1);
             assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(1))));
@@ -3275,6 +3460,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3295,6 +3481,7 @@ mod test {
                 false,
                 &mut pending,
                 &mut sort_menu_active,
+            false,
             );
             assert_eq!(buffer.len(), 4);
             assert!(matches!(buffer[0], RenderCommand::Action(Action::ChDir(_))));
@@ -3318,6 +3505,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3339,6 +3527,7 @@ mod test {
                 false,
                 &mut pending,
                 &mut sort_menu_active,
+            false,
             );
             assert_eq!(buffer.len(), 1);
             assert!(matches!(
@@ -3369,6 +3558,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3385,6 +3575,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(0))));
@@ -3398,6 +3589,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(0))));
@@ -3411,6 +3603,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(
@@ -3427,6 +3620,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Pos(0))));
@@ -3460,6 +3654,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         let reloadnext_count = buffer
             .iter()
@@ -3492,6 +3687,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         let reloadnext_count = buffer
             .iter()
@@ -3523,6 +3719,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(
             buffer.len(),
@@ -3544,6 +3741,7 @@ mod test {
             false,
             &mut pending,
             &mut sort_menu_active,
+            false,
         );
         assert_eq!(buffer.len(), 1);
         assert!(

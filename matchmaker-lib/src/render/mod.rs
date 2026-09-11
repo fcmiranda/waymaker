@@ -71,6 +71,10 @@ fn action_from_null<A: ActionExt>(action: Action<NullActionExt>) -> Option<Actio
         Action::PreviewHScroll(x) => Action::PreviewHScroll(x),
         Action::PreviewScroll(x) => Action::PreviewScroll(x),
         Action::PreviewJump => Action::PreviewJump,
+        Action::NextDiagram => Action::NextDiagram,
+        Action::PrevDiagram => Action::PrevDiagram,
+        Action::DiagramZoomIn => Action::DiagramZoomIn,
+        Action::DiagramZoomOut => Action::DiagramZoomOut,
         Action::NextColumn => Action::NextColumn,
         Action::PrevColumn => Action::PrevColumn,
         Action::SwitchColumn(x) => Action::SwitchColumn(x),
@@ -1162,7 +1166,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 p.shrink(n)
                             }
                         }
-                        Action::PreviewZoomIn => {
+                        Action::PreviewZoomIn | Action::DiagramZoomIn => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.zoom *= 1.25_f32;
                                 p.view
@@ -1173,7 +1177,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                     .store(true, std::sync::atomic::Ordering::Release);
                             }
                         }
-                        Action::PreviewZoomOut => {
+                        Action::PreviewZoomOut | Action::DiagramZoomOut => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.zoom /= 1.25_f32;
                                 if p.zoom < 0.25 {
@@ -1207,6 +1211,38 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         Action::PreviewJump => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.jump()
+                            }
+                        }
+
+                        Action::NextDiagram | Action::PrevDiagram => {
+                            if let Some(p) = preview_ui.as_mut() {
+                                let offsets = p
+                                    .view
+                                    .diagram_offsets
+                                    .lock()
+                                    .ok()
+                                    .map(|g| g.clone())
+                                    .unwrap_or_default();
+                                if !offsets.is_empty() {
+                                    let current = p.current_offset();
+                                    let target = if matches!(action, Action::NextDiagram) {
+                                        // Find first offset strictly greater than current scroll
+                                        offsets
+                                            .iter()
+                                            .find(|&&o| o > current)
+                                            .copied()
+                                            .unwrap_or(*offsets.first().unwrap()) // wrap around
+                                    } else {
+                                        // Find last offset strictly less than current scroll
+                                        offsets
+                                            .iter()
+                                            .rev()
+                                            .find(|&&o| o < current)
+                                            .copied()
+                                            .unwrap_or(*offsets.last().unwrap()) // wrap around
+                                    };
+                                    p.scroll_to(target);
+                                }
                             }
                         }
 

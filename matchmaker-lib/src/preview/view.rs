@@ -14,6 +14,9 @@ pub struct Preview {
     pub image: Arc<Mutex<Option<image::DynamicImage>>>,
     pub image_id: Arc<AtomicU64>,
     pub changed: Arc<AtomicBool>,
+    /// Line offsets (0-based) in the rendered Text where each Mermaid diagram block starts.
+    /// Updated on every Markdown re-render. Empty when not viewing a Markdown file.
+    pub diagram_offsets: Arc<Mutex<Vec<usize>>>,
 }
 
 impl Preview {
@@ -76,6 +79,7 @@ impl Preview {
         image: Arc<Mutex<Option<image::DynamicImage>>>,
         image_id: Arc<AtomicU64>,
         changed: Arc<AtomicBool>,
+        diagram_offsets: Arc<Mutex<Vec<usize>>>,
     ) -> Self {
         Self {
             lines,
@@ -83,6 +87,7 @@ impl Preview {
             image,
             image_id,
             changed,
+            diagram_offsets,
         }
     }
 }

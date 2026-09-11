@@ -55,6 +55,114 @@ pub fn render_mermaid_file_ansi(path: &Path, opts: &MermaidOptions) -> anyhow::R
     Ok(render_mermaid_ansi(&content, opts))
 }
 
+use indexmap::IndexMap;
+use rustc_hash::{FxBuildHasher, FxHasher};
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, LazyLock, Mutex};
+
+/// Shared system font database for fast SVG text rasterization.
+static FONT_DB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
+    let mut db = usvg::fontdb::Database::new();
+    db.load_system_fonts();
+    Arc::new(db)
+});
+
+/// In-memory LRU cache for rendered diagram bitmaps, keyed by (FxHash(source), scale_key).
+static DIAGRAM_CACHE: LazyLock<Mutex<IndexMap<(u64, u32), image::DynamicImage, FxBuildHasher>>> =
+    LazyLock::new(|| Mutex::new(IndexMap::with_capacity_and_hasher(64, FxBuildHasher)));
+
+/// Render a Mermaid diagram source string to a `DynamicImage` using the graphics pipeline.
+///
+/// Uses `mermaid-rs-renderer` to produce SVG, then rasterizes with `resvg`/`usvg`/`tiny-skia`.
+/// The `scale` parameter multiplies the SVG's natural pixel dimensions, enabling zoom.
+/// Results are cached in an in-memory LRU cache to guarantee sub-millisecond redraws.
+/// Returns `None` if rendering fails (caller should fall back to text rendering).
+pub fn render_mermaid_to_image(src: &str, scale: f32) -> Option<image::DynamicImage> {
+    use mermaid_rs_renderer::{RenderOptions, render_with_options};
+
+    let trimmed = src.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let scale_val = scale.max(0.1);
+    let scale_key = (scale_val * 100.0) as u32;
+
+    let mut hasher = FxHasher::default();
+    trimmed.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    // Check LRU cache first
+    if let Ok(mut cache) = DIAGRAM_CACHE.lock() {
+        if let Some((_, img)) = cache.shift_remove_entry(&(hash, scale_key)) {
+            let cloned = img.clone();
+            cache.insert((hash, scale_key), img);
+            return Some(cloned);
+        }
+    }
+
+    // Stage 1: Mermaid → SVG
+    let svg = render_with_options(trimmed, RenderOptions::default()).ok()?;
+
+    // Stage 2: SVG → rasterized image via usvg + resvg + tiny-skia
+    let img = render_svg_to_image(&svg, scale_val)?;
+
+    // Store in LRU cache (evict oldest if over capacity)
+    if let Ok(mut cache) = DIAGRAM_CACHE.lock() {
+        if cache.len() >= 64 {
+            cache.shift_remove_index(0);
+        }
+        cache.insert((hash, scale_key), img.clone());
+    }
+
+    Some(img)
+}
+
+/// Rasterize an SVG string to a `DynamicImage` at the given scale factor.
+///
+/// Uses the same font / pixmap pipeline as `mermaid-rs-renderer`'s `write_output_png`,
+/// utilizing the shared `FONT_DB` to avoid reloading system fonts on each render.
+pub fn render_svg_to_image(svg: &str, scale: f32) -> Option<image::DynamicImage> {
+    let opt = usvg::Options {
+        fontdb: FONT_DB.clone(),
+        ..Default::default()
+    };
+
+    let tree = usvg::Tree::from_str(svg, &opt).ok()?;
+    let natural = tree.size().to_int_size();
+
+    let w = ((natural.width() as f32) * scale.max(0.1)) as u32;
+    let h = ((natural.height() as f32) * scale.max(0.1)) as u32;
+
+    if w == 0 || h == 0 {
+        return None;
+    }
+
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
+
+    // White background (Mermaid diagrams are designed for light backgrounds)
+    pixmap.fill(resvg::tiny_skia::Color::WHITE);
+
+    let transform = resvg::tiny_skia::Transform::from_scale(
+        w as f32 / natural.width() as f32,
+        h as f32 / natural.height() as f32,
+    );
+
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    // Convert RGBA pixmap to image::DynamicImage
+    let rgba_data = pixmap.data().to_vec();
+    let img = image::RgbaImage::from_raw(w, h, rgba_data)?;
+    Some(image::DynamicImage::ImageRgba8(img))
+}
+
+/// Read a `.mmd`/`.mermaid` file and render it as a `DynamicImage`.
+/// Falls back to `None` if graphics rendering fails.
+pub fn render_mermaid_file_to_image(path: &Path, scale: f32) -> Option<image::DynamicImage> {
+    let content = fs::read_to_string(path).ok()?;
+    render_mermaid_to_image(&content, scale)
+}
+
 use unicode_width::UnicodeWidthStr;
 
 /// Style the plain-text diagram output with theme colors for box borders, connectors, and labels.
@@ -553,5 +661,39 @@ mod tests {
         assert!(joined.contains("Bob"));
         assert!(joined.contains("Ping"));
         assert!(joined.contains("Pong"));
+    }
+
+    #[test]
+    fn test_render_mermaid_to_image() {
+        let src =
+            "flowchart TD\n    A[Start] --> B{Choice}\n    B -->|Yes| C[OK]\n    B -->|No| D[Stop]";
+        let img = render_mermaid_to_image(src, 1.0);
+        assert!(
+            img.is_some(),
+            "Should successfully render flowchart to image"
+        );
+        let img = img.unwrap();
+        assert!(img.width() > 0, "Image width must be positive");
+        assert!(img.height() > 0, "Image height must be positive");
+
+        // Test zoom / scaling
+        let img_scaled = render_mermaid_to_image(src, 2.0).unwrap();
+        assert!(
+            img_scaled.width() > img.width(),
+            "Scaled image width should be larger: {} vs {}",
+            img_scaled.width(),
+            img.width()
+        );
+
+        // Test LRU cache hit (should return identical dimensions instantly)
+        let cached = render_mermaid_to_image(src, 1.0).unwrap();
+        assert_eq!(cached.width(), img.width());
+        assert_eq!(cached.height(), img.height());
+    }
+
+    #[test]
+    fn test_render_mermaid_to_image_empty() {
+        assert!(render_mermaid_to_image("", 1.0).is_none());
+        assert!(render_mermaid_to_image("   \n  ", 1.0).is_none());
     }
 }

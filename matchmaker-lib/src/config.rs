@@ -1573,6 +1573,9 @@ pub struct PreviewerConfig {
 
     /// Pixel resolution for media previews (images, videos, PDFs). Default: 1280. 0 = original
     pub media_size: u32,
+
+    /// Whether native terminal image/media previewing is enabled. Default: false
+    pub media: bool,
 }
 
 impl Default for PreviewerConfig {
@@ -1591,6 +1594,7 @@ impl Default for PreviewerConfig {
 
             command_args: Default::default(),
             media_size: 1280,
+            media: false,
         }
     }
 }

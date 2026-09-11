@@ -34,16 +34,7 @@ impl Default for MarkdownOptions {
 
 /// Render a Markdown source string to Ratatui `Text<'static>`.
 pub fn render_markdown(src: &str, opts: &MarkdownOptions) -> Text<'static> {
-    let mut parser_opts = Options::empty();
-    parser_opts.insert(Options::ENABLE_TABLES);
-    parser_opts.insert(Options::ENABLE_TASKLISTS);
-    parser_opts.insert(Options::ENABLE_STRIKETHROUGH);
-    parser_opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-
-    let parser = Parser::new_ext(src, parser_opts);
-    let mut renderer = MarkdownRenderer::new(opts);
-    renderer.render(parser);
-    renderer.finish()
+    render_markdown_with_diagram_offsets(src, opts).0
 }
 
 /// Render a Markdown source string to an ANSI colored string for terminal stdout.
@@ -62,6 +53,64 @@ pub fn render_markdown_file(path: &Path, opts: &MarkdownOptions) -> anyhow::Resu
 pub fn render_markdown_file_ansi(path: &Path, opts: &MarkdownOptions) -> anyhow::Result<String> {
     let content = fs::read_to_string(path)?;
     Ok(render_markdown_ansi(&content, opts))
+}
+
+/// Extract all ` ```mermaid ` blocks from raw Markdown source.
+///
+/// Returns a `Vec<(start_line, source)>` where `start_line` is the 0-based index of the opening
+/// fence line in the **source** (not the rendered output — the previewer must map this via the
+/// rendered line count).  The source string contains only the diagram body (no fence lines).
+pub fn extract_mermaid_blocks(src: &str) -> Vec<(usize, String)> {
+    let mut blocks = Vec::new();
+    let mut in_block = false;
+    let mut block_start_line = 0usize;
+    let mut buf = String::new();
+
+    for (line_idx, line) in src.lines().enumerate() {
+        let trimmed = line.trim();
+        if !in_block && (trimmed == "```mermaid" || trimmed == "~~~mermaid") {
+            in_block = true;
+            block_start_line = line_idx;
+            buf.clear();
+        } else if in_block && (trimmed == "```" || trimmed == "~~~") {
+            in_block = false;
+            blocks.push((block_start_line, buf.trim().to_owned()));
+            buf.clear();
+        } else if in_block {
+            buf.push_str(line);
+            buf.push('\n');
+        }
+    }
+    blocks
+}
+
+/// Render Markdown and also return the **rendered** line offsets of each embedded Mermaid block.
+///
+/// The offsets are the indices into the resulting `Text::lines` slice so that callers can jump the
+/// preview scroll directly to the right line.
+pub fn render_markdown_with_diagram_offsets(
+    src: &str,
+    opts: &MarkdownOptions,
+) -> (Text<'static>, Vec<usize>) {
+    let mut parser_opts = Options::empty();
+    parser_opts.insert(Options::ENABLE_TABLES);
+    parser_opts.insert(Options::ENABLE_TASKLISTS);
+    parser_opts.insert(Options::ENABLE_STRIKETHROUGH);
+    parser_opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+
+    let parser = Parser::new_ext(src, parser_opts);
+    let mut renderer = MarkdownRenderer::new(opts);
+    renderer.render(parser);
+    renderer.finish()
+}
+
+/// Read a Markdown file, render it, and also return diagram line offsets.
+pub fn render_markdown_file_with_diagram_offsets(
+    path: &Path,
+    opts: &MarkdownOptions,
+) -> anyhow::Result<(Text<'static>, Vec<usize>)> {
+    let content = fs::read_to_string(path)?;
+    Ok(render_markdown_with_diagram_offsets(&content, opts))
 }
 
 struct ListState {
@@ -185,6 +234,7 @@ struct MarkdownRenderer<'a> {
     current_link_text: String,
     current_image_url: Option<String>,
     current_image_alt: String,
+    diagram_offsets: Vec<usize>,
 }
 
 impl<'a> MarkdownRenderer<'a> {
@@ -205,6 +255,7 @@ impl<'a> MarkdownRenderer<'a> {
             current_link_text: String::new(),
             current_image_url: None,
             current_image_alt: String::new(),
+            diagram_offsets: Vec::new(),
         }
     }
 
@@ -613,6 +664,7 @@ impl<'a> MarkdownRenderer<'a> {
                     title: Some("Mermaid Diagram".to_string()),
                 };
                 let diagram_text = render_mermaid(&buffer, &mermaid_opts);
+                self.diagram_offsets.push(self.lines.len());
                 for line in diagram_text.lines {
                     self.lines.push(line);
                 }
@@ -797,9 +849,9 @@ impl<'a> MarkdownRenderer<'a> {
         self.lines.push(Line::default());
     }
 
-    fn finish(mut self) -> Text<'static> {
+    fn finish(mut self) -> (Text<'static>, Vec<usize>) {
         self.flush_line();
-        Text::from(self.lines)
+        (Text::from(self.lines), self.diagram_offsets)
     }
 }
 
@@ -1071,5 +1123,56 @@ mod tests {
                 "Line {idx} width ({w}) does not match top border width ({expected_w})"
             );
         }
+    }
+
+    #[test]
+    fn test_extract_mermaid_blocks() {
+        let md = r#"# Architecture
+
+Here is the flow:
+
+```mermaid
+graph TD
+    A --> B
+```
+
+And another:
+
+~~~mermaid
+sequenceDiagram
+    Alice->>Bob: Hello
+~~~
+"#;
+        let blocks = extract_mermaid_blocks(md);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].0, 4); // line index of opening fence
+        assert!(blocks[0].1.contains("A --> B"));
+        assert_eq!(blocks[1].0, 11);
+        assert!(blocks[1].1.contains("Alice->>Bob"));
+    }
+
+    #[test]
+    fn test_render_markdown_with_diagram_offsets() {
+        let md = r#"# Document
+
+Intro paragraph.
+
+```mermaid
+graph TD
+    X --> Y
+```
+
+Outro paragraph.
+"#;
+        let opts = MarkdownOptions::default();
+        let (text, offsets) = render_markdown_with_diagram_offsets(md, &opts);
+        assert!(
+            !offsets.is_empty(),
+            "Offsets must detect the diagram box header"
+        );
+        assert!(
+            offsets[0] < text.lines.len(),
+            "Offset must point within rendered text"
+        );
     }
 }

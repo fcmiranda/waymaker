@@ -47,6 +47,11 @@ pub struct Previewer {
     /// and which the viewer can toggle after receiving the current state
     changed: Arc<AtomicBool>,
 
+    /// Rendered line offsets of Mermaid diagram blocks within the current Markdown preview.
+    /// Each entry is the 0-based line index in the rendered Text where a diagram starts.
+    /// Shared with `Preview` so the render loop can navigate between diagrams.
+    pub diagram_offsets: Arc<Mutex<Vec<usize>>>,
+
     paused: bool,
     /// Maintain a queue of child processes to improve cleanup reliability
     procs: Vec<Child>,
@@ -110,6 +115,7 @@ impl Previewer {
             image: Default::default(),
             image_id: Arc::new(AtomicU64::new(1)),
             changed: Default::default(),
+            diagram_offsets: Default::default(),
             paused: false,
 
             procs: Vec::new(),
@@ -129,6 +135,7 @@ impl Previewer {
             self.image.clone(),
             self.image_id.clone(),
             self.changed.clone(),
+            self.diagram_offsets.clone(),
         )
     }
 
@@ -378,13 +385,20 @@ impl Previewer {
                         self.clear_string();
                         self.lines.clear();
                         self.dispatch_kill();
+                        // Clear any stale diagram offsets from previous preview
+                        if let Ok(mut offsets) = self.diagram_offsets.lock() {
+                            offsets.clear();
+                        }
                         self.last = format!("{path}:{width:?}");
                         let path = path.clone();
-                        let width = width;
                         let string_state = self.string.clone();
+                        let image_state = self.image.clone();
+                        let image_id = self.image_id.clone();
+                        let diagram_offsets_state = self.diagram_offsets.clone();
                         let changed = self.changed.clone();
                         let rx = self.rx.clone();
                         let event_tx = self.event_controller_tx.clone();
+                        let media_enabled = self.config.media;
 
                         tokio::task::spawn_blocking(move || {
                             if rx.has_changed().unwrap_or(false) {
@@ -397,35 +411,82 @@ impl Previewer {
                                     matches!(ext.to_lowercase().as_str(), "mmd" | "mermaid")
                                 });
 
-                            let rendered_text = if is_mermaid {
+                            if is_mermaid && media_enabled {
+                                // Try graphics-based rendering first (Kitty protocol)
+                                let img = crate::utils::mermaid::render_mermaid_file_to_image(
+                                    p, 1.0, // Initial scale 1.0; zoom is handled by PreviewUI
+                                );
+
+                                if rx.has_changed().unwrap_or(false) {
+                                    return;
+                                }
+
+                                if let Some(rendered_img) = img {
+                                    if let Ok(mut guard) = image_state.lock() {
+                                        *guard = Some(rendered_img);
+                                        image_id.fetch_add(1, Ordering::Release);
+                                        changed.store(true, Ordering::Release);
+                                    }
+                                    if let Some(ref tx) = event_tx {
+                                        let _ = tx.send(crate::message::Event::Refresh);
+                                    }
+                                    return;
+                                }
+                                // Fall through to text rendering if image failed
+                            }
+
+                            // Text / fallback rendering path
+                            if is_mermaid {
                                 let opts = crate::utils::mermaid::MermaidOptions {
                                     max_width: width,
                                     show_box: true,
                                     title: Some("Mermaid Diagram".to_string()),
                                     ..Default::default()
                                 };
-                                crate::utils::mermaid::render_mermaid_file(p, &opts).unwrap_or_else(
-                                    |err| Text::from(format!("Error reading Mermaid file: {err}")),
-                                )
+                                let rendered_text =
+                                    crate::utils::mermaid::render_mermaid_file(p, &opts)
+                                        .unwrap_or_else(|err| {
+                                            Text::from(format!("Error reading Mermaid file: {err}"))
+                                        });
+
+                                if rx.has_changed().unwrap_or(false) {
+                                    return;
+                                }
+                                if let Ok(mut guard) = string_state.lock() {
+                                    *guard = Some(rendered_text);
+                                    changed.store(true, Ordering::Release);
+                                }
                             } else {
+                                // Markdown file — render with diagram offset tracking
                                 let opts = crate::utils::markdown::MarkdownOptions {
                                     max_width: width,
                                     ..Default::default()
                                 };
-                                crate::utils::markdown::render_markdown_file(p, &opts)
+                                let (rendered_text, offsets) =
+                                    crate::utils::markdown::render_markdown_file_with_diagram_offsets(
+                                        p, &opts,
+                                    )
                                     .unwrap_or_else(|err| {
-                                        Text::from(format!("Error reading Markdown file: {err}"))
-                                    })
-                            };
+                                        (
+                                            Text::from(format!("Error reading Markdown file: {err}")),
+                                            vec![],
+                                        )
+                                    });
 
-                            if rx.has_changed().unwrap_or(false) {
-                                return;
+                                if rx.has_changed().unwrap_or(false) {
+                                    return;
+                                }
+
+                                // Store diagram offsets for navigation
+                                if let Ok(mut diag_guard) = diagram_offsets_state.lock() {
+                                    *diag_guard = offsets;
+                                }
+                                if let Ok(mut guard) = string_state.lock() {
+                                    *guard = Some(rendered_text);
+                                    changed.store(true, Ordering::Release);
+                                }
                             }
 
-                            if let Ok(mut guard) = string_state.lock() {
-                                *guard = Some(rendered_text);
-                                changed.store(true, Ordering::Release);
-                            }
                             if let Some(ref tx) = event_tx {
                                 let _ = tx.send(crate::message::Event::Refresh);
                             }

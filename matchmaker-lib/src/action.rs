@@ -114,6 +114,14 @@ pub enum Action<A: ActionExt = NullActionExt> {
     PreviewScroll(i8),
     /// Jump between start, end, initial locations.
     PreviewJump,
+    /// Jump to the next Mermaid diagram block in the Markdown preview.
+    NextDiagram,
+    /// Jump to the previous Mermaid diagram block in the Markdown preview.
+    PrevDiagram,
+    /// Zoom in diagram preview
+    DiagramZoomIn,
+    /// Zoom out diagram preview
+    DiagramZoomOut,
 
     /// Cycle columns
     NextColumn,
@@ -488,6 +496,7 @@ enum_from_str_display!(
 
     ToggleWrap, TogglePreviewWrap, ToggleActionBox, ToggleFocus, FocusFilter, FocusNav, ToggleParentPeek, ToggleFooter, ToggleHeader, CyclePreview, PreviewJump,
     PreviewZoomIn, PreviewZoomOut,
+    NextDiagram, PrevDiagram, DiagramZoomIn, DiagramZoomOut,
 
     PreviewHalfPageUp, PreviewHalfPageDown,
 
@@ -760,5 +769,24 @@ mod tests {
         let a_sort_mtime: Action = Action::from_str("Sort(M)").unwrap();
         assert_eq!(a_sort_mtime, Action::Sort(Some(SortOrder::ModifiedReverse)));
         assert_eq!(a_sort_mtime.to_string(), "Sort(ModifiedReverse)");
+    }
+
+    #[test]
+    fn test_action_diagram_navigation_and_zoom() {
+        let next: Action = Action::from_str("NextDiagram").unwrap();
+        assert_eq!(next, Action::NextDiagram);
+        assert_eq!(next.to_string(), "NextDiagram");
+
+        let prev: Action = Action::from_str("PrevDiagram").unwrap();
+        assert_eq!(prev, Action::PrevDiagram);
+        assert_eq!(prev.to_string(), "PrevDiagram");
+
+        let zoom_in: Action = Action::from_str("DiagramZoomIn").unwrap();
+        assert_eq!(zoom_in, Action::DiagramZoomIn);
+        assert_eq!(zoom_in.to_string(), "DiagramZoomIn");
+
+        let zoom_out: Action = Action::from_str("DiagramZoomOut").unwrap();
+        assert_eq!(zoom_out, Action::DiagramZoomOut);
+        assert_eq!(zoom_out.to_string(), "DiagramZoomOut");
     }
 }

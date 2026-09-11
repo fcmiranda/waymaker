@@ -233,6 +233,8 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         apply_media_size_str(size_str, &mut config);
     }
 
+    config.previewer.media = config.render.preview.media;
+
     for spec in &cli.color {
         apply_color_spec(&mut config, spec);
     }

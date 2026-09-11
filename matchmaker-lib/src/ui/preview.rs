@@ -375,6 +375,17 @@ impl PreviewUI {
         }
     }
 
+    /// Jump directly to a specific line in the preview.
+    pub fn scroll_to(&mut self, line: usize) {
+        let total_lines = self.view.len();
+        self.offset = line.min(total_lines.saturating_sub(1));
+    }
+
+    /// Current vertical line offset in the preview.
+    pub fn current_offset(&self) -> usize {
+        self.offset
+    }
+
     pub fn scroll(&mut self, horizontal: bool, val: i8) {
         let a = &mut self.scroll[horizontal as usize];
 

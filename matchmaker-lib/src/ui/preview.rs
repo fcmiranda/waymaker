@@ -639,23 +639,29 @@ impl PreviewUI {
                 && let Some(picker) = self.picker.as_ref()
             {
                 let zoom = self.zoom;
-                let display_img = if zoom >= 1.0 && (zoom - 1.0).abs() > 0.001 {
-                    let crop_w = ((img.width() as f32 / zoom) as u32).clamp(4, img.width());
-                    let crop_h = ((img.height() as f32 / zoom) as u32).clamp(4, img.height());
-                    let x = (img.width() - crop_w) / 2;
-                    let y = (img.height() - crop_h) / 2;
-                    img.crop_imm(x, y, crop_w, crop_h)
-                } else if zoom < 1.0 && zoom > 0.05 {
-                    let canvas_w = ((img.width() as f32 / zoom) as u32).max(img.width() + 1);
-                    let canvas_h = ((img.height() as f32 / zoom) as u32).max(img.height() + 1);
-                    let mut canvas = image::RgbaImage::from_pixel(
-                        canvas_w,
-                        canvas_h,
-                        image::Rgba([255, 255, 255, 0]),
+                let display_img = if zoom > 1.001 {
+                    let crop_w = ((img.width() as f32 / zoom) as u32).clamp(1, img.width());
+                    let crop_h = ((img.height() as f32 / zoom) as u32).clamp(1, img.height());
+                    let cropped = img.crop_imm(0, 0, crop_w, crop_h);
+                    cropped.resize_exact(
+                        img.width(),
+                        img.height(),
+                        image::imageops::FilterType::Triangle,
+                    )
+                } else if zoom < 0.999 && zoom > 0.05 {
+                    let scaled_w = ((img.width() as f32 * zoom) as u32).clamp(1, img.width());
+                    let scaled_h = ((img.height() as f32 * zoom) as u32).clamp(1, img.height());
+                    let scaled = img.resize_exact(
+                        scaled_w,
+                        scaled_h,
+                        image::imageops::FilterType::Triangle,
                     );
-                    let offset_x = (canvas_w - img.width()) / 2;
-                    let offset_y = (canvas_h - img.height()) / 2;
-                    image::imageops::overlay(&mut canvas, &img.to_rgba8(), offset_x as i64, offset_y as i64);
+                    let mut canvas = image::RgbaImage::from_pixel(
+                        img.width(),
+                        img.height(),
+                        image::Rgba([0, 0, 0, 0]),
+                    );
+                    image::imageops::overlay(&mut canvas, &scaled.to_rgba8(), 0, 0);
                     image::DynamicImage::ImageRgba8(canvas)
                 } else {
                     img
@@ -947,7 +953,12 @@ impl PreviewUI {
         } else {
             let top_y = area.y;
             let bottom_y = area.bottom();
-            let style = Style::default().fg(ratatui::style::Color::DarkGray);
+            let border_color = if self.config.border.color != ratatui::style::Color::Reset {
+                self.config.border.color
+            } else {
+                ratatui::style::Color::DarkGray
+            };
+            let style = Style::default().fg(border_color);
             (top_y, bottom_y, style)
         };
 
@@ -1301,5 +1312,17 @@ mod tests {
         let mut ui = PreviewUI::new(previewer.view(), config, [40, 10]);
         let state = ui.get_image_state();
         assert!(state.is_some(), "State must be immediately available synchronously");
+
+        // Test Zoom In (2.0x magnification)
+        ui.zoom = 2.0;
+        ui.view.image_id.fetch_add(1, std::sync::atomic::Ordering::Release);
+        let state_zoomed_in = ui.get_image_state();
+        assert!(state_zoomed_in.is_some(), "State must be valid for zoom in");
+
+        // Test Zoom Out (0.5x scaling)
+        ui.zoom = 0.5;
+        ui.view.image_id.fetch_add(1, std::sync::atomic::Ordering::Release);
+        let state_zoomed_out = ui.get_image_state();
+        assert!(state_zoomed_out.is_some(), "State must be valid for zoom out");
     }
 }

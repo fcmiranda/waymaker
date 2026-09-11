@@ -304,6 +304,20 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::PreviewHalfPageUp));
                 return;
             }
+            "g" => {
+                if *pending_nav_key == Some('g') {
+                    *pending_nav_key = None;
+                    out.push(RenderCommand::Action(Action::PreviewUp(0)));
+                } else {
+                    *pending_nav_key = Some('g');
+                }
+                return;
+            }
+            "G" => {
+                *pending_nav_key = None;
+                out.push(RenderCommand::Action(Action::PreviewDown(0)));
+                return;
+            }
             "d" | "m" => {
                 out.push(RenderCommand::Action(Action::ToggleDiagram));
                 return;
@@ -328,19 +342,23 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::DiagramResetZoom));
                 return;
             }
-            "G" => {
-                out.push(RenderCommand::Action(Action::PreviewDown(0)));
-                return;
-            }
             "y" => {
                 out.push(RenderCommand::Action(Action::Accept));
                 return;
             }
+            "ctrl-c" => {
+                out.push(RenderCommand::Action(Action::Quit(130)));
+                return;
+            }
             k if k.eq_ignore_ascii_case("esc") || k == "h" || k == "enter" => {
+                *sim_focus = Focus::Input;
                 out.push(RenderCommand::Action(Action::CyclePreview));
                 return;
             }
-            _ => {}
+            _ => {
+                *pending_nav_key = None;
+                return;
+            }
         }
     } else {
         // Non-fullscreen preview scrolling and diagram controls fallback
@@ -492,7 +510,11 @@ fn apply_focus_binds<A: ActionExt>(
     }
 
     let mut out = Vec::with_capacity(buffer.len());
-    let mut sim_focus = initial_focus;
+    let mut sim_focus = if preview_fullscreen {
+        Focus::Results
+    } else {
+        initial_focus
+    };
     let mut last_consumed_nav_key: Option<String> = None;
 
     for cmd in buffer.drain(..) {
@@ -508,6 +530,7 @@ fn apply_focus_binds<A: ActionExt>(
             RenderCommand::Action(Action::ToggleFocus) => {
                 last_consumed_nav_key = None;
                 if preview_fullscreen {
+                    sim_focus = Focus::Input;
                     out.push(RenderCommand::Action(Action::CyclePreview));
                     continue;
                 }
@@ -545,7 +568,7 @@ fn apply_focus_binds<A: ActionExt>(
                 sim_focus = Focus::Results;
                 out.push(RenderCommand::Action(Action::ChDir(payload)));
             }
-            RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results => {
+            RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results || preview_fullscreen => {
                 last_consumed_nav_key = None;
                 let key = c.to_string();
                 process_results_nav_key(
@@ -559,7 +582,7 @@ fn apply_focus_binds<A: ActionExt>(
                     preview_fullscreen,
                 );
             }
-            RenderCommand::KeyAction { key, action } if sim_focus == Focus::Results => {
+            RenderCommand::KeyAction { key, action } if sim_focus == Focus::Results || preview_fullscreen => {
                 if last_consumed_nav_key
                     .as_deref()
                     .is_some_and(|k| k.eq_ignore_ascii_case(&key))
@@ -582,22 +605,13 @@ fn apply_focus_binds<A: ActionExt>(
                     last_consumed_nav_key = None;
                 }
             }
-            RenderCommand::KeyAction { key, action } => {
+            RenderCommand::KeyAction { key: _, action } => {
                 // sim_focus == Focus::Input
                 last_consumed_nav_key = None;
-                if preview_fullscreen
-                    && (key.eq_ignore_ascii_case("esc")
-                        || matches!(action, Action::ToggleFocus)
-                        || key == "enter"
-                        || key == "h")
-                {
-                    out.push(RenderCommand::Action(Action::CyclePreview));
-                    continue;
-                }
                 update_sim_focus(&action, &mut sim_focus);
                 out.push(RenderCommand::Action(action));
             }
-            RenderCommand::Action(Action::DeleteChar) if sim_focus == Focus::Results => {
+            RenderCommand::Action(Action::DeleteChar) if sim_focus == Focus::Results || preview_fullscreen => {
                 last_consumed_nav_key = None;
                 process_results_nav_key(
                     "backspace",
@@ -610,7 +624,7 @@ fn apply_focus_binds<A: ActionExt>(
                     preview_fullscreen,
                 );
             }
-            RenderCommand::Action(Action::BackwardChar) if sim_focus == Focus::Results => {
+            RenderCommand::Action(Action::BackwardChar) if sim_focus == Focus::Results || preview_fullscreen => {
                 last_consumed_nav_key = None;
                 process_results_nav_key(
                     "left",
@@ -623,7 +637,7 @@ fn apply_focus_binds<A: ActionExt>(
                     preview_fullscreen,
                 );
             }
-            RenderCommand::Action(Action::ForwardChar) if sim_focus == Focus::Results => {
+            RenderCommand::Action(Action::ForwardChar) if sim_focus == Focus::Results || preview_fullscreen => {
                 last_consumed_nav_key = None;
                 process_results_nav_key(
                     "right",
@@ -1411,6 +1425,13 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 state.insert(crate::message::Event::PreviewChange);
                                 if !p.command().is_empty() {
                                     state.update_preview_payload(p.command());
+                                }
+                                if p.is_fullscreen() {
+                                    state.focus = Focus::Results;
+                                    state.preview_fullscreen = true;
+                                } else {
+                                    state.focus = Focus::Input;
+                                    state.preview_fullscreen = false;
                                 }
                                 tui.redraw();
                             }
@@ -2765,19 +2786,16 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
             "fit" | "contain" | _ => ratatui_image::Resize::Fit(None),
         };
 
-        let centered_area = ui.get_centered_image_area(inner_area);
         if let Some(state) = ui.get_image_state() {
             let image_widget = ratatui_image::StatefulImage::new().resize(resize_mode);
-            frame.render_stateful_widget(image_widget, centered_area, state);
+            frame.render_stateful_widget(image_widget, inner_area, state);
         }
     } else {
         let widget = ui.make_preview();
         frame.render_widget(widget, area);
     }
 
-    if !ui.is_fullscreen() {
-        ui.render_scrollbar(frame, area);
-    }
+    ui.render_scrollbar(frame, area);
 }
 
 fn render_results<T: SSS, S: Selection>(
@@ -3964,6 +3982,93 @@ mod test {
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Accept)));
+
+        // j / k in Focus::Input when preview_fullscreen is true -> PreviewDown(1) / PreviewUp(1)
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('j'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(1))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "k".to_string(),
+            action: Action::Char('k'),
+        }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Input,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(1))));
+
+        // Zoom keys when preview_fullscreen is true
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('+'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::DiagramZoomIn)));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('-'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::DiagramZoomOut)));
+
+        // gg and G scroll jumps when preview_fullscreen is true
+        let mut buffer = vec![
+            RenderCommand::<NullActionExt>::Action(Action::Char('g')),
+            RenderCommand::<NullActionExt>::Action(Action::Char('g')),
+        ];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(0))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('G'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(0))));
     }
 }
 

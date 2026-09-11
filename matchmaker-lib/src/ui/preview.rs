@@ -45,16 +45,13 @@ pub struct PreviewUI {
     pub show_diagram: bool,
     pub image_state: Option<ratatui_image::protocol::StatefulProtocol>,
     current_image_id: u64,
-    pending_protocol_rx: Option<
-        tokio::sync::mpsc::UnboundedReceiver<(u64, ratatui_image::protocol::StatefulProtocol)>,
-    >,
-    pending_protocol_tx:
-        tokio::sync::mpsc::UnboundedSender<(u64, ratatui_image::protocol::StatefulProtocol)>,
-    is_generating_protocol: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl PreviewUI {
     fn active_border(&self) -> Option<&BorderSetting> {
+        if self.is_fullscreen() {
+            return None;
+        }
         if let Some(layout_border) = self.setting().and_then(|s| s.border.as_ref()) {
             if !layout_border.is_empty() {
                 return Some(layout_border);
@@ -108,6 +105,10 @@ impl PreviewUI {
             }
         };
 
+        if config.layout.iter().any(|l| l.layout.max > 0) {
+            config.layout.retain(|l| l.layout.max > 0);
+        }
+
         // enforce invariant of valid index
         if config.layout.is_empty() {
             let mut s = PreviewSetting::default();
@@ -117,6 +118,15 @@ impl PreviewUI {
 
         let mut picker = None;
         if config.media {
+            if std::env::var("TMUX").is_ok()
+                && std::env::var("TERM_PROGRAM").map(|v| v != "tmux").unwrap_or(true)
+            {
+                #[allow(unused_unsafe)]
+                unsafe {
+                    std::env::set_var("TERM_PROGRAM", "tmux");
+                }
+            }
+
             use std::io::IsTerminal;
             let mut p = if std::io::stdout().is_terminal() {
                 ratatui_image::picker::Picker::from_query_stdio()
@@ -147,7 +157,6 @@ impl PreviewUI {
         }
 
         let zoom = config.zoom.unwrap_or(1.0);
-        let (pending_protocol_tx, pending_protocol_rx) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
             view,
@@ -170,9 +179,6 @@ impl PreviewUI {
             show_diagram: true,
             image_state: None,
             current_image_id: 0,
-            pending_protocol_rx: Some(pending_protocol_rx),
-            pending_protocol_tx,
-            is_generating_protocol: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -542,6 +548,9 @@ impl PreviewUI {
     // --------------------------
 
     pub fn drag_width(&self) -> u16 {
+        if self.is_fullscreen() {
+            return 0;
+        }
         self.config.drag_width.unwrap_or_else(|| {
             let side = self
                 .setting()
@@ -599,14 +608,6 @@ impl PreviewUI {
     }
 
     pub fn get_image_state(&mut self) -> Option<&mut ratatui_image::protocol::StatefulProtocol> {
-        if let Some(rx) = self.pending_protocol_rx.as_mut() {
-            while let Ok((id, protocol)) = rx.try_recv() {
-                if id == self.current_image_id {
-                    self.image_state = Some(protocol);
-                }
-            }
-        }
-
         let live_image_id = self
             .view
             .image_id
@@ -623,31 +624,22 @@ impl PreviewUI {
             };
 
             if let Some(img) = image_opt
-                && let Some(picker) = self.picker.clone()
+                && let Some(picker) = self.picker.as_ref()
             {
                 let zoom = self.zoom;
-                let tx = self.pending_protocol_tx.clone();
-                let is_gen = self.is_generating_protocol.clone();
-                let changed_signal = self.view.changed.clone();
-
-                is_gen.store(true, std::sync::atomic::Ordering::Release);
-                tokio::task::spawn_blocking(move || {
-                    let display_img = if zoom != 1.0 {
-                        let center_x = img.width() / 2;
-                        let center_y = img.height() / 2;
-                        let crop_w = (img.width() as f32 / zoom) as u32;
-                        let crop_h = (img.height() as f32 / zoom) as u32;
-                        let x = center_x.saturating_sub(crop_w / 2);
-                        let y = center_y.saturating_sub(crop_h / 2);
-                        img.crop_imm(x, y, crop_w, crop_h)
-                    } else {
-                        img
-                    };
-                    let state = picker.new_resize_protocol(display_img);
-                    let _ = tx.send((live_image_id, state));
-                    changed_signal.store(true, std::sync::atomic::Ordering::Release);
-                    is_gen.store(false, std::sync::atomic::Ordering::Release);
-                });
+                let display_img = if zoom != 1.0 {
+                    let center_x = img.width() / 2;
+                    let center_y = img.height() / 2;
+                    let crop_w = (img.width() as f32 / zoom) as u32;
+                    let crop_h = (img.height() as f32 / zoom) as u32;
+                    let x = center_x.saturating_sub(crop_w / 2);
+                    let y = center_y.saturating_sub(crop_h / 2);
+                    img.crop_imm(x, y, crop_w, crop_h)
+                } else {
+                    img
+                };
+                let state = picker.new_resize_protocol(display_img);
+                self.image_state = Some(state);
             }
         }
 
@@ -921,7 +913,8 @@ fn query_tty_picker(timeout: std::time::Duration) -> anyhow::Result<ratatui_imag
 
     let mut tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
 
-    let is_tmux = std::env::var("TERM_PROGRAM").is_ok_and(|v| v == "tmux")
+    let is_tmux = std::env::var("TMUX").is_ok()
+        || std::env::var("TERM_PROGRAM").is_ok_and(|v| v == "tmux")
         || std::env::var("TERM").is_ok_and(|t| t.starts_with("tmux"));
 
     if is_tmux {
@@ -1197,5 +1190,21 @@ mod tests {
                 assert_ne!(buf.cell((x, y)).map(|c| c.symbol()), Some("▐"));
             }
         }
+    }
+
+    #[test]
+    fn test_preview_get_image_state() {
+        use crate::preview::previewer::Previewer;
+        let config = PreviewConfig {
+            media: true,
+            ..Default::default()
+        };
+        let (previewer, _tx) = Previewer::new(Default::default());
+        let img = image::DynamicImage::new_rgb8(100, 100);
+        previewer.set_image(img);
+
+        let mut ui = PreviewUI::new(previewer.view(), config, [40, 10]);
+        let state = ui.get_image_state();
+        assert!(state.is_some(), "State must be immediately available synchronously");
     }
 }

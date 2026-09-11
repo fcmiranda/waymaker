@@ -745,4 +745,19 @@ mod tests {
         assert!(render_mermaid_to_image("", 1.0).is_none());
         assert!(render_mermaid_to_image("   \n  ", 1.0).is_none());
     }
+
+    #[test]
+    fn test_git_worktree_diagram() {
+        let src = r#"graph TD
+    BARE[".dotfiles/.bare (Git Bare Repository)"] --> MAIN[".dotfiles/main (Production Worktree / Stowed)"]
+    BARE --> WT1[".dotfiles/feat-zsh-perf (AI Sandbox 1)"]
+    BARE --> WT2[".dotfiles/feat-nvim-ui (AI Sandbox 2)"]
+    
+    MAIN ===|./stow.sh| HOME["$HOME (~/.config, ~/.zsh, ~/.local/bin, etc.)"]
+    WT1 -.->|ISOLATED / NOT STOWED| HOME
+    WT2 -.->|ISOLATED / NOT STOWED| HOME"#;
+        let img = render_mermaid_to_image(src, 1.0);
+        println!("Render result: {:?}", img.as_ref().map(|i| (i.width(), i.height())));
+        assert!(img.is_some(), "Worktree diagram should render to image");
+    }
 }

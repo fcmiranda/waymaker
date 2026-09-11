@@ -2740,7 +2740,11 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
         image_state_ready
     };
     if is_image {
-        let block = ui.make_block();
+        let block = if ui.is_fullscreen() {
+            None
+        } else {
+            ui.make_block()
+        };
         let inner_area = if let Some(b) = &block {
             b.inner(area)
         } else {
@@ -2766,7 +2770,9 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
         frame.render_widget(widget, area);
     }
 
-    ui.render_scrollbar(frame, area);
+    if !ui.is_fullscreen() {
+        ui.render_scrollbar(frame, area);
+    }
 }
 
 fn render_results<T: SSS, S: Selection>(

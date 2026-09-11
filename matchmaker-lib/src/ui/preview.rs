@@ -43,6 +43,8 @@ pub struct PreviewUI {
     picker: Option<ratatui_image::picker::Picker>,
     pub zoom: f32,
     pub show_diagram: bool,
+    pub pan_x: i32,
+    pub pan_y: i32,
     pub image_state: Option<ratatui_image::protocol::StatefulProtocol>,
     current_image_id: u64,
     last_image_area: Rect,
@@ -186,6 +188,8 @@ impl PreviewUI {
             picker,
             zoom,
             show_diagram: false,
+            pan_x: 0,
+            pan_y: 0,
             image_state: None,
             current_image_id: 0,
             last_image_area: Rect::default(),
@@ -400,29 +404,46 @@ impl PreviewUI {
     // ----- actions --------
     pub fn up(&mut self, n: u16) {
         let total_lines = self.view.len();
-        let n = n as usize;
+        let n_usize = n as usize;
 
-        if self.offset >= n {
-            self.offset -= n;
+        if self.offset >= n_usize {
+            self.offset -= n_usize;
         } else if self.config.scroll_wrap {
-            self.offset = total_lines.saturating_sub(n - self.offset);
+            self.offset = total_lines.saturating_sub(n_usize - self.offset);
         } else {
             self.offset = 0;
         }
+
+        self.pan_y = (self.pan_y - n as i32).max(0);
+        self.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        self.view
+            .changed
+            .store(true, std::sync::atomic::Ordering::Release);
     }
+
     pub fn down(&mut self, n: u16) {
         let total_lines = self.view.len();
-        let n = n as usize;
+        let n_usize = n as usize;
 
-        if self.offset + n > total_lines {
+        if self.offset + n_usize > total_lines {
             if self.config.scroll_wrap {
                 self.offset = 0;
             } else {
                 self.offset = total_lines;
             }
         } else {
-            self.offset += n;
+            self.offset += n_usize;
         }
+
+        self.pan_y = self.pan_y.saturating_add(n as i32);
+        self.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        self.view
+            .changed
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Jump directly to a specific line in the preview.
@@ -442,9 +463,22 @@ impl PreviewUI {
         if val == 0 {
             *a = 0;
         } else {
-            let new = (*a as i8 + val).clamp(0, u16::MAX as i8);
+            let new = (*a as i32 + val as i32).max(0);
             *a = new as u16;
         }
+
+        if horizontal {
+            self.pan_x = (self.pan_x + val as i32).max(0);
+        } else {
+            self.pan_y = (self.pan_y + val as i32).max(0);
+        }
+
+        self.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        self.view
+            .changed
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     pub fn set_target(&mut self, target: Option<isize>) {
@@ -521,6 +555,15 @@ impl PreviewUI {
     pub fn reset_scroll(&mut self) {
         self.offset = 0;
         self.attained_target = false;
+        self.scroll = [0, 0];
+        self.pan_x = 0;
+        self.pan_y = 0;
+        self.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        self.view
+            .changed
+            .store(true, std::sync::atomic::Ordering::Release);
     }
     pub fn scroll_end(&mut self) {
         let rl = self.view.len();
@@ -530,6 +573,13 @@ impl PreviewUI {
         let remaining_lines = rl.saturating_sub(header_count);
 
         self.offset = remaining_lines.saturating_sub(height);
+        self.pan_y = i32::MAX / 2;
+        self.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        self.view
+            .changed
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     fn target_to_offset(&self, mut target: usize) -> usize {
@@ -654,46 +704,49 @@ impl PreviewUI {
                 let img_w = img.width() as f32;
                 let img_h = img.height() as f32;
 
-                let (base_w, base_h) =
-                    if img_w > 0.0 && img_h > 0.0 && self.area.width > 0 && self.area.height > 0 {
-                        let fit_scale = (avail_px_w / img_w).min(avail_px_h / img_h);
-                        let bw = ((img_w * fit_scale).round() as u32).max(4);
-                        let bh = ((img_h * fit_scale).round() as u32).max(4);
-                        (bw, bh)
-                    } else {
-                        (img.width().max(4), img.height().max(4))
-                    };
+                if img_w > 0.0 && img_h > 0.0 && self.area.width > 0 && self.area.height > 0 {
+                    // Base fit scale: scales the image so it fits entirely within the preview area (preserving aspect ratio)
+                    let fit_scale = (avail_px_w / img_w).min(avail_px_h / img_h);
+                    let scale = (fit_scale * self.zoom).max(0.01);
 
-                let zoom = self.zoom;
-                let display_img = if zoom > 1.001 {
-                    let crop_w = ((img.width() as f32 / zoom) as u32).clamp(1, img.width());
-                    let crop_h = ((img.height() as f32 / zoom) as u32).clamp(1, img.height());
-                    let cropped = img.crop_imm(0, 0, crop_w, crop_h);
-                    cropped.resize_exact(
-                        base_w,
-                        base_h,
-                        image::imageops::FilterType::Triangle,
-                    )
-                } else if zoom < 0.999 && zoom > 0.05 {
-                    let scaled_w = ((base_w as f32 * zoom) as u32).clamp(1, base_w);
-                    let scaled_h = ((base_h as f32 * zoom) as u32).clamp(1, base_h);
-                    let scaled = img.resize_exact(
-                        scaled_w,
-                        scaled_h,
+                    // Virtual pixel dimensions of the image with zoom applied
+                    let virtual_w = ((img_w * scale).round() as u32).max(4);
+                    let virtual_h = ((img_h * scale).round() as u32).max(4);
+
+                    // Displayed pixel dimensions on screen (bounded by available preview area)
+                    let display_w = virtual_w.min(avail_px_w as u32).max(4);
+                    let display_h = virtual_h.min(avail_px_h as u32).max(4);
+
+                    // Maximum pan in pixels
+                    let max_pan_px_x = (virtual_w as f32 - display_w as f32).max(0.0);
+                    let max_pan_px_y = (virtual_h as f32 - display_h as f32).max(0.0);
+
+                    // Convert current pan cell coordinates to pixels and clamp
+                    let pan_px_x = (self.pan_x as f32 * font_w).clamp(0.0, max_pan_px_x);
+                    let pan_px_y = (self.pan_y as f32 * font_h).clamp(0.0, max_pan_px_y);
+
+                    // Sync clamped pan back to self in cell units
+                    self.pan_x = (pan_px_x / font_w).round() as i32;
+                    self.pan_y = (pan_px_y / font_h).round() as i32;
+
+                    // Compute source rectangle inside img coordinates
+                    let src_x = ((pan_px_x / scale).round() as u32).min(img.width().saturating_sub(1));
+                    let src_y = ((pan_px_y / scale).round() as u32).min(img.height().saturating_sub(1));
+                    let src_w = ((display_w as f32 / scale).round() as u32).clamp(1, img.width() - src_x);
+                    let src_h = ((display_h as f32 / scale).round() as u32).clamp(1, img.height() - src_y);
+
+                    let cropped = img.crop_imm(src_x, src_y, src_w, src_h);
+                    let display_img = cropped.resize_exact(
+                        display_w,
+                        display_h,
                         image::imageops::FilterType::Triangle,
                     );
-                    let mut canvas = image::RgbaImage::from_pixel(
-                        base_w,
-                        base_h,
-                        image::Rgba([0, 0, 0, 0]),
-                    );
-                    image::imageops::overlay(&mut canvas, &scaled.to_rgba8(), 0, 0);
-                    image::DynamicImage::ImageRgba8(canvas)
+                    let state = picker.new_resize_protocol(display_img);
+                    self.image_state = Some(state);
                 } else {
-                    img.resize_exact(base_w, base_h, image::imageops::FilterType::Triangle)
-                };
-                let state = picker.new_resize_protocol(display_img);
-                self.image_state = Some(state);
+                    let state = picker.new_resize_protocol(img);
+                    self.image_state = Some(state);
+                }
             }
         }
 
@@ -1355,5 +1408,26 @@ mod tests {
         ui.update_dimensions(&Rect::new(0, 0, 80, 24));
         let state_resized = ui.get_image_state();
         assert!(state_resized.is_some(), "State must be updated for new area");
+
+        // Test Panning when zoomed in
+        ui.zoom = 5.0;
+        ui.down(5);
+        assert_eq!(ui.pan_y, 5);
+        let state_panned_down = ui.get_image_state();
+        assert!(state_panned_down.is_some(), "State must update on vertical pan down");
+
+        ui.scroll(true, 10);
+        assert_eq!(ui.pan_x, 10);
+        let state_panned_right = ui.get_image_state();
+        assert!(state_panned_right.is_some(), "State must update on horizontal pan right");
+
+        ui.up(2);
+        assert_eq!(ui.pan_y, 3);
+        ui.scroll(true, -4);
+        assert_eq!(ui.pan_x, 6);
+
+        ui.reset_scroll();
+        assert_eq!(ui.pan_x, 0);
+        assert_eq!(ui.pan_y, 0);
     }
 }

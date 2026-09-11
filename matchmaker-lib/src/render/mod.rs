@@ -280,20 +280,36 @@ fn process_results_nav_key<A: ActionExt>(
 ) {
     if preview_fullscreen {
         match key {
-            "j" => {
+            "j" | "down" => {
                 out.push(RenderCommand::Action(Action::PreviewDown(1)));
                 return;
             }
-            "k" => {
+            "k" | "up" => {
                 out.push(RenderCommand::Action(Action::PreviewUp(1)));
                 return;
             }
-            "J" | "shift-j" => {
+            "h" | "left" => {
+                out.push(RenderCommand::Action(Action::PreviewHScroll(-2)));
+                return;
+            }
+            "l" | "right" => {
+                out.push(RenderCommand::Action(Action::PreviewHScroll(2)));
+                return;
+            }
+            "J" | "shift-j" | "shift-down" => {
                 out.push(RenderCommand::Action(Action::PreviewDown(5)));
                 return;
             }
-            "K" | "shift-k" => {
+            "K" | "shift-k" | "shift-up" => {
                 out.push(RenderCommand::Action(Action::PreviewUp(5)));
+                return;
+            }
+            "H" | "shift-left" => {
+                out.push(RenderCommand::Action(Action::PreviewHScroll(-10)));
+                return;
+            }
+            "L" | "shift-right" => {
+                out.push(RenderCommand::Action(Action::PreviewHScroll(10)));
                 return;
             }
             "ctrl-u" | "u" => {
@@ -346,7 +362,7 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::Quit(130)));
                 return;
             }
-            k if k.eq_ignore_ascii_case("esc") || k == "h" || k == "enter" => {
+            k if k.eq_ignore_ascii_case("esc") || k == "enter" => {
                 *sim_focus = Focus::Input;
                 out.push(RenderCommand::Action(Action::CyclePreview));
                 return;
@@ -1268,6 +1284,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 } else {
                                     p.up(n);
                                 }
+                                tui.redraw();
                             }
                         }
                         Action::PreviewDown(n) => {
@@ -1277,6 +1294,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 } else {
                                     p.down(n);
                                 }
+                                tui.redraw();
                             }
                         }
                         Action::ExpandPreview(n) => {
@@ -1316,6 +1334,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         Action::PreviewResetZoom | Action::DiagramResetZoom => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.zoom = 1.0_f32;
+                                p.pan_x = 0;
+                                p.pan_y = 0;
                                 p.view
                                     .image_id
                                     .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -1340,12 +1360,14 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 } else {
                                     p.down(n)
                                 }
+                                tui.redraw();
                             }
                         }
 
                         Action::PreviewHScroll(x) | Action::PreviewScroll(x) => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.scroll(matches!(action, Action::PreviewHScroll(_)), x);
+                                tui.redraw();
                             }
                         }
                         Action::PreviewJump => {
@@ -3059,7 +3081,7 @@ pub const NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
 ];
 
 pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
-    ("[j/k]", "Scroll", ratatui::style::Color::Yellow),
+    ("[hjkl]", "Pan", ratatui::style::Color::Yellow),
     ("[J/K]", "Jump5", ratatui::style::Color::Yellow),
     ("[C-u/u]", "HalfPg", ratatui::style::Color::Yellow),
     ("[n/N]", "Diagram", ratatui::style::Color::Cyan),
@@ -3934,6 +3956,33 @@ mod test {
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(1))));
+
+        // h / l when preview_fullscreen is true -> PreviewHScroll(-2) / PreviewHScroll(2)
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('h'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(-2))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('l'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(2))));
 
         // d when preview_fullscreen is true -> ToggleDiagram
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('d'))];

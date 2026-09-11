@@ -71,11 +71,11 @@ pub fn extract_mermaid_blocks(src: &str) -> Vec<(usize, String)> {
 
     for (line_idx, line) in src.lines().enumerate() {
         let trimmed = line.trim();
-        if !in_block && (trimmed == "```mermaid" || trimmed == "~~~mermaid") {
+        if !in_block && (trimmed.starts_with("```mermaid") || trimmed.starts_with("~~~mermaid")) {
             in_block = true;
             block_start_line = line_idx;
             buf.clear();
-        } else if in_block && (trimmed == "```" || trimmed == "~~~") {
+        } else if in_block && (trimmed.starts_with("```") || trimmed.starts_with("~~~")) {
             in_block = false;
             blocks.push((block_start_line, buf.trim().to_owned()));
             buf.clear();

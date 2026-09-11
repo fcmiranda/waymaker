@@ -296,10 +296,6 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::PreviewUp(5)));
                 return;
             }
-            "ctrl-d" => {
-                out.push(RenderCommand::Action(Action::PreviewHalfPageDown));
-                return;
-            }
             "ctrl-u" | "u" => {
                 out.push(RenderCommand::Action(Action::PreviewHalfPageUp));
                 return;
@@ -318,7 +314,7 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::PreviewDown(0)));
                 return;
             }
-            "d" | "m" => {
+            "ctrl-d" | "d" | "m" => {
                 out.push(RenderCommand::Action(Action::ToggleDiagram));
                 return;
             }
@@ -376,7 +372,10 @@ fn process_results_nav_key<A: ActionExt>(
             out.push(RenderCommand::Action(Action::PreviewUp(5)));
             return;
         }
-        if key == "d" && !focus_binds.contains_key("d") {
+        if (key == "d" || key == "ctrl-d")
+            && !focus_binds.contains_key("d")
+            && !focus_binds.contains_key("ctrl-d")
+        {
             out.push(RenderCommand::Action(Action::ToggleDiagram));
             return;
         }
@@ -1394,7 +1393,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                             );
                                             if let Some(img) =
                                                 crate::utils::mermaid::render_mermaid_to_image(
-                                                    src, p.zoom,
+                                                    src, 2.0,
                                                 )
                                             {
                                                 if let Ok(mut guard) = p.view.image.lock() {
@@ -1421,6 +1420,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             if let Some(p) = preview_ui.as_mut() {
                                 p.cycle_layout();
                                 p.current_dimension = None;
+                                p.view.image_id.fetch_add(1, std::sync::atomic::Ordering::Release);
                                 p.view.changed.store(true, std::sync::atomic::Ordering::Release);
                                 state.insert(crate::message::Event::PreviewChange);
                                 if !p.command().is_empty() {
@@ -2782,8 +2782,8 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
         let media_fit_str = ui.config.media_fit.as_deref().unwrap_or("fit");
         let resize_mode = match media_fit_str.to_lowercase().as_str() {
             "crop" | "cover" => ratatui_image::Resize::Crop(None),
-            "scale" | "stretch" => ratatui_image::Resize::Scale(None),
-            "fit" | "contain" | _ => ratatui_image::Resize::Fit(None),
+            "scale" | "stretch" | "fit" | "contain" => ratatui_image::Resize::Scale(None),
+            _ => ratatui_image::Resize::Fit(None),
         };
 
         if let Some(state) = ui.get_image_state() {
@@ -3061,11 +3061,11 @@ pub const NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
 pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[j/k]", "Scroll", ratatui::style::Color::Yellow),
     ("[J/K]", "Jump5", ratatui::style::Color::Yellow),
-    ("[C-d/u]", "HalfPg", ratatui::style::Color::Yellow),
+    ("[C-u/u]", "HalfPg", ratatui::style::Color::Yellow),
     ("[n/N]", "Diagram", ratatui::style::Color::Cyan),
     ("[+/-]", "Zoom", ratatui::style::Color::Green),
     ("[0/z]", "Reset", ratatui::style::Color::Blue),
-    ("[d]", "Text/Image", ratatui::style::Color::Magenta),
+    ("[C-d/d]", "Diagram", ratatui::style::Color::Magenta),
     ("[esc/enter]", "Back", ratatui::style::Color::Red),
 ];
 
@@ -3937,6 +3937,23 @@ mod test {
 
         // d when preview_fullscreen is true -> ToggleDiagram
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('d'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleDiagram)));
+
+        // ctrl-d when preview_fullscreen is true -> ToggleDiagram
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "ctrl-d".to_string(),
+            action: Action::ToggleDiagram,
+        }];
         apply_focus_binds(
             &mut buffer,
             Focus::Results,

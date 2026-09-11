@@ -45,6 +45,7 @@ pub struct PreviewUI {
     pub show_diagram: bool,
     pub image_state: Option<ratatui_image::protocol::StatefulProtocol>,
     current_image_id: u64,
+    last_image_area: Rect,
 }
 
 impl PreviewUI {
@@ -187,6 +188,7 @@ impl PreviewUI {
             show_diagram: false,
             image_state: None,
             current_image_id: 0,
+            last_image_area: Rect::default(),
         }
     }
 
@@ -625,8 +627,11 @@ impl PreviewUI {
             .image_id
             .load(std::sync::atomic::Ordering::Acquire);
 
-        if live_image_id != self.current_image_id {
+        let area_changed = self.area != self.last_image_area;
+
+        if live_image_id != self.current_image_id || area_changed {
             self.current_image_id = live_image_id;
+            self.last_image_area = self.area;
             self.image_state = None;
 
             let image_opt = if let Ok(guard) = self.view.image.lock() {
@@ -638,33 +643,54 @@ impl PreviewUI {
             if let Some(img) = image_opt
                 && let Some(picker) = self.picker.as_ref()
             {
+                let (font_w, font_h) = {
+                    let sz = picker.font_size();
+                    (sz.width.max(1) as f32, sz.height.max(1) as f32)
+                };
+
+                let avail_px_w = (self.area.width as f32 * font_w).max(10.0);
+                let avail_px_h = (self.area.height as f32 * font_h).max(10.0);
+
+                let img_w = img.width() as f32;
+                let img_h = img.height() as f32;
+
+                let (base_w, base_h) =
+                    if img_w > 0.0 && img_h > 0.0 && self.area.width > 0 && self.area.height > 0 {
+                        let fit_scale = (avail_px_w / img_w).min(avail_px_h / img_h);
+                        let bw = ((img_w * fit_scale).round() as u32).max(4);
+                        let bh = ((img_h * fit_scale).round() as u32).max(4);
+                        (bw, bh)
+                    } else {
+                        (img.width().max(4), img.height().max(4))
+                    };
+
                 let zoom = self.zoom;
                 let display_img = if zoom > 1.001 {
                     let crop_w = ((img.width() as f32 / zoom) as u32).clamp(1, img.width());
                     let crop_h = ((img.height() as f32 / zoom) as u32).clamp(1, img.height());
                     let cropped = img.crop_imm(0, 0, crop_w, crop_h);
                     cropped.resize_exact(
-                        img.width(),
-                        img.height(),
+                        base_w,
+                        base_h,
                         image::imageops::FilterType::Triangle,
                     )
                 } else if zoom < 0.999 && zoom > 0.05 {
-                    let scaled_w = ((img.width() as f32 * zoom) as u32).clamp(1, img.width());
-                    let scaled_h = ((img.height() as f32 * zoom) as u32).clamp(1, img.height());
+                    let scaled_w = ((base_w as f32 * zoom) as u32).clamp(1, base_w);
+                    let scaled_h = ((base_h as f32 * zoom) as u32).clamp(1, base_h);
                     let scaled = img.resize_exact(
                         scaled_w,
                         scaled_h,
                         image::imageops::FilterType::Triangle,
                     );
                     let mut canvas = image::RgbaImage::from_pixel(
-                        img.width(),
-                        img.height(),
+                        base_w,
+                        base_h,
                         image::Rgba([0, 0, 0, 0]),
                     );
                     image::imageops::overlay(&mut canvas, &scaled.to_rgba8(), 0, 0);
                     image::DynamicImage::ImageRgba8(canvas)
                 } else {
-                    img
+                    img.resize_exact(base_w, base_h, image::imageops::FilterType::Triangle)
                 };
                 let state = picker.new_resize_protocol(display_img);
                 self.image_state = Some(state);
@@ -1324,5 +1350,10 @@ mod tests {
         ui.view.image_id.fetch_add(1, std::sync::atomic::Ordering::Release);
         let state_zoomed_out = ui.get_image_state();
         assert!(state_zoomed_out.is_some(), "State must be valid for zoom out");
+
+        // Test dimension update (e.g. entering fullscreen preview)
+        ui.update_dimensions(&Rect::new(0, 0, 80, 24));
+        let state_resized = ui.get_image_state();
+        assert!(state_resized.is_some(), "State must be updated for new area");
     }
 }

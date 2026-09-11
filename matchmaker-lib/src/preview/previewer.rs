@@ -429,7 +429,7 @@ impl Previewer {
                             if is_mermaid && media_enabled {
                                 // Try graphics-based rendering first (Kitty protocol)
                                 let img = crate::utils::mermaid::render_mermaid_file_to_image(
-                                    p, 1.0, // Initial scale 1.0; zoom is handled by PreviewUI
+                                    p, 2.0, // Scale 2.0 for high-DPI rendering; PreviewUI handles area fit and zoom
                                 );
 
                                 if rx.has_changed().unwrap_or(false) {
@@ -502,7 +502,7 @@ impl Previewer {
                                         if let Some(first_diag) = sources.first() {
                                             if let Some(rendered_img) =
                                                 crate::utils::mermaid::render_mermaid_to_image(
-                                                    first_diag, 1.0,
+                                                    first_diag, 2.0,
                                                 )
                                             {
                                                 if let Ok(mut guard) = image_state.lock() {

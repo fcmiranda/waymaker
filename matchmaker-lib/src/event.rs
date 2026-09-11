@@ -159,6 +159,7 @@ impl<A: ActionExt> EventLoop<A> {
             key!(backspace) => self.send_key_action(Action::DeleteChar, key_str),
             key!(ctrl - h) => self.send_key_action(Action::DeleteWord, key_str),
             key!(ctrl - u) => self.send_key_action(Action::Cancel, key_str),
+            key!(ctrl - d) => self.send_key_action(Action::ToggleDiagram, key_str),
             key!(alt - h) => self.send_key_action(Action::Help("".to_string()), key_str),
             key!(ctrl - '[') => self.send_key_action(Action::ToggleWrap, key_str),
             key!(ctrl - ']') => self.send_key_action(Action::TogglePreviewWrap, key_str),

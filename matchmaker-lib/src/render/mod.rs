@@ -598,9 +598,10 @@ fn apply_focus_binds<A: ActionExt>(
                 );
             }
             RenderCommand::KeyAction { key, action } if sim_focus == Focus::Results || preview_fullscreen => {
-                if last_consumed_nav_key
-                    .as_deref()
-                    .is_some_and(|k| k.eq_ignore_ascii_case(&key))
+                if !preview_fullscreen
+                    && last_consumed_nav_key
+                        .as_deref()
+                        .is_some_and(|k| k.eq_ignore_ascii_case(&key))
                 {
                     continue;
                 }
@@ -614,7 +615,7 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut out,
                     preview_fullscreen,
                 );
-                if get_nav_bind(focus_binds, &key).is_some() {
+                if !preview_fullscreen && get_nav_bind(focus_binds, &key).is_some() {
                     last_consumed_nav_key = Some(key);
                 } else {
                     last_consumed_nav_key = None;
@@ -2776,6 +2777,7 @@ fn find_interaction(setting: &crate::config::InteractionRegionSetting, x: u16) -
 
 fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
     assert!(ui.visible()); // don't call if not visible.
+    ui.update_dimensions(&area);
 
     let has_markdown = ui.has_markdown();
     let has_diagram = ui.has_diagram();

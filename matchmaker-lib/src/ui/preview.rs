@@ -404,12 +404,15 @@ impl PreviewUI {
     // ----- actions --------
     pub fn up(&mut self, n: u16) {
         let total_lines = self.view.len();
+        let height = self.area.height as usize;
         let n_usize = n as usize;
+        let header_count = self.initial().header_lines.min(height);
+        let max_offset = total_lines.saturating_sub(height).saturating_sub(header_count);
 
         if self.offset >= n_usize {
             self.offset -= n_usize;
-        } else if self.config.scroll_wrap {
-            self.offset = total_lines.saturating_sub(n_usize - self.offset);
+        } else if self.config.scroll_wrap && self.offset == 0 {
+            self.offset = max_offset;
         } else {
             self.offset = 0;
         }
@@ -425,16 +428,19 @@ impl PreviewUI {
 
     pub fn down(&mut self, n: u16) {
         let total_lines = self.view.len();
+        let height = self.area.height as usize;
         let n_usize = n as usize;
+        let header_count = self.initial().header_lines.min(height);
+        let max_offset = total_lines.saturating_sub(height).saturating_sub(header_count);
 
-        if self.offset + n_usize > total_lines {
-            if self.config.scroll_wrap {
+        if self.config.scroll_wrap {
+            if self.offset >= max_offset {
                 self.offset = 0;
             } else {
-                self.offset = total_lines;
+                self.offset = (self.offset + n_usize).min(max_offset);
             }
         } else {
-            self.offset += n_usize;
+            self.offset = (self.offset + n_usize).min(max_offset);
         }
 
         self.pan_y = self.pan_y.saturating_add(n as i32);

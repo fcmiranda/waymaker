@@ -1176,7 +1176,7 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
 
     // preview handler
     // important that PreviewSet events don't accidentally trigger this!
-    mm.register_event_handler(Event::CursorChange | Event::PreviewChange | Event::Synced, move |state, _| {
+    mm.register_event_handler(Event::CursorChange | Event::PreviewChange | Event::Resize | Event::Synced, move |state, _| {
             // don't clobber previewset events
             if state.contains(Event::PreviewSet) {
                 // code logic-wise, recieve PreviewSet::None semantically => will recieve PreviewMessage::Unset => we should skip anyways (events is immutable), altho semantically such a state should actually trigger a new preview tho it would be niche

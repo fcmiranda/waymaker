@@ -639,14 +639,24 @@ impl PreviewUI {
                 && let Some(picker) = self.picker.as_ref()
             {
                 let zoom = self.zoom;
-                let display_img = if (zoom - 1.0).abs() > 0.001 {
-                    let center_x = img.width() / 2;
-                    let center_y = img.height() / 2;
-                    let crop_w = ((img.width() as f32 / zoom) as u32).clamp(1, img.width());
-                    let crop_h = ((img.height() as f32 / zoom) as u32).clamp(1, img.height());
-                    let x = center_x.saturating_sub(crop_w / 2).min(img.width() - crop_w);
-                    let y = center_y.saturating_sub(crop_h / 2).min(img.height() - crop_h);
+                let display_img = if zoom >= 1.0 && (zoom - 1.0).abs() > 0.001 {
+                    let crop_w = ((img.width() as f32 / zoom) as u32).clamp(4, img.width());
+                    let crop_h = ((img.height() as f32 / zoom) as u32).clamp(4, img.height());
+                    let x = (img.width() - crop_w) / 2;
+                    let y = (img.height() - crop_h) / 2;
                     img.crop_imm(x, y, crop_w, crop_h)
+                } else if zoom < 1.0 && zoom > 0.05 {
+                    let canvas_w = ((img.width() as f32 / zoom) as u32).max(img.width() + 1);
+                    let canvas_h = ((img.height() as f32 / zoom) as u32).max(img.height() + 1);
+                    let mut canvas = image::RgbaImage::from_pixel(
+                        canvas_w,
+                        canvas_h,
+                        image::Rgba([255, 255, 255, 0]),
+                    );
+                    let offset_x = (canvas_w - img.width()) / 2;
+                    let offset_y = (canvas_h - img.height()) / 2;
+                    image::imageops::overlay(&mut canvas, &img.to_rgba8(), offset_x as i64, offset_y as i64);
+                    image::DynamicImage::ImageRgba8(canvas)
                 } else {
                     img
                 };
@@ -656,6 +666,54 @@ impl PreviewUI {
         }
 
         self.image_state.as_mut()
+    }
+
+    /// Compute a centered sub-rectangle within `inner_area` matching the image's cell aspect ratio
+    pub fn get_centered_image_area(&self, inner_area: Rect) -> Rect {
+        if inner_area.width == 0 || inner_area.height == 0 {
+            return inner_area;
+        }
+
+        let img_dims = if let Ok(guard) = self.view.image.lock() {
+            guard.as_ref().map(|img| (img.width(), img.height()))
+        } else {
+            None
+        };
+
+        let Some((img_w, img_h)) = img_dims else {
+            return inner_area;
+        };
+
+        if img_w == 0 || img_h == 0 {
+            return inner_area;
+        }
+
+        let (font_w, font_h) = if let Some(p) = self.picker.as_ref() {
+            let sz = p.font_size();
+            (sz.width.max(1) as f32, sz.height.max(1) as f32)
+        } else {
+            (10.0, 20.0)
+        };
+
+        let cell_w = img_w as f32 / font_w;
+        let cell_h = img_h as f32 / font_h;
+
+        let scale = (inner_area.width as f32 / cell_w).min(inner_area.height as f32 / cell_h);
+        let target_w = (cell_w * scale).round() as u16;
+        let target_h = (cell_h * scale).round() as u16;
+
+        let target_w = target_w.clamp(1, inner_area.width);
+        let target_h = target_h.clamp(1, inner_area.height);
+
+        let offset_x = (inner_area.width - target_w) / 2;
+        let offset_y = (inner_area.height - target_h) / 2;
+
+        Rect {
+            x: inner_area.x + offset_x,
+            y: inner_area.y + offset_y,
+            width: target_w,
+            height: target_h,
+        }
     }
 
     fn title_text(&self) -> Option<String> {
@@ -682,7 +740,12 @@ impl PreviewUI {
                         .current_diagram_idx
                         .load(std::sync::atomic::Ordering::Relaxed)
                         + 1;
-                    let diag_badge = format!(" [Diagram {cur}/{total}]");
+                    let pct = (self.zoom * 100.0).round() as u32;
+                    let diag_badge = if pct != 100 {
+                        format!(" [Diagram {cur}/{total} · {pct}%]")
+                    } else {
+                        format!(" [Diagram {cur}/{total}]")
+                    };
                     if base_title.is_empty() {
                         base_title = diag_badge.trim().to_string();
                     } else {

@@ -1278,10 +1278,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                         Action::PreviewZoomIn | Action::DiagramZoomIn => {
                             if let Some(p) = preview_ui.as_mut() {
-                                p.zoom /= 1.25_f32;
-                                if p.zoom < 0.25 {
-                                    p.zoom = 0.25;
-                                }
+                                p.zoom = (p.zoom * 1.25_f32).min(50.0);
                                 p.view
                                     .image_id
                                     .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -1293,7 +1290,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                         Action::PreviewZoomOut | Action::DiagramZoomOut => {
                             if let Some(p) = preview_ui.as_mut() {
-                                p.zoom = (p.zoom * 1.25_f32).min(5.0);
+                                p.zoom = (p.zoom / 1.25_f32).max(0.1);
                                 p.view
                                     .image_id
                                     .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -1411,6 +1408,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 p.cycle_layout();
                                 p.current_dimension = None;
                                 p.view.changed.store(true, std::sync::atomic::Ordering::Release);
+                                state.insert(crate::message::Event::PreviewChange);
                                 if !p.command().is_empty() {
                                     state.update_preview_payload(p.command());
                                 }
@@ -2216,13 +2214,17 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         && preview_ui.visible()
                     {
                         if state.preview_fullscreen {
-                            let mut full_area = _area;
-                            let footer = split(
-                                &mut full_area,
-                                effective_footer_height,
-                                false,
-                            );
-                            let preview = full_area;
+                            let (preview, footer) = if footer.height > 0 {
+                                (_area, footer)
+                            } else {
+                                let mut full_area = _area;
+                                let f = split(
+                                    &mut full_area,
+                                    effective_footer_height,
+                                    false,
+                                );
+                                (full_area, f)
+                            };
                             [preview, Rect::default(), footer, Rect::default()]
                         } else {
                             // Temporarily widen the gap so the counter fits horizontally.
@@ -2466,12 +2468,14 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                     if state.preview_fullscreen {
                         if footer.height > 0 {
+                            let zoom_pct = preview_ui.as_ref().map(|p| (p.zoom * 100.0).round() as u32);
                             render_nav_hints(
                                 frame,
                                 footer,
                                 false,
                                 ui.config.nav_hints_columns,
                                 true,
+                                zoom_pct,
                             );
                         }
                     } else if show_sort_menu && footer.height > 0 {
@@ -2485,6 +2489,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 ui.config.nav_basic,
                                 ui.config.nav_hints_columns,
                                 false,
+                                None,
                             );
                         }
                     }
@@ -2760,9 +2765,10 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
             "fit" | "contain" | _ => ratatui_image::Resize::Fit(None),
         };
 
+        let centered_area = ui.get_centered_image_area(inner_area);
         if let Some(state) = ui.get_image_state() {
             let image_widget = ratatui_image::StatefulImage::new().resize(resize_mode);
-            frame.render_stateful_widget(image_widget, inner_area, state);
+            frame.render_stateful_widget(image_widget, centered_area, state);
         }
     } else {
         let widget = ui.make_preview();
@@ -3045,7 +3051,14 @@ pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[esc/enter]", "Back", ratatui::style::Color::Red),
 ];
 
-fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usize, preview_fullscreen: bool) {
+fn render_nav_hints(
+    frame: &mut Frame,
+    area: Rect,
+    is_basic: bool,
+    columns: usize,
+    preview_fullscreen: bool,
+    zoom_pct: Option<u32>,
+) {
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
@@ -3066,12 +3079,17 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usiz
         let max_w = area.width as usize;
 
         for (key, label, color) in hints {
+            let label_owned = if preview_fullscreen && *key == "[+/-]" && let Some(pct) = zoom_pct {
+                format!("Zoom {pct}%")
+            } else {
+                label.to_string()
+            };
             let key_span = Span::styled(
                 format!(" {key}"),
                 Style::default().fg(*color).add_modifier(Modifier::BOLD),
             );
             let label_span =
-                Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray));
+                Span::styled(format!(" {label_owned} "), Style::default().fg(Color::DarkGray));
             let pair_w = key_span.width() + label_span.width();
             if total_w + pair_w > max_w {
                 break;
@@ -3097,12 +3115,17 @@ fn render_nav_hints(frame: &mut Frame, area: Rect, is_basic: bool, columns: usiz
                 let idx = row * cols + col;
                 if idx < hints.len() {
                     let (key, label, color) = hints[idx];
+                    let label_owned = if preview_fullscreen && key == "[+/-]" && let Some(pct) = zoom_pct {
+                        format!("Zoom {pct}%")
+                    } else {
+                        label.to_string()
+                    };
                     let key_span = Span::styled(
                         format!(" {key}"),
                         Style::default().fg(color).add_modifier(Modifier::BOLD),
                     );
                     let label_span =
-                        Span::styled(format!(" {label}"), Style::default().fg(Color::White));
+                        Span::styled(format!(" {label_owned}"), Style::default().fg(Color::White));
                     let used_w = key_span.width() + label_span.width();
                     line_spans.push(key_span);
                     line_spans.push(label_span);

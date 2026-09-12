@@ -371,8 +371,16 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::CyclePreview));
                 return;
             }
-            _ => {
+            k => {
                 *pending_nav_key = None;
+                if let Some(actions) = get_nav_bind(focus_binds, k) {
+                    for action in actions.iter().cloned() {
+                        if let Some(action) = action_from_null::<A>(action) {
+                            update_sim_focus(&action, sim_focus);
+                            out.push(RenderCommand::Action(action));
+                        }
+                    }
+                }
                 return;
             }
         }
@@ -1452,8 +1460,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                             }
                                         }
                                     }
-                                } else if let Ok(sources) = p.view.diagram_sources.lock() {
-                                    if !sources.is_empty() {
+                                } else {
+                                    let src_opt = p.view.diagram_sources.lock().ok().and_then(|sources| {
+                                        if sources.is_empty() {
+                                            return None;
+                                        }
                                         let total = sources.len();
                                         let cur = p.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed);
                                         let next_idx = if matches!(action, Action::NextDiagram) {
@@ -1461,28 +1472,26 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         } else {
                                             (cur + total.saturating_sub(1)) % total
                                         };
-                                        if let Some(src) = sources.get(next_idx) {
-                                            p.view.current_diagram_idx.store(
-                                                next_idx,
+                                        p.view.current_diagram_idx.store(
+                                            next_idx,
+                                            std::sync::atomic::Ordering::Release,
+                                        );
+                                        sources.get(next_idx).cloned()
+                                    });
+                                    if let Some(src) = src_opt {
+                                        if let Some(img) = crate::utils::mermaid::render_mermaid_to_image(&src, 2.0) {
+                                            if let Ok(mut guard) = p.view.image.lock() {
+                                                *guard = Some(img);
+                                            }
+                                            p.reset_diagram_pan();
+                                            p.view.image_id.fetch_add(
+                                                1,
                                                 std::sync::atomic::Ordering::Release,
                                             );
-                                            if let Some(img) =
-                                                crate::utils::mermaid::render_mermaid_to_image(
-                                                    src, 2.0,
-                                                )
-                                            {
-                                                if let Ok(mut guard) = p.view.image.lock() {
-                                                    *guard = Some(img);
-                                                    p.view.image_id.fetch_add(
-                                                        1,
-                                                        std::sync::atomic::Ordering::Release,
-                                                    );
-                                                    p.view.changed.store(
-                                                        true,
-                                                        std::sync::atomic::Ordering::Release,
-                                                    );
-                                                }
-                                            }
+                                            p.view.changed.store(
+                                                true,
+                                                std::sync::atomic::Ordering::Release,
+                                            );
                                         }
                                     }
                                 }

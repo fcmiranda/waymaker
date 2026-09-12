@@ -533,6 +533,14 @@ impl PreviewUI {
         false
     }
 
+    pub fn reset_diagram_pan(&mut self) {
+        self.pan_x = 0;
+        self.pan_y = 0;
+        self.zoom = 1.0;
+        self.last_crop_params = None;
+        self.last_pan_instant = None;
+    }
+
     pub fn set_target(&mut self, target: Option<isize>) {
         if self.initial().tail {
             return;

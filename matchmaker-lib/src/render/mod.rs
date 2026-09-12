@@ -281,39 +281,43 @@ fn process_results_nav_key<A: ActionExt>(
     if preview_fullscreen {
         match key {
             "j" | "down" => {
-                out.push(RenderCommand::Action(Action::PreviewDown(1)));
+                out.push(RenderCommand::Action(Action::PreviewDown(3)));
                 return;
             }
             "k" | "up" => {
-                out.push(RenderCommand::Action(Action::PreviewUp(1)));
+                out.push(RenderCommand::Action(Action::PreviewUp(3)));
                 return;
             }
             "h" | "left" => {
-                out.push(RenderCommand::Action(Action::PreviewHScroll(-2)));
+                out.push(RenderCommand::Action(Action::PreviewHScroll(-6)));
                 return;
             }
             "l" | "right" => {
-                out.push(RenderCommand::Action(Action::PreviewHScroll(2)));
+                out.push(RenderCommand::Action(Action::PreviewHScroll(6)));
                 return;
             }
             "J" | "shift-j" | "shift-down" => {
-                out.push(RenderCommand::Action(Action::PreviewDown(5)));
+                out.push(RenderCommand::Action(Action::PreviewDown(15)));
                 return;
             }
             "K" | "shift-k" | "shift-up" => {
-                out.push(RenderCommand::Action(Action::PreviewUp(5)));
+                out.push(RenderCommand::Action(Action::PreviewUp(15)));
                 return;
             }
             "H" | "shift-left" => {
-                out.push(RenderCommand::Action(Action::PreviewHScroll(-10)));
+                out.push(RenderCommand::Action(Action::PreviewHScroll(-18)));
                 return;
             }
             "L" | "shift-right" => {
-                out.push(RenderCommand::Action(Action::PreviewHScroll(10)));
+                out.push(RenderCommand::Action(Action::PreviewHScroll(18)));
                 return;
             }
             "ctrl-u" | "u" => {
                 out.push(RenderCommand::Action(Action::PreviewHalfPageUp));
+                return;
+            }
+            "ctrl-d" | "d" => {
+                out.push(RenderCommand::Action(Action::PreviewHalfPageDown));
                 return;
             }
             "g" => {
@@ -330,7 +334,7 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::PreviewDown(0)));
                 return;
             }
-            "ctrl-d" | "d" | "m" => {
+            "s" | "m" => {
                 out.push(RenderCommand::Action(Action::ToggleDiagram));
                 return;
             }
@@ -388,9 +392,23 @@ fn process_results_nav_key<A: ActionExt>(
             out.push(RenderCommand::Action(Action::PreviewUp(5)));
             return;
         }
-        if (key == "d" || key == "ctrl-d")
-            && !focus_binds.contains_key("d")
+        if (key == "ctrl-u" || key == "u")
+            && !focus_binds.contains_key("ctrl-u")
+            && !focus_binds.contains_key("u")
+        {
+            out.push(RenderCommand::Action(Action::PreviewHalfPageUp));
+            return;
+        }
+        if (key == "ctrl-d" || key == "d")
             && !focus_binds.contains_key("ctrl-d")
+            && !focus_binds.contains_key("d")
+        {
+            out.push(RenderCommand::Action(Action::PreviewHalfPageDown));
+            return;
+        }
+        if (key == "s" || key == "m")
+            && !focus_binds.contains_key("s")
+            && !focus_binds.contains_key("m")
         {
             out.push(RenderCommand::Action(Action::ToggleDiagram));
             return;
@@ -763,6 +781,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
     let mut buffer = Vec::with_capacity(256);
 
     while render_rx.recv_many(&mut buffer, 256).await > 0 {
+        while let Ok(cmd) = render_rx.try_recv() {
+            buffer.push(cmd);
+        }
         if state.iterations == 0 {
             log::debug!("Render loop started");
             state.needs_redraw = true;
@@ -770,6 +791,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
         let has_non_tick = buffer.iter().any(|cmd| !matches!(cmd, RenderCommand::Tick));
         if has_non_tick {
             state.needs_redraw = true;
+        }
+        if let Some(p) = preview_ui.as_mut() {
+            if p.is_pan_settling() {
+                state.needs_redraw = true;
+            }
         }
         let (mut did_pause, mut did_reload, mut did_exit, mut did_resize, mut did_cursor_wrap) =
             (false, false, None, false, false);
@@ -3109,12 +3135,13 @@ pub const NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
 
 pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[hjkl]", "Pan", ratatui::style::Color::Yellow),
-    ("[J/K]", "Jump5", ratatui::style::Color::Yellow),
-    ("[C-u/u]", "HalfPg", ratatui::style::Color::Yellow),
-    ("[n/N]", "Diagram", ratatui::style::Color::Cyan),
+    ("[J/K]", "Jump15", ratatui::style::Color::Yellow),
+    ("[C-u/u]", "HalfUp", ratatui::style::Color::Yellow),
+    ("[C-d/d]", "HalfDn", ratatui::style::Color::Yellow),
+    ("[s/m]", "Diagram", ratatui::style::Color::Magenta),
+    ("[n/N]", "DiagIdx", ratatui::style::Color::Cyan),
     ("[+/-]", "Zoom", ratatui::style::Color::Green),
     ("[0/z]", "Reset", ratatui::style::Color::Blue),
-    ("[C-d/d]", "Diagram", ratatui::style::Color::Magenta),
     ("[esc/enter]", "Back", ratatui::style::Color::Red),
 ];
 
@@ -3967,7 +3994,7 @@ mod test {
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
 
-        // j / k when preview_fullscreen is true -> PreviewDown / PreviewUp
+        // j / k when preview_fullscreen is true -> PreviewDown(3) / PreviewUp(3)
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "j".to_string(),
             action: Action::Down(1),
@@ -3982,9 +4009,9 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(1))));
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
 
-        // h / l when preview_fullscreen is true -> PreviewHScroll(-2) / PreviewHScroll(2)
+        // h / l when preview_fullscreen is true -> PreviewHScroll(-6) / PreviewHScroll(6)
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('h'))];
         apply_focus_binds(
             &mut buffer,
@@ -3996,7 +4023,7 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(-2))));
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(-6))));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('l'))];
         apply_focus_binds(
@@ -4009,9 +4036,9 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(2))));
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(6))));
 
-        // d when preview_fullscreen is true -> ToggleDiagram
+        // d when preview_fullscreen is true -> PreviewHalfPageDown
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('d'))];
         apply_focus_binds(
             &mut buffer,
@@ -4023,13 +4050,41 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleDiagram)));
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHalfPageDown)));
 
-        // ctrl-d when preview_fullscreen is true -> ToggleDiagram
+        // ctrl-d when preview_fullscreen is true -> PreviewHalfPageDown
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "ctrl-d".to_string(),
-            action: Action::ToggleDiagram,
+            action: Action::PreviewHalfPageDown,
         }];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHalfPageDown)));
+
+        // u and ctrl-u when preview_fullscreen is true -> PreviewHalfPageUp
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('u'))];
+        apply_focus_binds(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHalfPageUp)));
+
+        // s when preview_fullscreen is true -> ToggleDiagram
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('s'))];
         apply_focus_binds(
             &mut buffer,
             Focus::Results,
@@ -4076,7 +4131,7 @@ mod test {
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::Accept)));
 
-        // j / k in Focus::Input when preview_fullscreen is true -> PreviewDown(1) / PreviewUp(1)
+        // j / k in Focus::Input when preview_fullscreen is true -> PreviewDown(3) / PreviewUp(3)
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('j'))];
         apply_focus_binds(
             &mut buffer,
@@ -4088,7 +4143,7 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(1))));
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "k".to_string(),
@@ -4104,7 +4159,7 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(1))));
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(3))));
 
         // Zoom keys when preview_fullscreen is true
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('+'))];

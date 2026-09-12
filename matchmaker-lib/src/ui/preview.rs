@@ -48,6 +48,8 @@ pub struct PreviewUI {
     pub image_state: Option<ratatui_image::protocol::StatefulProtocol>,
     current_image_id: u64,
     last_image_area: Rect,
+    last_crop_params: Option<(u32, u32, u32, u32, u32, u32)>,
+    last_pan_instant: Option<std::time::Instant>,
 }
 
 impl PreviewUI {
@@ -193,6 +195,8 @@ impl PreviewUI {
             image_state: None,
             current_image_id: 0,
             last_image_area: Rect::default(),
+            last_crop_params: None,
+            last_pan_instant: None,
         }
     }
 
@@ -254,6 +258,10 @@ impl PreviewUI {
         if self.title != title {
             self.show_diagram = false;
             self.zoom = 1.0;
+            self.pan_x = 0;
+            self.pan_y = 0;
+            self.last_crop_params = None;
+            self.last_pan_instant = None;
         }
         self.title = title;
     }
@@ -436,6 +444,7 @@ impl PreviewUI {
         }
 
         self.pan_y = (self.pan_y - n as i32).max(0);
+        self.last_pan_instant = Some(std::time::Instant::now());
         self.view
             .image_id
             .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -462,6 +471,7 @@ impl PreviewUI {
         }
 
         self.pan_y = self.pan_y.saturating_add(n as i32);
+        self.last_pan_instant = Some(std::time::Instant::now());
         self.view
             .image_id
             .fetch_add(1, std::sync::atomic::Ordering::Release);
@@ -497,12 +507,30 @@ impl PreviewUI {
             self.pan_y = (self.pan_y + val as i32).max(0);
         }
 
+        self.last_pan_instant = Some(std::time::Instant::now());
         self.view
             .image_id
             .fetch_add(1, std::sync::atomic::Ordering::Release);
         self.view
             .changed
             .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub fn is_pan_settling(&mut self) -> bool {
+        if let Some(t) = self.last_pan_instant {
+            if t.elapsed() >= std::time::Duration::from_millis(150) {
+                self.last_pan_instant = None;
+                self.last_crop_params = None; // Invalidate cache to force high-quality settle render
+                self.view
+                    .image_id
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                self.view
+                    .changed
+                    .store(true, std::sync::atomic::Ordering::Release);
+                return true;
+            }
+        }
+        false
     }
 
     pub fn set_target(&mut self, target: Option<isize>) {
@@ -759,11 +787,27 @@ impl PreviewUI {
                     let src_w = ((display_w as f32 / scale).round() as u32).clamp(1, img.width() - src_x);
                     let src_h = ((display_h as f32 / scale).round() as u32).clamp(1, img.height() - src_y);
 
+                    let crop_params = (src_x, src_y, src_w, src_h, display_w, display_h);
+                    if self.last_crop_params == Some(crop_params) && self.image_state.is_some() {
+                        return self.image_state.as_mut();
+                    }
+                    self.last_crop_params = Some(crop_params);
+
+                    let is_panning = self
+                        .last_pan_instant
+                        .map(|t| t.elapsed() < std::time::Duration::from_millis(150))
+                        .unwrap_or(false);
+                    let filter = if is_panning {
+                        image::imageops::FilterType::Nearest
+                    } else {
+                        image::imageops::FilterType::Triangle
+                    };
+
                     let cropped = img.crop_imm(src_x, src_y, src_w, src_h);
                     let display_img = cropped.resize_exact(
                         display_w,
                         display_h,
-                        image::imageops::FilterType::Triangle,
+                        filter,
                     );
                     let state = picker.new_resize_protocol(display_img);
                     self.image_state = Some(state);

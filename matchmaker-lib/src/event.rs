@@ -184,6 +184,9 @@ impl<A: ActionExt> EventLoop<A> {
             Event::Refresh => {
                 self.send(RenderCommand::Refresh);
             }
+            Event::PreviewChange => {
+                self.send(RenderCommand::Tick);
+            }
             _ => {}
         }
         if let Some(actions) = self.get_bind(TriggerKind::Event(e)) {

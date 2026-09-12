@@ -209,6 +209,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
         "md" | "markdown" | "preview-md" | "preview-markdown" => {
             let text_only = args.iter().any(|a| a == "--text");
             let ascii = args.iter().any(|a| a == "--ascii");
+            let no_mermaid = args.iter().any(|a| a == "--no-mermaid" || a == "--no-diagrams");
             let width = parse_preview_width_from_args(args);
             let path_arg = parse_subcommand_path_arg(args);
             let content = if let Some(p) = path_arg {
@@ -226,16 +227,16 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
-                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii]");
+                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii] [--no-mermaid]");
                     return true;
                 }
             };
             let opts = matchmaker::utils::markdown::MarkdownOptions {
                 max_width: width,
-                render_mermaid: true,
+                render_mermaid: !no_mermaid,
                 mermaid_ascii: ascii,
                 show_line_numbers: false,
-                mermaid_image: !ascii && !text_only,
+                mermaid_image: !ascii && !text_only && !no_mermaid,
             };
             let ansi_output = matchmaker::utils::markdown::render_markdown_ansi(&content, &opts);
             if ansi_output.ends_with('\n') {

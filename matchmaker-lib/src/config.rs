@@ -432,6 +432,8 @@ impl Default for UiConfig {
         nav_binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
         nav_binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
         nav_binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
+        nav_binds.insert(".".to_string(), Actions::from([Action::NextColumn]));
+        nav_binds.insert(">".to_string(), Actions::from([Action::PrevColumn]));
         nav_binds.insert(
             "f".to_string(),
             Actions::from([Action::Semantic("frecency".to_string())]),
@@ -1480,6 +1482,10 @@ pub struct PreviewConfig {
     /// Whether to enable native markdown rendering with embedded Mermaid diagrams
     #[partial(alias = "md")]
     pub markdown: bool,
+    /// Whether to render embedded Mermaid diagrams inside markdown files. Default: true
+    #[partial(alias = "md_diag", alias = "diag")]
+    #[serde(alias = "diagrams", alias = "mermaid")]
+    pub markdown_diagrams: bool,
 }
 
 impl PreviewConfig {
@@ -1511,6 +1517,7 @@ impl Default for PreviewConfig {
             zoom: None,
             media_fit: None,
             markdown: true,
+            markdown_diagrams: true,
         }
     }
 }
@@ -1576,6 +1583,9 @@ pub struct PreviewerConfig {
 
     /// Whether native terminal image/media previewing is enabled. Default: false
     pub media: bool,
+
+    /// Whether embedded Mermaid diagrams are rendered in markdown files. Default: true
+    pub markdown_diagrams: bool,
 }
 
 impl Default for PreviewerConfig {
@@ -1595,6 +1605,7 @@ impl Default for PreviewerConfig {
             command_args: Default::default(),
             media_size: 1280,
             media: false,
+            markdown_diagrams: true,
         }
     }
 }

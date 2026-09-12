@@ -1167,6 +1167,9 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
     if previewer_config.trim_commands {
         mm.render_config.preview.trim_commands();
     }
+    let mut previewer_config = previewer_config;
+    previewer_config.media = mm.render_config.preview.media;
+    previewer_config.markdown_diagrams = mm.render_config.preview.markdown_diagrams;
     // initialize previewer
     let (previewer, tx) = Previewer::new(previewer_config.clone());
     let preview_tx = tx.clone();

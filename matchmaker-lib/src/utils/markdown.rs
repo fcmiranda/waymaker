@@ -1186,4 +1186,33 @@ Outro paragraph.
             "Offset must point within rendered text"
         );
     }
+
+    #[test]
+    fn test_render_markdown_without_diagrams() {
+        let md = r#"# Document
+
+```mermaid
+graph TD
+    X --> Y
+```
+"#;
+        let opts = MarkdownOptions {
+            render_mermaid: false,
+            ..Default::default()
+        };
+        let (text, offsets) = render_markdown_with_diagram_offsets(md, &opts);
+        assert!(
+            offsets.is_empty(),
+            "Offsets must be empty when render_mermaid is false"
+        );
+        let rendered_str = format!("{text:?}");
+        assert!(
+            !rendered_str.contains("Mermaid Diagram"),
+            "Diagram box title should not appear when render_mermaid is false"
+        );
+        assert!(
+            rendered_str.contains("X --> Y"),
+            "Original code block content should still be rendered"
+        );
+    }
 }

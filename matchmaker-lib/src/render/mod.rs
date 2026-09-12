@@ -1285,7 +1285,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 } else {
                                     p.up(n);
                                 }
-                                tui.redraw();
                             }
                         }
                         Action::PreviewDown(n) => {
@@ -1295,7 +1294,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 } else {
                                     p.down(n);
                                 }
-                                tui.redraw();
                             }
                         }
                         Action::ExpandPreview(n) => {
@@ -1317,7 +1315,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 p.view
                                     .changed
                                     .store(true, std::sync::atomic::Ordering::Release);
-                                tui.redraw();
                             }
                         }
                         Action::PreviewZoomOut | Action::DiagramZoomOut => {
@@ -1329,7 +1326,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 p.view
                                     .changed
                                     .store(true, std::sync::atomic::Ordering::Release);
-                                tui.redraw();
                             }
                         }
                         Action::PreviewResetZoom | Action::DiagramResetZoom => {
@@ -1343,13 +1339,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 p.view
                                     .changed
                                     .store(true, std::sync::atomic::Ordering::Release);
-                                tui.redraw();
                             }
                         }
                         Action::ToggleDiagram => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.toggle_diagram();
-                                tui.redraw();
                             }
                         }
                         Action::PreviewHalfPageUp | Action::PreviewHalfPageDown => {
@@ -1361,14 +1355,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 } else {
                                     p.down(n)
                                 }
-                                tui.redraw();
                             }
                         }
 
                         Action::PreviewHScroll(x) | Action::PreviewScroll(x) => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.scroll(matches!(action, Action::PreviewHScroll(_)), x);
-                                tui.redraw();
                             }
                         }
                         Action::PreviewJump => {
@@ -1433,7 +1425,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                             }
                                         }
                                     }
-                                    tui.redraw();
                                 }
                             }
                         }
@@ -1589,7 +1580,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             let active_idx = worker.query.active_column_index(cursor_byte);
 
                             let num_columns = worker.columns.len();
-                            if num_columns > 0 {
+                            let has_multiple_columns = num_columns > 1
+                                || (num_columns == 1 && !worker.columns[0].name.is_empty());
+                            if has_multiple_columns {
                                 query.prepare_column_change();
 
                                 let mut next_idx = match action {
@@ -1832,7 +1825,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 if !prompt.is_empty() {
                                     picker_ui.query.set_prompt(None);
                                 }
-                                tui.redraw();
                             }
                         }
                         Action::FocusNav => {
@@ -1857,7 +1849,6 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         .query
                                         .set_prompt(Some(ratatui::text::Line::raw(prompt.clone())));
                                 }
-                                tui.redraw();
                             }
                         }
                         Action::Overlay(index) => {

@@ -149,6 +149,10 @@ impl ResultsUI {
         self.hidden_columns = hidden_columns;
     }
 
+    pub fn current_index(&self) -> u32 {
+        self.bottom + self.cursor as u32
+    }
+
     // as given by ratatui area
     pub fn update_dimensions(&mut self, area: &Rect) {
         let [bw, bh] = [self.config.border.height(), self.config.border.width()];

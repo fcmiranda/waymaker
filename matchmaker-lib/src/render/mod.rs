@@ -1344,6 +1344,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         Action::ToggleDiagram => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.toggle_diagram();
+                                state.needs_redraw = true;
                             }
                         }
                         Action::PreviewHalfPageUp | Action::PreviewHalfPageDown => {
@@ -1401,6 +1402,39 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                                     // Update active diagram image from sources if available
                                     if let Ok(sources) = p.view.diagram_sources.lock() {
+                                        if let Some(src) = sources.get(next_idx) {
+                                            p.view.current_diagram_idx.store(
+                                                next_idx,
+                                                std::sync::atomic::Ordering::Release,
+                                            );
+                                            if let Some(img) =
+                                                crate::utils::mermaid::render_mermaid_to_image(
+                                                    src, 2.0,
+                                                )
+                                            {
+                                                if let Ok(mut guard) = p.view.image.lock() {
+                                                    *guard = Some(img);
+                                                    p.view.image_id.fetch_add(
+                                                        1,
+                                                        std::sync::atomic::Ordering::Release,
+                                                    );
+                                                    p.view.changed.store(
+                                                        true,
+                                                        std::sync::atomic::Ordering::Release,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else if let Ok(sources) = p.view.diagram_sources.lock() {
+                                    if !sources.is_empty() {
+                                        let total = sources.len();
+                                        let cur = p.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed);
+                                        let next_idx = if matches!(action, Action::NextDiagram) {
+                                            (cur + 1) % total
+                                        } else {
+                                            (cur + total.saturating_sub(1)) % total
+                                        };
                                         if let Some(src) = sources.get(next_idx) {
                                             p.view.current_diagram_idx.store(
                                                 next_idx,

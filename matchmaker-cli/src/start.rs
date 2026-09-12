@@ -443,6 +443,8 @@ pub fn map_reader<E: SSS + std::fmt::Display>(
 
 pub static COMMAND_ARGS: Mutex<Vec<std::ffi::OsString>> = Mutex::new(Vec::new());
 pub static TARGET_ITEM: Mutex<Option<String>> = Mutex::new(None);
+pub static PREV_RELOAD_ITEM: Mutex<Option<(Option<String>, u32, std::path::PathBuf)>> =
+    Mutex::new(None);
 
 fn parse_border_type(s: &str) -> ratatui::widgets::BorderType {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -1335,6 +1337,14 @@ pub async fn start(
 
     mm.register_interrupt_handler(Interrupt::Reload, move |state| {
         let current_dir = std::env::current_dir().unwrap_or_default();
+        let prev_idx = state.picker_ui.results.current_index();
+        let prev_item = state
+            .picker_ui
+            .worker
+            .get_nth(prev_idx)
+            .map(|raw| state.picker_ui.worker.columns[0].raw(raw).to_string());
+        *crate::start::PREV_RELOAD_ITEM.lock().unwrap() =
+            Some((prev_item, prev_idx, current_dir.clone()));
 
         let cmd = if !state.payload().is_empty() {
             use_formatter(&reload_formatter, state, state.payload(), None)

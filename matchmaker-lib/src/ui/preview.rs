@@ -355,6 +355,24 @@ impl PreviewUI {
 
     pub fn toggle_diagram(&mut self) {
         self.show_diagram = !self.show_diagram;
+        if self.show_diagram {
+            let needs_render = self.view.image.lock().map(|g| g.is_none()).unwrap_or(false);
+            if needs_render {
+                if let Ok(sources) = self.view.diagram_sources.lock() {
+                    let cur_idx = self
+                        .view
+                        .current_diagram_idx
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    if let Some(src) = sources.get(cur_idx) {
+                        if let Some(img) = crate::utils::mermaid::render_mermaid_to_image(src, 2.0) {
+                            if let Ok(mut g) = self.view.image.lock() {
+                                *g = Some(img);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         self.view
             .image_id
             .fetch_add(1, std::sync::atomic::Ordering::Release);

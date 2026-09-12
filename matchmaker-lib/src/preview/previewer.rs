@@ -528,10 +528,10 @@ impl Previewer {
                                     return;
                                 }
 
-                                // If media is enabled and diagrams enabled, extract and prepare diagram image
+                                // If media is enabled, extract and prepare diagram image
                                 let mut diag_img = None;
                                 let mut sources = Vec::new();
-                                if media_enabled && markdown_diagrams {
+                                if media_enabled {
                                     if let Ok(content) = std::fs::read_to_string(p) {
                                         let diagrams =
                                             crate::utils::markdown::extract_mermaid_blocks(&content);

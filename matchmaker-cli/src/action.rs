@@ -536,8 +536,40 @@ pub fn action_handler(
             }
 
             if !target_found && target_opt.is_none() {
-                state.picker_ui.results.cursor_jump(0);
-                let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
+                let mut restored = false;
+                if let Some((prev_item, prev_idx, prev_dir)) =
+                    crate::start::PREV_RELOAD_ITEM.lock().unwrap().take()
+                {
+                    let current_dir = std::env::current_dir().unwrap_or_default();
+                    if prev_dir == current_dir {
+                        let count = state.picker_ui.worker.counts().0;
+                        if count > 0 {
+                            if let Some(ref item_str) = prev_item {
+                                for i in 0..count {
+                                    if let Some(raw) = state.picker_ui.worker.get_nth(i) {
+                                        let val = state.picker_ui.worker.columns[0].raw(raw);
+                                        if val == item_str.as_str() {
+                                            state.picker_ui.results.cursor_jump(i);
+                                            let _ = render_tx.send(RenderCommand::Action(Action::Pos(i as i32)));
+                                            restored = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if !restored {
+                                let target_idx = prev_idx.min(count.saturating_sub(1));
+                                state.picker_ui.results.cursor_jump(target_idx);
+                                let _ = render_tx.send(RenderCommand::Action(Action::Pos(target_idx as i32)));
+                                restored = true;
+                            }
+                        }
+                    }
+                }
+                if !restored {
+                    state.picker_ui.results.cursor_jump(0);
+                    let _ = render_tx.send(RenderCommand::Action(Action::Pos(0)));
+                }
             }
 
             state.needs_redraw = true;

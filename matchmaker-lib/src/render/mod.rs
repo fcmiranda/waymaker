@@ -334,7 +334,7 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::PreviewDown(0)));
                 return;
             }
-            "s" | "m" => {
+            "s" => {
                 out.push(RenderCommand::Action(Action::ToggleDiagram));
                 return;
             }
@@ -414,9 +414,8 @@ fn process_results_nav_key<A: ActionExt>(
             out.push(RenderCommand::Action(Action::PreviewHalfPageDown));
             return;
         }
-        if (key == "s" || key == "m")
+        if key == "s"
             && !focus_binds.contains_key("s")
-            && !focus_binds.contains_key("m")
         {
             out.push(RenderCommand::Action(Action::ToggleDiagram));
             return;
@@ -3147,7 +3146,7 @@ pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[J/K]", "Jump15", ratatui::style::Color::Yellow),
     ("[C-u/u]", "HalfUp", ratatui::style::Color::Yellow),
     ("[C-d/d]", "HalfDn", ratatui::style::Color::Yellow),
-    ("[s/m]", "Diagram", ratatui::style::Color::Magenta),
+    ("[s]", "Diagram", ratatui::style::Color::Magenta),
     ("[n/N]", "DiagIdx", ratatui::style::Color::Cyan),
     ("[+/-]", "Zoom", ratatui::style::Color::Green),
     ("[0/z]", "Reset", ratatui::style::Color::Blue),

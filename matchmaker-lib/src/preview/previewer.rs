@@ -439,6 +439,9 @@ impl Previewer {
                         let event_tx = self.event_controller_tx.clone();
                         let media_enabled = self.config.media;
                         let markdown_diagrams = self.config.markdown_diagrams;
+                        let inline_diagrams = self.config.inline_diagrams;
+                        let diagram_theme = self.config.diagram_theme;
+                        let diagram_background = self.config.diagram_background;
 
                         tokio::task::spawn_blocking(move || {
                             if rx.has_changed().unwrap_or(false) {
@@ -451,46 +454,92 @@ impl Previewer {
                                     matches!(ext.to_lowercase().as_str(), "mmd" | "mermaid")
                                 });
 
-                            if is_mermaid && media_enabled && markdown_diagrams {
-                                // Try graphics-based rendering first (Kitty protocol)
-                                let img = crate::utils::mermaid::render_mermaid_file_to_image(
-                                    p, 2.0, // Scale 2.0 for high-DPI rendering; PreviewUI handles area fit and zoom
+                            if is_mermaid {
+                                let content = std::fs::read_to_string(p).ok();
+                                if let Some(ref c) = content {
+                                    if let Ok(mut src_guard) = diagram_sources_state.lock() {
+                                        *src_guard = vec![c.clone()];
+                                    }
+                                }
+                                current_diagram_idx_state.store(
+                                    0,
+                                    std::sync::atomic::Ordering::Release,
                                 );
 
-                                if rx.has_changed().unwrap_or(false) {
-                                    return;
+                                if markdown_diagrams && inline_diagrams && crate::utils::mermaid::is_kitty_supported() {
+                                    if let Some(ref c) = content {
+                                        if let Some(diag) = crate::utils::mermaid::render_mermaid_to_unicode_placeholders_with_options(
+                                            c,
+                                            width,
+                                            diagram_theme,
+                                            diagram_background,
+                                        ) {
+                                            if rx.has_changed().unwrap_or(false) {
+                                                return;
+                                            }
+                                            crate::utils::mermaid::transmit_kitty_image_idempotent(diag.image_id, &diag.transmission);
+                                            let mut lines = Vec::with_capacity(diag.lines.len() + 2);
+                                            lines.push(Line::default());
+                                            lines.extend(diag.lines);
+                                            lines.push(Line::default());
+                                            let rendered_text = Text::from(lines);
+                                            if let Ok(mut guard) = string_state.lock() {
+                                                *guard = Some(rendered_text);
+                                                changed.store(true, Ordering::Release);
+                                            }
+                                            if let Ok(mut img_guard) = image_state.lock() {
+                                                *img_guard = None;
+                                                image_id.fetch_add(1, Ordering::Release);
+                                            }
+                                            if let Some(ref tx) = event_tx {
+                                                let _ = tx.send(crate::message::Event::PreviewChange);
+                                            }
+                                            return;
+                                        }
+                                    }
                                 }
 
-                                if let Some(rendered_img) = img {
-                                    if let Ok(mut guard) = image_state.lock() {
-                                        *guard = Some(rendered_img);
-                                        image_id.fetch_add(1, Ordering::Release);
-                                        changed.store(true, Ordering::Release);
-                                    }
-                                    if let Ok(mut str_guard) = string_state.lock() {
-                                        *str_guard = None;
-                                    }
-                                    if let Some(ref tx) = event_tx {
-                                        let _ = tx.send(crate::message::Event::PreviewChange);
-                                    }
-                                    return;
-                                }
-                                // Fall through to text rendering if image failed
-                            }
+                                if media_enabled && markdown_diagrams {
+                                    // Try graphics-based rendering fallback (Kitty protocol)
+                                    let img = crate::utils::mermaid::render_mermaid_file_to_image_with_options(
+                                        p, 2.0, diagram_theme, diagram_background, // Scale 2.0 for high-DPI rendering
+                                    );
 
-                            // Text / fallback rendering path
-                            if is_mermaid {
+                                    if rx.has_changed().unwrap_or(false) {
+                                        return;
+                                    }
+
+                                    if let Some(rendered_img) = img {
+                                        if let Ok(mut guard) = image_state.lock() {
+                                            *guard = Some(rendered_img);
+                                            image_id.fetch_add(1, Ordering::Release);
+                                            changed.store(true, Ordering::Release);
+                                        }
+                                        if let Ok(mut str_guard) = string_state.lock() {
+                                            *str_guard = None;
+                                        }
+                                        if let Some(ref tx) = event_tx {
+                                            let _ = tx.send(crate::message::Event::PreviewChange);
+                                        }
+                                        return;
+                                    }
+                                    // Fall through to text rendering if image failed
+                                }
+
                                 let opts = crate::utils::mermaid::MermaidOptions {
                                     max_width: width,
                                     show_box: true,
                                     title: Some("Mermaid Diagram".to_string()),
+                                    theme: diagram_theme,
+                                    background: diagram_background,
                                     ..Default::default()
                                 };
-                                let rendered_text =
-                                    crate::utils::mermaid::render_mermaid_file(p, &opts)
-                                        .unwrap_or_else(|err| {
-                                            Text::from(format!("Error reading Mermaid file: {err}"))
-                                        });
+                                let rendered_text = match content {
+                                    Some(ref c) => crate::utils::mermaid::render_mermaid(c, &opts),
+                                    None => crate::utils::mermaid::render_mermaid_file(p, &opts).unwrap_or_else(|err| {
+                                        Text::from(format!("Error reading Mermaid file: {err}"))
+                                    }),
+                                };
 
                                 if rx.has_changed().unwrap_or(false) {
                                     return;
@@ -511,6 +560,9 @@ impl Previewer {
                                 let opts = crate::utils::markdown::MarkdownOptions {
                                     max_width: width,
                                     render_mermaid: markdown_diagrams,
+                                    inline_diagrams,
+                                    diagram_theme,
+                                    diagram_background,
                                     ..Default::default()
                                 };
                                 let (rendered_text, offsets) =
@@ -539,8 +591,8 @@ impl Previewer {
                                             diagrams.into_iter().map(|(_, s)| s).collect();
                                         if let Some(first_diag) = sources.first() {
                                             diag_img =
-                                                crate::utils::mermaid::render_mermaid_to_image(
-                                                    first_diag, 2.0,
+                                                crate::utils::mermaid::render_mermaid_to_image_with_options(
+                                                    first_diag, 2.0, diagram_theme, diagram_background,
                                                 );
                                         }
                                     }
@@ -991,5 +1043,71 @@ mod tests {
         assert!(try_parse_simple_command("cat `which bat`").is_none());
         assert!(try_parse_simple_command("echo 'hello world'").is_none());
         assert!(try_parse_simple_command("echo \"hello world\"").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_previewer_standalone_mermaid_with_inline_and_media() {
+        let mut previewer_cfg = crate::config::PreviewerConfig::default();
+        previewer_cfg.media = true;
+        previewer_cfg.markdown_diagrams = true;
+        previewer_cfg.inline_diagrams = true;
+
+        let (previewer, tx) = Previewer::new(previewer_cfg);
+        let string_state = previewer.string.clone();
+        let sources_state = previewer.diagram_sources.clone();
+
+        let handle = tokio::spawn(previewer.run());
+
+        // Write a temporary mermaid file
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!("test_diag_{}.mmd", std::process::id()));
+        std::fs::write(&file_path, "graph TD\n    A[Client] --> B[Server]").unwrap();
+
+        unsafe {
+            std::env::set_var("MM_INLINE_DIAGRAMS", "1");
+        }
+
+        // Send PreviewMessage::Markdown for the .mmd file
+        let _ = tx.send(PreviewMessage::Markdown(
+            file_path.to_string_lossy().to_string(),
+            Some(80),
+        ));
+
+        // Poll string state until rendered (timeout 5 seconds)
+        let start = std::time::Instant::now();
+        let mut got_placeholders = false;
+        while start.elapsed() < std::time::Duration::from_secs(5) {
+            if let Ok(guard) = string_state.lock() {
+                if let Some(ref text) = *guard {
+                    let full_str: String = text
+                        .lines
+                        .iter()
+                        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+                        .collect();
+                    if full_str.contains(crate::utils::mermaid::PLACEHOLDER) {
+                        got_placeholders = true;
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        handle.abort();
+        let _ = std::fs::remove_file(&file_path);
+        unsafe {
+            std::env::remove_var("MM_INLINE_DIAGRAMS");
+        }
+
+        assert!(
+            got_placeholders,
+            "Standalone .mmd preview with media=true and inline_diagrams=true must render inline unicode placeholders"
+        );
+        let sources = sources_state.lock().unwrap();
+        assert_eq!(
+            sources.len(),
+            1,
+            "diagram_sources must be populated for modal diagram toggle"
+        );
     }
 }

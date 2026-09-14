@@ -173,11 +173,29 @@ fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
-        if arg == "-w" || arg == "--width" {
+        if arg == "-w"
+            || arg == "--width"
+            || arg == "-t"
+            || arg == "--theme"
+            || arg == "--bg"
+            || arg == "--background"
+        {
             i += 2;
             continue;
         }
-        if arg.starts_with("--width=") || arg == "--ascii" {
+        if arg.starts_with("--width=")
+            || arg.starts_with("--theme=")
+            || arg.starts_with("--bg=")
+            || arg.starts_with("--background=")
+            || arg == "--ascii"
+            || arg == "--text"
+            || arg == "--no-mermaid"
+            || arg == "--no-diagrams"
+            || arg == "--dark"
+            || arg == "--light"
+            || arg == "--transparent"
+            || arg == "--solid"
+        {
             i += 1;
             continue;
         }
@@ -187,6 +205,48 @@ fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
         i += 1;
     }
     None
+}
+
+fn parse_theme_from_args(args: &[String]) -> matchmaker::config::DiagramTheme {
+    for (i, arg) in args.iter().enumerate() {
+        if (arg == "-t" || arg == "--theme") && i + 1 < args.len() {
+            if let Ok(theme) = args[i + 1].parse() {
+                return theme;
+            }
+        } else if let Some(val) = arg.strip_prefix("--theme=") {
+            if let Ok(theme) = val.parse() {
+                return theme;
+            }
+        } else if arg == "--dark" {
+            return matchmaker::config::DiagramTheme::Dark;
+        } else if arg == "--light" {
+            return matchmaker::config::DiagramTheme::Light;
+        }
+    }
+    matchmaker::config::DiagramTheme::Auto
+}
+
+fn parse_bg_from_args(args: &[String]) -> matchmaker::config::DiagramBackground {
+    for (i, arg) in args.iter().enumerate() {
+        if (arg == "--background" || arg == "--bg") && i + 1 < args.len() {
+            if let Ok(bg) = args[i + 1].parse() {
+                return bg;
+            }
+        } else if let Some(val) = arg.strip_prefix("--background=") {
+            if let Ok(bg) = val.parse() {
+                return bg;
+            }
+        } else if let Some(val) = arg.strip_prefix("--bg=") {
+            if let Ok(bg) = val.parse() {
+                return bg;
+            }
+        } else if arg == "--transparent" {
+            return matchmaker::config::DiagramBackground::Transparent;
+        } else if arg == "--solid" {
+            return matchmaker::config::DiagramBackground::Solid;
+        }
+    }
+    matchmaker::config::DiagramBackground::Transparent
 }
 
 fn handle_frecency_cli(args: &[String]) -> bool {
@@ -211,6 +271,8 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             let ascii = args.iter().any(|a| a == "--ascii");
             let no_mermaid = args.iter().any(|a| a == "--no-mermaid" || a == "--no-diagrams");
             let width = parse_preview_width_from_args(args);
+            let theme = parse_theme_from_args(args);
+            let bg = parse_bg_from_args(args);
             let path_arg = parse_subcommand_path_arg(args);
             let content = if let Some(p) = path_arg {
                 if p == "-" {
@@ -227,7 +289,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
-                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii] [--no-mermaid]");
+                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii] [--no-mermaid] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
                     return true;
                 }
             };
@@ -237,6 +299,9 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 mermaid_ascii: ascii,
                 show_line_numbers: false,
                 mermaid_image: !ascii && !text_only && !no_mermaid,
+                inline_diagrams: !ascii && !text_only && !no_mermaid,
+                diagram_theme: theme,
+                diagram_background: bg,
             };
             let ansi_output = matchmaker::utils::markdown::render_markdown_ansi(&content, &opts);
             if ansi_output.ends_with('\n') {
@@ -250,6 +315,8 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             let text_only = args.iter().any(|a| a == "--text");
             let ascii = args.iter().any(|a| a == "--ascii");
             let width = parse_preview_width_from_args(args);
+            let theme = parse_theme_from_args(args);
+            let bg = parse_bg_from_args(args);
             let path_arg = parse_subcommand_path_arg(args);
             let content = if let Some(p) = path_arg {
                 if p == "-" {
@@ -266,18 +333,27 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
-                    eprintln!("Usage: mm mermaid <file.mmd> [--width <N>] [--text] [--ascii]");
+                    eprintln!("Usage: mm mermaid <file.mmd> [--width <N>] [--text] [--ascii] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
                     return true;
                 }
             };
-            if !ascii && !text_only {
-                if let Some(kitty) =
-                    matchmaker::utils::mermaid::render_mermaid_to_kitty(&content, 1.0)
+            if !ascii && !text_only && matchmaker::utils::mermaid::is_kitty_supported() {
+                if let Some(diag) =
+                    matchmaker::utils::mermaid::render_mermaid_to_unicode_placeholders_with_options(
+                        &content, width, theme, bg,
+                    )
                 {
-                    if kitty.ends_with('\n') {
-                        print!("{kitty}");
+                    print!("{}", diag.transmission);
+                    let mut lines = Vec::with_capacity(diag.lines.len() + 2);
+                    lines.push(ratatui::text::Line::default());
+                    lines.extend(diag.lines);
+                    lines.push(ratatui::text::Line::default());
+                    let text = ratatui::text::Text::from(lines);
+                    let ansi_output = matchmaker::utils::text::text_to_ansi(&text);
+                    if ansi_output.ends_with('\n') {
+                        print!("{ansi_output}");
                     } else {
-                        println!("{kitty}");
+                        println!("{ansi_output}");
                     }
                     return true;
                 }
@@ -287,6 +363,9 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                 ascii,
                 show_box: true,
                 title: Some("Mermaid Diagram".to_string()),
+                inline_diagrams: false,
+                theme,
+                background: bg,
             };
             let ansi_output = matchmaker::utils::mermaid::render_mermaid_ansi(&content, &opts);
             if ansi_output.ends_with('\n') {

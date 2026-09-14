@@ -852,3 +852,89 @@ impl<'de> Deserialize<'de> for SortThreshold {
         deserializer.deserialize_any(Visitor)
     }
 }
+
+/// Theme mode for Mermaid diagram rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagramTheme {
+    /// Detect theme mode automatically from Omarchy system colors.toml or terminal COLORFGBG.
+    #[default]
+    #[serde(alias = "auto", alias = "Auto", alias = "AUTO", alias = "system", alias = "System")]
+    Auto,
+    /// Dark theme mode with dark surfaces, vibrant accents, and light text.
+    #[serde(alias = "dark", alias = "Dark", alias = "DARK")]
+    Dark,
+    /// Light theme mode with light surfaces, vibrant accents, and dark text.
+    #[serde(alias = "light", alias = "Light", alias = "LIGHT")]
+    Light,
+}
+
+impl std::str::FromStr for DiagramTheme {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "auto" | "system" => Ok(DiagramTheme::Auto),
+            "dark" => Ok(DiagramTheme::Dark),
+            "light" => Ok(DiagramTheme::Light),
+            other => Err(format!(
+                "Invalid diagram theme '{other}', expected 'auto', 'dark', or 'light'"
+            )),
+        }
+    }
+}
+
+impl fmt::Display for DiagramTheme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DiagramTheme::Auto => write!(f, "auto"),
+            DiagramTheme::Dark => write!(f, "dark"),
+            DiagramTheme::Light => write!(f, "light"),
+        }
+    }
+}
+
+/// Background transparency mode for Mermaid diagram rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagramBackground {
+    /// Transparent background allowing the terminal or tmux background to show through.
+    #[default]
+    #[serde(
+        alias = "transparent",
+        alias = "Transparent",
+        alias = "TRANSPARENT",
+        alias = "none",
+        alias = "clear"
+    )]
+    Transparent,
+    /// Solid background matching the detected or configured theme palette.
+    #[serde(
+        alias = "solid",
+        alias = "Solid",
+        alias = "SOLID",
+        alias = "opaque"
+    )]
+    Solid,
+}
+
+impl std::str::FromStr for DiagramBackground {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "transparent" | "none" | "clear" => Ok(DiagramBackground::Transparent),
+            "solid" | "opaque" => Ok(DiagramBackground::Solid),
+            other => Err(format!(
+                "Invalid diagram background '{other}', expected 'transparent' or 'solid'"
+            )),
+        }
+    }
+}
+
+impl fmt::Display for DiagramBackground {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DiagramBackground::Transparent => write!(f, "transparent"),
+            DiagramBackground::Solid => write!(f, "solid"),
+        }
+    }
+}

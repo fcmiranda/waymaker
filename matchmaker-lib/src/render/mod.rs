@@ -277,38 +277,39 @@ fn process_results_nav_key<A: ActionExt>(
     sim_focus: &mut Focus,
     out: &mut Vec<RenderCommand<A>>,
     preview_fullscreen: bool,
+    preview_diagram_mode: bool,
 ) {
-    if preview_fullscreen {
+    if preview_fullscreen || preview_diagram_mode {
         match key {
-            "j" | "down" => {
+            "j" | "down" | "Down" => {
                 out.push(RenderCommand::Action(Action::PreviewDown(3)));
                 return;
             }
-            "k" | "up" => {
+            "k" | "up" | "Up" => {
                 out.push(RenderCommand::Action(Action::PreviewUp(3)));
                 return;
             }
-            "h" | "left" => {
+            "h" | "left" | "Left" => {
                 out.push(RenderCommand::Action(Action::PreviewHScroll(-6)));
                 return;
             }
-            "l" | "right" => {
+            "l" | "right" | "Right" => {
                 out.push(RenderCommand::Action(Action::PreviewHScroll(6)));
                 return;
             }
-            "J" | "shift-j" | "shift-down" => {
+            "J" | "shift-j" | "shift-down" | "Shift-Down" | "Shift-down" => {
                 out.push(RenderCommand::Action(Action::PreviewDown(15)));
                 return;
             }
-            "K" | "shift-k" | "shift-up" => {
+            "K" | "shift-k" | "shift-up" | "Shift-Up" | "Shift-up" => {
                 out.push(RenderCommand::Action(Action::PreviewUp(15)));
                 return;
             }
-            "H" | "shift-left" => {
+            "H" | "shift-left" | "Shift-Left" | "Shift-left" => {
                 out.push(RenderCommand::Action(Action::PreviewHScroll(-18)));
                 return;
             }
-            "L" | "shift-right" => {
+            "L" | "shift-right" | "Shift-Right" | "Shift-right" => {
                 out.push(RenderCommand::Action(Action::PreviewHScroll(18)));
                 return;
             }
@@ -354,7 +355,7 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::DiagramZoomOut));
                 return;
             }
-            "0" | "z" => {
+            "0" => {
                 out.push(RenderCommand::Action(Action::DiagramResetZoom));
                 return;
             }
@@ -366,7 +367,7 @@ fn process_results_nav_key<A: ActionExt>(
                 out.push(RenderCommand::Action(Action::Quit(130)));
                 return;
             }
-            k if k.eq_ignore_ascii_case("esc") || k == "enter" => {
+            k if k.eq_ignore_ascii_case("esc") || (preview_fullscreen && k == "enter") => {
                 *sim_focus = Focus::Input;
                 out.push(RenderCommand::Action(Action::CyclePreview));
                 return;
@@ -380,22 +381,31 @@ fn process_results_nav_key<A: ActionExt>(
                             out.push(RenderCommand::Action(action));
                         }
                     }
+                    return;
+                }
+                if let Some(action) = fallback_action {
+                    update_sim_focus(&action, sim_focus);
+                    out.push(RenderCommand::Action(action));
                 }
                 return;
             }
         }
     } else {
         // Non-fullscreen preview scrolling and diagram controls fallback
-        if (key == "J" || key == "shift-j")
+        if (key == "J" || key == "shift-j" || key == "ctrl-shift-j" || key == "ctrl-J")
             && !focus_binds.contains_key("J")
             && !focus_binds.contains_key("shift-j")
+            && !focus_binds.contains_key("ctrl-shift-j")
+            && !focus_binds.contains_key("ctrl-J")
         {
             out.push(RenderCommand::Action(Action::PreviewDown(5)));
             return;
         }
-        if (key == "K" || key == "shift-k")
+        if (key == "K" || key == "shift-k" || key == "ctrl-shift-k" || key == "ctrl-K")
             && !focus_binds.contains_key("K")
             && !focus_binds.contains_key("shift-k")
+            && !focus_binds.contains_key("ctrl-shift-k")
+            && !focus_binds.contains_key("ctrl-K")
         {
             out.push(RenderCommand::Action(Action::PreviewUp(5)));
             return;
@@ -418,6 +428,37 @@ fn process_results_nav_key<A: ActionExt>(
             && !focus_binds.contains_key("s")
         {
             out.push(RenderCommand::Action(Action::ToggleDiagram));
+            return;
+        }
+        if (key == "+" || key == "=")
+            && !focus_binds.contains_key("+")
+            && !focus_binds.contains_key("=")
+        {
+            out.push(RenderCommand::Action(Action::DiagramZoomIn));
+            return;
+        }
+        if key == "-"
+            && !focus_binds.contains_key("-")
+        {
+            out.push(RenderCommand::Action(Action::DiagramZoomOut));
+            return;
+        }
+        if key == "0"
+            && !focus_binds.contains_key("0")
+        {
+            out.push(RenderCommand::Action(Action::DiagramResetZoom));
+            return;
+        }
+        if (key == "]" || key == "n")
+            && !focus_binds.contains_key(key)
+        {
+            out.push(RenderCommand::Action(Action::NextDiagram));
+            return;
+        }
+        if (key == "[" || key == "N")
+            && !focus_binds.contains_key(key)
+        {
+            out.push(RenderCommand::Action(Action::PrevDiagram));
             return;
         }
     }
@@ -526,6 +567,8 @@ fn process_results_nav_key<A: ActionExt>(
 
 /// Pre-process `buffer` for navigation mode: simulate `ToggleFocus` events encountered in the
 /// batch and expand `Action::Char` events into `nav_binds` actions while focus is on results.
+#[inline]
+#[allow(dead_code)]
 fn apply_focus_binds<A: ActionExt>(
     buffer: &mut Vec<RenderCommand<A>>,
     initial_focus: Focus,
@@ -534,6 +577,28 @@ fn apply_focus_binds<A: ActionExt>(
     pending_nav_key: &mut Option<char>,
     sort_menu_active: &mut bool,
     preview_fullscreen: bool,
+) {
+    apply_focus_binds_mode(
+        buffer,
+        initial_focus,
+        focus_binds,
+        overlay_active,
+        pending_nav_key,
+        sort_menu_active,
+        preview_fullscreen,
+        false,
+    );
+}
+
+fn apply_focus_binds_mode<A: ActionExt>(
+    buffer: &mut Vec<RenderCommand<A>>,
+    initial_focus: Focus,
+    focus_binds: &std::collections::HashMap<String, crate::action::Actions<NullActionExt>>,
+    overlay_active: bool,
+    pending_nav_key: &mut Option<char>,
+    sort_menu_active: &mut bool,
+    preview_fullscreen: bool,
+    preview_diagram_mode: bool,
 ) {
     if overlay_active {
         for cmd in buffer {
@@ -608,7 +673,9 @@ fn apply_focus_binds<A: ActionExt>(
                 sim_focus = Focus::Results;
                 out.push(RenderCommand::Action(Action::ChDir(payload)));
             }
-            RenderCommand::Action(Action::Char(c)) if sim_focus == Focus::Results || preview_fullscreen => {
+            RenderCommand::Action(Action::Char(c))
+                if sim_focus == Focus::Results || preview_fullscreen || preview_diagram_mode =>
+            {
                 last_consumed_nav_key = None;
                 let key = c.to_string();
                 process_results_nav_key(
@@ -620,9 +687,12 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut sim_focus,
                     &mut out,
                     preview_fullscreen,
+                    preview_diagram_mode,
                 );
             }
-            RenderCommand::KeyAction { key, action } if sim_focus == Focus::Results || preview_fullscreen => {
+            RenderCommand::KeyAction { key, action }
+                if sim_focus == Focus::Results || preview_fullscreen || preview_diagram_mode =>
+            {
                 if !preview_fullscreen
                     && last_consumed_nav_key
                         .as_deref()
@@ -639,6 +709,7 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut sim_focus,
                     &mut out,
                     preview_fullscreen,
+                    preview_diagram_mode,
                 );
                 if !preview_fullscreen && get_nav_bind(focus_binds, &key).is_some() {
                     last_consumed_nav_key = Some(key);
@@ -652,7 +723,9 @@ fn apply_focus_binds<A: ActionExt>(
                 update_sim_focus(&action, &mut sim_focus);
                 out.push(RenderCommand::Action(action));
             }
-            RenderCommand::Action(Action::DeleteChar) if sim_focus == Focus::Results || preview_fullscreen => {
+            RenderCommand::Action(Action::DeleteChar)
+                if sim_focus == Focus::Results || preview_fullscreen || preview_diagram_mode =>
+            {
                 last_consumed_nav_key = None;
                 process_results_nav_key(
                     "backspace",
@@ -663,9 +736,12 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut sim_focus,
                     &mut out,
                     preview_fullscreen,
+                    preview_diagram_mode,
                 );
             }
-            RenderCommand::Action(Action::BackwardChar) if sim_focus == Focus::Results || preview_fullscreen => {
+            RenderCommand::Action(Action::BackwardChar)
+                if sim_focus == Focus::Results || preview_fullscreen || preview_diagram_mode =>
+            {
                 last_consumed_nav_key = None;
                 process_results_nav_key(
                     "left",
@@ -676,9 +752,12 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut sim_focus,
                     &mut out,
                     preview_fullscreen,
+                    preview_diagram_mode,
                 );
             }
-            RenderCommand::Action(Action::ForwardChar) if sim_focus == Focus::Results || preview_fullscreen => {
+            RenderCommand::Action(Action::ForwardChar)
+                if sim_focus == Focus::Results || preview_fullscreen || preview_diagram_mode =>
+            {
                 last_consumed_nav_key = None;
                 process_results_nav_key(
                     "right",
@@ -689,6 +768,39 @@ fn apply_focus_binds<A: ActionExt>(
                     &mut sim_focus,
                     &mut out,
                     preview_fullscreen,
+                    preview_diagram_mode,
+                );
+            }
+            RenderCommand::Action(Action::Up(n))
+                if preview_fullscreen || preview_diagram_mode =>
+            {
+                last_consumed_nav_key = None;
+                process_results_nav_key(
+                    "up",
+                    Some(Action::Up(n)),
+                    focus_binds,
+                    pending_nav_key,
+                    sort_menu_active,
+                    &mut sim_focus,
+                    &mut out,
+                    preview_fullscreen,
+                    preview_diagram_mode,
+                );
+            }
+            RenderCommand::Action(Action::Down(n))
+                if preview_fullscreen || preview_diagram_mode =>
+            {
+                last_consumed_nav_key = None;
+                process_results_nav_key(
+                    "down",
+                    Some(Action::Down(n)),
+                    focus_binds,
+                    pending_nav_key,
+                    sort_menu_active,
+                    &mut sim_focus,
+                    &mut out,
+                    preview_fullscreen,
+                    preview_diagram_mode,
                 );
             }
             other => {
@@ -825,7 +937,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
             apply_sort_menu(&mut buffer, &mut state.sort_menu_active);
         } else if ui.config.nav_mode {
             if !ui.config.nav_passthrough {
-                apply_focus_binds(
+                apply_focus_binds_mode(
                     &mut buffer,
                     state.focus,
                     &ui.config.nav_binds,
@@ -834,6 +946,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     &mut state.pending_nav_key,
                     &mut state.sort_menu_active,
                     state.preview_fullscreen,
+                    state.preview_diagram_mode,
                 );
             }
 
@@ -1377,6 +1490,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         Action::ToggleDiagram => {
                             if let Some(p) = preview_ui.as_mut() {
                                 p.toggle_diagram();
+                                state.preview_diagram_mode = p.is_diagram_mode();
                                 state.needs_redraw = true;
                             }
                         }
@@ -1434,29 +1548,34 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                     p.scroll_to(target);
 
                                     // Update active diagram image from sources if available
-                                    if let Ok(sources) = p.view.diagram_sources.lock() {
-                                        if let Some(src) = sources.get(next_idx) {
-                                            p.view.current_diagram_idx.store(
-                                                next_idx,
+                                    let src_opt = p.view.diagram_sources.lock().ok().and_then(|sources| {
+                                        sources.get(next_idx).cloned()
+                                    });
+                                    if let Some(src) = src_opt {
+                                        p.view.current_diagram_idx.store(
+                                            next_idx,
+                                            std::sync::atomic::Ordering::Release,
+                                        );
+                                        if let Some(img) =
+                                            crate::utils::mermaid::render_mermaid_to_image_with_options(
+                                                &src,
+                                                2.0,
+                                                p.config.diagram_theme,
+                                                p.config.diagram_background,
+                                            )
+                                        {
+                                            if let Ok(mut guard) = p.view.image.lock() {
+                                                *guard = Some(img);
+                                            }
+                                            p.reset_diagram_pan();
+                                            p.view.image_id.fetch_add(
+                                                1,
                                                 std::sync::atomic::Ordering::Release,
                                             );
-                                            if let Some(img) =
-                                                crate::utils::mermaid::render_mermaid_to_image(
-                                                    src, 2.0,
-                                                )
-                                            {
-                                                if let Ok(mut guard) = p.view.image.lock() {
-                                                    *guard = Some(img);
-                                                    p.view.image_id.fetch_add(
-                                                        1,
-                                                        std::sync::atomic::Ordering::Release,
-                                                    );
-                                                    p.view.changed.store(
-                                                        true,
-                                                        std::sync::atomic::Ordering::Release,
-                                                    );
-                                                }
-                                            }
+                                            p.view.changed.store(
+                                                true,
+                                                std::sync::atomic::Ordering::Release,
+                                            );
                                         }
                                     }
                                 } else {
@@ -1478,7 +1597,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         sources.get(next_idx).cloned()
                                     });
                                     if let Some(src) = src_opt {
-                                        if let Some(img) = crate::utils::mermaid::render_mermaid_to_image(&src, 2.0) {
+                                        if let Some(img) = crate::utils::mermaid::render_mermaid_to_image_with_options(
+                                            &src,
+                                            2.0,
+                                            p.config.diagram_theme,
+                                            p.config.diagram_background,
+                                        ) {
                                             if let Ok(mut guard) = p.view.image.lock() {
                                                 *guard = Some(img);
                                             }
@@ -2840,10 +2964,63 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
 
     let has_markdown = ui.has_markdown();
     let has_diagram = ui.has_diagram();
-    let is_diagram_image = has_markdown && has_diagram && ui.show_diagram;
+    let is_diagram_mode = has_diagram && ui.show_diagram;
+
+    let has_top_border = ui
+        .active_border()
+        .map(|b| b.sides().contains(ratatui::widgets::Borders::TOP))
+        .unwrap_or(false)
+        && !ui.is_fullscreen();
+
+    let render_badge_if_needed = |frame: &mut Frame, area: Rect, ui: &PreviewUI| {
+        if is_diagram_mode && !has_top_border {
+            if let Some(counter) = ui.diagram_counter_spans() {
+                let width = counter.iter().map(|s| s.width()).sum::<usize>() as u16;
+                let scrollbar_pad = if ui.config.scrollbar { 1 } else { 0 };
+                if area.width >= width + scrollbar_pad && area.height > 0 {
+                    let badge_area = Rect::new(
+                        area.right().saturating_sub(width + scrollbar_pad),
+                        area.y,
+                        width,
+                        1,
+                    );
+                    frame.render_widget(
+                        ratatui::widgets::Paragraph::new(ratatui::text::Line::from(counter)),
+                        badge_area,
+                    );
+                }
+            }
+        }
+    };
+
+    // Zero-stutter, state-of-the-art Kitty Unicode Placeholder pipeline for modal diagram view.
+    // In Kitty and Ghostty, avoids software cropping, software resizing, and multi-megabyte PTY retransmissions on pan.
+    if is_diagram_mode && crate::utils::mermaid::is_kitty_supported() {
+        let block = if ui.is_fullscreen() {
+            None
+        } else {
+            ui.make_block()
+        };
+        let inner_area = if let Some(b) = &block {
+            b.inner(area)
+        } else {
+            area
+        };
+        if let Some(b) = block {
+            frame.render_widget(b, area);
+        }
+
+        if let Some(lines) = ui.get_diagram_placeholder_lines(inner_area) {
+            frame.render_widget(ratatui::widgets::Paragraph::new(lines), inner_area);
+            render_badge_if_needed(frame, area, ui);
+            ui.render_scrollbar(frame, area);
+            return;
+        }
+    }
+
     let image_state_ready = ui.get_image_state().is_some();
     let is_image = if has_markdown {
-        is_diagram_image && image_state_ready
+        is_diagram_mode && image_state_ready
     } else {
         image_state_ready
     };
@@ -2873,9 +3050,11 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
             let image_widget = ratatui_image::StatefulImage::new().resize(resize_mode);
             frame.render_stateful_widget(image_widget, inner_area, state);
         }
+        render_badge_if_needed(frame, area, ui);
     } else {
         let widget = ui.make_preview();
         frame.render_widget(widget, area);
+        render_badge_if_needed(frame, area, ui);
     }
 
     ui.render_scrollbar(frame, area);
@@ -4225,6 +4404,176 @@ mod test {
         );
         assert_eq!(buffer.len(), 1);
         assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(0))));
+    }
+
+    #[test]
+    fn test_apply_focus_binds_diagram_mode_navigation_and_zoom_reset() {
+        let focus_binds = HashMap::new();
+        let mut pending = None;
+        let mut sort_menu_active = false;
+
+        // In diagram mode (even non-fullscreen preview):
+        // 1. Arrow keys pan the diagram
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "up".to_string(),
+            action: Action::Up(1),
+        }];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true, // preview_diagram_mode
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(3))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "down".to_string(),
+            action: Action::Down(1),
+        }];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "left".to_string(),
+            action: Action::BackwardChar,
+        }];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(-6))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "right".to_string(),
+            action: Action::ForwardChar,
+        }];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(6))));
+
+        // 2. '0' resets zoom
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('0'))];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::DiagramResetZoom)));
+
+        // 3. 'z' does NOT reset zoom
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('z'))];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true,
+        );
+        assert!(!matches!(buffer[0], RenderCommand::Action(Action::DiagramResetZoom)));
+
+        // 4. Action::Up(1) and Action::Down(1) without KeyAction wrapper in diagram mode
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Up(1))];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(3))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Down(1))];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            true,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
+
+        // 5. Fallback ctrl-shift-j and ctrl-shift-k preview scrolling
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "ctrl-shift-j".to_string(),
+            action: Action::PreviewDown(5),
+        }];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            false,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(5))));
+
+        let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
+            key: "ctrl-shift-k".to_string(),
+            action: Action::PreviewUp(5),
+        }];
+        apply_focus_binds_mode(
+            &mut buffer,
+            Focus::Results,
+            &focus_binds,
+            false,
+            &mut pending,
+            &mut sort_menu_active,
+            false,
+            false,
+        );
+        assert_eq!(buffer.len(), 1);
+        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(5))));
     }
 }
 

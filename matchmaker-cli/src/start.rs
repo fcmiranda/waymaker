@@ -235,6 +235,9 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
 
     config.previewer.media = config.render.preview.media;
     config.previewer.markdown_diagrams = config.render.preview.markdown_diagrams;
+    config.previewer.inline_diagrams = config.render.preview.inline_diagrams;
+    config.previewer.diagram_theme = config.render.preview.diagram_theme;
+    config.previewer.diagram_background = config.render.preview.diagram_background;
 
     for spec in &cli.color {
         apply_color_spec(&mut config, spec);

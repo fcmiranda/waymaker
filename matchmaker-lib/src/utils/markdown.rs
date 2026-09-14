@@ -5,8 +5,12 @@ use std::fs;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
-use super::mermaid::{MermaidOptions, render_mermaid, render_mermaid_to_kitty};
+use super::mermaid::{
+    MermaidOptions, is_kitty_supported, render_mermaid,
+    render_mermaid_to_unicode_placeholders_with_options,
+};
 use super::text::text_to_ansi;
+use crate::config::{DiagramBackground, DiagramTheme};
 
 /// Options for Markdown rendering.
 #[derive(Debug, Clone)]
@@ -21,6 +25,12 @@ pub struct MarkdownOptions {
     pub show_line_numbers: bool,
     /// Whether to render embedded Mermaid diagrams as Kitty Graphics Protocol images.
     pub mermaid_image: bool,
+    /// Whether to render embedded Mermaid diagrams inline using Kitty Unicode Placeholders.
+    pub inline_diagrams: bool,
+    /// Diagram theme: Auto, Dark, or Light.
+    pub diagram_theme: DiagramTheme,
+    /// Diagram background mode: Transparent or Solid.
+    pub diagram_background: DiagramBackground,
 }
 
 impl Default for MarkdownOptions {
@@ -31,6 +41,9 @@ impl Default for MarkdownOptions {
             mermaid_ascii: false,
             show_line_numbers: false,
             mermaid_image: false,
+            inline_diagrams: false,
+            diagram_theme: DiagramTheme::default(),
+            diagram_background: DiagramBackground::default(),
         }
     }
 }
@@ -42,8 +55,22 @@ pub fn render_markdown(src: &str, opts: &MarkdownOptions) -> Text<'static> {
 
 /// Render a Markdown source string to an ANSI colored string for terminal stdout.
 pub fn render_markdown_ansi(src: &str, opts: &MarkdownOptions) -> String {
-    let text = render_markdown(src, opts);
-    text_to_ansi(&text)
+    let mut parser_opts = Options::empty();
+    parser_opts.insert(Options::ENABLE_TABLES);
+    parser_opts.insert(Options::ENABLE_TASKLISTS);
+    parser_opts.insert(Options::ENABLE_STRIKETHROUGH);
+    parser_opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+
+    let parser = Parser::new_ext(src, parser_opts);
+    let mut renderer = MarkdownRenderer::new(opts);
+    renderer.render(parser);
+    let (text, _, transmissions) = renderer.finish_with_transmissions();
+    let mut out = String::new();
+    for (_, t) in transmissions {
+        out.push_str(&t);
+    }
+    out.push_str(&text_to_ansi(&text));
+    out
 }
 
 /// Read a Markdown file and render it as Ratatui `Text<'static>`.
@@ -238,6 +265,7 @@ struct MarkdownRenderer<'a> {
     current_image_url: Option<String>,
     current_image_alt: String,
     diagram_offsets: Vec<usize>,
+    transmissions: Vec<(u32, String)>,
 }
 
 impl<'a> MarkdownRenderer<'a> {
@@ -259,6 +287,7 @@ impl<'a> MarkdownRenderer<'a> {
             current_image_url: None,
             current_image_alt: String::new(),
             diagram_offsets: Vec::new(),
+            transmissions: Vec::new(),
         }
     }
 
@@ -509,7 +538,9 @@ impl<'a> MarkdownRenderer<'a> {
                     CodeBlockKind::Fenced(l) => l.trim().to_string(),
                     CodeBlockKind::Indented => String::new(),
                 };
-                if lang.eq_ignore_ascii_case("mermaid") && self.opts.render_mermaid {
+                if (lang.eq_ignore_ascii_case("mermaid") || lang.eq_ignore_ascii_case("mmd"))
+                    && self.opts.render_mermaid
+                {
                     self.code_block = Some(CodeBlockState::Mermaid {
                         buffer: String::new(),
                     });
@@ -660,10 +691,22 @@ impl<'a> MarkdownRenderer<'a> {
     fn finish_code_block(&mut self, cb: CodeBlockState) {
         match cb {
             CodeBlockState::Mermaid { buffer } => {
-                if self.opts.mermaid_image && !self.opts.mermaid_ascii {
-                    if let Some(kitty) = render_mermaid_to_kitty(&buffer, 1.0) {
+                let use_inline = (self.opts.inline_diagrams || self.opts.mermaid_image)
+                    && !self.opts.mermaid_ascii
+                    && is_kitty_supported();
+                if use_inline {
+                    if let Some(diag) = render_mermaid_to_unicode_placeholders_with_options(
+                        &buffer,
+                        self.opts.max_width,
+                        self.opts.diagram_theme,
+                        self.opts.diagram_background,
+                    ) {
+                        self.transmissions.push((diag.image_id, diag.transmission));
+                        self.ensure_blank_line();
                         self.diagram_offsets.push(self.lines.len());
-                        self.lines.push(Line::from(Span::raw(kitty)));
+                        for line in diag.lines {
+                            self.lines.push(line);
+                        }
                         self.lines.push(Line::default());
                         return;
                     }
@@ -672,7 +715,10 @@ impl<'a> MarkdownRenderer<'a> {
                     max_width: self.opts.max_width,
                     ascii: self.opts.mermaid_ascii,
                     show_box: true,
-                    title: Some("Mermaid Diagram (Press 'd' to view image)".to_string()),
+                    title: Some("Mermaid Diagram (Press 's' to view image)".to_string()),
+                    inline_diagrams: false,
+                    theme: self.opts.diagram_theme,
+                    background: self.opts.diagram_background,
                 };
                 let diagram_text = render_mermaid(&buffer, &mermaid_opts);
                 self.diagram_offsets.push(self.lines.len());
@@ -862,7 +908,15 @@ impl<'a> MarkdownRenderer<'a> {
 
     fn finish(mut self) -> (Text<'static>, Vec<usize>) {
         self.flush_line();
+        for (image_id, seq) in &self.transmissions {
+            crate::utils::mermaid::transmit_kitty_image_idempotent(*image_id, seq);
+        }
         (Text::from(self.lines), self.diagram_offsets)
+    }
+
+    fn finish_with_transmissions(mut self) -> (Text<'static>, Vec<usize>, Vec<(u32, String)>) {
+        self.flush_line();
+        (Text::from(self.lines), self.diagram_offsets, self.transmissions)
     }
 }
 
@@ -1213,6 +1267,102 @@ graph TD
         assert!(
             rendered_str.contains("X --> Y"),
             "Original code block content should still be rendered"
+        );
+    }
+
+    #[test]
+    fn test_render_markdown_inline_diagrams() {
+        let prev = std::env::var("MM_INLINE_DIAGRAMS").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_DIAGRAMS", "1");
+        }
+
+        let md = r#"# Document
+
+```mermaid
+graph LR
+    A --> B
+```
+"#;
+        let opts = MarkdownOptions {
+            inline_diagrams: true,
+            max_width: Some(80),
+            ..Default::default()
+        };
+        let mut parser_opts = Options::empty();
+        parser_opts.insert(Options::ENABLE_TABLES);
+        parser_opts.insert(Options::ENABLE_TASKLISTS);
+        parser_opts.insert(Options::ENABLE_STRIKETHROUGH);
+        parser_opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+        let parser = Parser::new_ext(md, parser_opts);
+
+        let mut renderer = MarkdownRenderer::new(&opts);
+        renderer.render(parser);
+        let (text, offsets, transmissions) = renderer.finish_with_transmissions();
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_DIAGRAMS", v),
+                None => std::env::remove_var("MM_INLINE_DIAGRAMS"),
+            }
+        }
+
+        assert!(!offsets.is_empty(), "Offsets must record the diagram position");
+        assert!(!transmissions.is_empty(), "Transmissions must be emitted for inline diagram");
+        assert!(transmissions[0].1.contains("U=1"), "Transmission must be Kitty Unicode placeholder format");
+
+        let rendered_str = format!("{text:?}");
+        println!("rendered_str = {rendered_str}");
+        let found_in_spans = text
+            .lines
+            .iter()
+            .any(|l| l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER)));
+        assert!(
+            !rendered_str.contains("inline diagram"),
+            "Rendered text must NOT contain artificial inline diagram banner"
+        );
+        assert!(
+            found_in_spans,
+            "Rendered text spans must contain Kitty placeholder character"
+        );
+    }
+
+    #[test]
+    fn test_render_markdown_ansi_inline_diagrams() {
+        let prev = std::env::var("MM_INLINE_DIAGRAMS").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_DIAGRAMS", "1");
+        }
+
+        let md = r#"```mermaid
+graph TD
+    X --> Y
+```"#;
+        let opts = MarkdownOptions {
+            inline_diagrams: true,
+            max_width: Some(70),
+            ..Default::default()
+        };
+        let ansi = render_markdown_ansi(md, &opts);
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_DIAGRAMS", v),
+                None => std::env::remove_var("MM_INLINE_DIAGRAMS"),
+            }
+        }
+
+        assert!(
+            ansi.contains("\u{10EEEE}"),
+            "ANSI output must contain inline diagram placeholder"
+        );
+        assert!(
+            !ansi.contains("inline diagram"),
+            "ANSI output must NOT contain artificial inline diagram banner"
+        );
+        assert!(
+            ansi.contains("_G"),
+            "ANSI output must contain Kitty graphics escape sequence"
         );
     }
 }

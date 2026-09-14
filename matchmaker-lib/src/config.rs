@@ -1486,6 +1486,18 @@ pub struct PreviewConfig {
     #[partial(alias = "md_diag", alias = "diag")]
     #[serde(alias = "diagrams", alias = "mermaid")]
     pub markdown_diagrams: bool,
+    /// Whether to render embedded Mermaid diagrams inline using Kitty Unicode Placeholders. Default: true
+    #[partial(alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid")]
+    #[serde(alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid", alias = "kitty_diagrams")]
+    pub inline_diagrams: bool,
+    /// Mermaid diagram theme: "auto" (detects system/terminal theme), "dark", or "light". Default: "auto"
+    #[partial(alias = "diagram_theme", alias = "diag_theme", alias = "theme_diag")]
+    #[serde(alias = "diagrams_theme", alias = "mermaid_theme", alias = "theme_diagram")]
+    pub diagram_theme: DiagramTheme,
+    /// Mermaid diagram background mode: "transparent" (inherits terminal background) or "solid". Default: "transparent"
+    #[partial(alias = "diagram_background", alias = "diag_bg", alias = "diag_background")]
+    #[serde(alias = "diagrams_background", alias = "mermaid_background", alias = "diagram_bg", alias = "diagrams_bg")]
+    pub diagram_background: DiagramBackground,
 }
 
 impl PreviewConfig {
@@ -1518,6 +1530,9 @@ impl Default for PreviewConfig {
             media_fit: None,
             markdown: true,
             markdown_diagrams: true,
+            inline_diagrams: true,
+            diagram_theme: DiagramTheme::default(),
+            diagram_background: DiagramBackground::default(),
         }
     }
 }
@@ -1586,6 +1601,15 @@ pub struct PreviewerConfig {
 
     /// Whether embedded Mermaid diagrams are rendered in markdown files. Default: true
     pub markdown_diagrams: bool,
+
+    /// Whether embedded Mermaid diagrams are rendered inline using Kitty Unicode Placeholders. Default: true
+    pub inline_diagrams: bool,
+
+    /// Theme for Mermaid diagrams: "auto", "dark", or "light". Default: "auto"
+    pub diagram_theme: DiagramTheme,
+
+    /// Background for Mermaid diagrams: "transparent" or "solid". Default: "transparent"
+    pub diagram_background: DiagramBackground,
 }
 
 impl Default for PreviewerConfig {
@@ -1606,6 +1630,9 @@ impl Default for PreviewerConfig {
             media_size: 1280,
             media: false,
             markdown_diagrams: true,
+            inline_diagrams: true,
+            diagram_theme: DiagramTheme::default(),
+            diagram_background: DiagramBackground::default(),
         }
     }
 }
@@ -2043,6 +2070,30 @@ mod tests {
 
         assert_eq!(config.layout[0].command, "echo hello");
         assert_eq!(config.layout[1].command, "ls -la");
+    }
+
+    #[test]
+    fn test_preview_config_diagram_options_toml() {
+        let default_cfg: PreviewConfig = toml::from_str("").unwrap();
+        assert_eq!(default_cfg.diagram_theme, DiagramTheme::Auto);
+        assert_eq!(default_cfg.diagram_background, DiagramBackground::Transparent);
+
+        let toml_str = r#"
+            diagram_theme = "dark"
+            diagram_background = "solid"
+        "#;
+        let config: PreviewConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.diagram_theme, DiagramTheme::Dark);
+        assert_eq!(config.diagram_background, DiagramBackground::Solid);
+
+        // Test aliases
+        let toml_alias = r#"
+            diagrams_theme = "light"
+            diagram_bg = "transparent"
+        "#;
+        let config_alias: PreviewConfig = toml::from_str(toml_alias).unwrap();
+        assert_eq!(config_alias.diagram_theme, DiagramTheme::Light);
+        assert_eq!(config_alias.diagram_background, DiagramBackground::Transparent);
     }
 
     #[test]

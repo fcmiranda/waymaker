@@ -1170,6 +1170,9 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
     let mut previewer_config = previewer_config;
     previewer_config.media = mm.render_config.preview.media;
     previewer_config.markdown_diagrams = mm.render_config.preview.markdown_diagrams;
+    previewer_config.inline_diagrams = mm.render_config.preview.inline_diagrams;
+    previewer_config.diagram_theme = mm.render_config.preview.diagram_theme;
+    previewer_config.diagram_background = mm.render_config.preview.diagram_background;
     // initialize previewer
     let (previewer, tx) = Previewer::new(previewer_config.clone());
     let preview_tx = tx.clone();

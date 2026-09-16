@@ -11,6 +11,7 @@ mod paths;
 mod register;
 mod start;
 mod utils;
+pub mod watch;
 
 use clap::*;
 use config::PartialConfig;
@@ -51,7 +52,7 @@ async fn main() {
     display_doc(&cli);
     handle_download(&cli);
 
-    if handle_frecency_cli(&config_args) {
+    if handle_frecency_cli(&config_args).await {
         exit(0);
     }
 
@@ -147,12 +148,13 @@ fn display_doc(cli: &Cli) {
 
 fn parse_preview_width_from_args(args: &[String]) -> Option<usize> {
     for i in 0..args.len() {
-        if args[i] == "-w" || args[i] == "--width" {
+        if args[i] == "--width" || args[i] == "-W" {
             if let Some(w) = args.get(i + 1).and_then(|s| s.parse::<usize>().ok()) {
                 return Some(w);
             }
         } else if let Some(w) = args[i]
             .strip_prefix("--width=")
+            .or_else(|| args[i].strip_prefix("-W="))
             .and_then(|s| s.parse::<usize>().ok())
         {
             return Some(w);
@@ -173,8 +175,8 @@ fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
-        if arg == "-w"
-            || arg == "--width"
+        if arg == "--width"
+            || arg == "-W"
             || arg == "-t"
             || arg == "--theme"
             || arg == "--bg"
@@ -184,13 +186,17 @@ fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
             continue;
         }
         if arg.starts_with("--width=")
+            || arg.starts_with("-W=")
             || arg.starts_with("--theme=")
             || arg.starts_with("--bg=")
             || arg.starts_with("--background=")
+            || arg == "-w"
+            || arg == "--watch"
             || arg == "--ascii"
             || arg == "--text"
             || arg == "--no-mermaid"
             || arg == "--no-diagrams"
+            || arg == "--no-images"
             || arg == "--dark"
             || arg == "--light"
             || arg == "--transparent"
@@ -249,10 +255,19 @@ fn parse_bg_from_args(args: &[String]) -> matchmaker::config::DiagramBackground 
     matchmaker::config::DiagramBackground::Transparent
 }
 
-fn handle_frecency_cli(args: &[String]) -> bool {
+pub async fn handle_frecency_cli(args: &[String]) -> bool {
     if args.is_empty() {
         return false;
     }
+    let mut normalized_args;
+    let args = if (args[0] == "-w" || args[0] == "--watch") && args.len() > 1 {
+        normalized_args = args.to_vec();
+        let flag = normalized_args.remove(0);
+        normalized_args.push(flag);
+        &normalized_args[..]
+    } else {
+        args
+    };
     match args[0].as_str() {
         "tree" | "preview-tree" => {
             let path_str = args.get(1).map(|s| s.as_str()).unwrap_or(".");
@@ -267,6 +282,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             true
         }
         "md" | "markdown" | "preview-md" | "preview-markdown" => {
+            let watch = args.iter().any(|a| a == "-w" || a == "--watch");
             let text_only = args.iter().any(|a| a == "--text");
             let ascii = args.iter().any(|a| a == "--ascii");
             let no_mermaid = args.iter().any(|a| a == "--no-mermaid" || a == "--no-diagrams");
@@ -275,6 +291,37 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             let theme = parse_theme_from_args(args);
             let bg = parse_bg_from_args(args);
             let path_arg = parse_subcommand_path_arg(args);
+
+            if watch {
+                if path_arg.is_none() || path_arg == Some("-") {
+                    eprintln!("Error: --watch requires a file path on disk, stdin cannot be watched");
+                    return true;
+                }
+                let p = path_arg.unwrap();
+                let target_path = std::path::Path::new(p);
+                if !target_path.exists() {
+                    eprintln!("Error: file '{}' not found", p);
+                    return true;
+                }
+                let dynamic_width = width.is_none();
+                let opts = matchmaker::utils::markdown::MarkdownOptions {
+                    max_width: width,
+                    base_path: Some(target_path.to_path_buf()),
+                    render_mermaid: !no_mermaid,
+                    mermaid_ascii: ascii,
+                    show_line_numbers: false,
+                    mermaid_image: !ascii && !text_only && !no_mermaid,
+                    inline_diagrams: !ascii && !text_only && !no_mermaid,
+                    inline_images: !ascii && !text_only && !no_images,
+                    diagram_theme: theme,
+                    diagram_background: bg,
+                };
+                if let Err(e) = crate::watch::watch_markdown(target_path, opts, dynamic_width).await {
+                    eprintln!("Error during watch: {e}");
+                }
+                return true;
+            }
+
             let content = if let Some(p) = path_arg {
                 if p == "-" {
                     let mut buf = String::new();
@@ -290,7 +337,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
-                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii] [--no-mermaid] [--no-images] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
+                    eprintln!("Usage: mm md <file.md> [-w|--watch] [--width <N>] [--text] [--ascii] [--no-mermaid] [--no-images] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
                     return true;
                 }
             };
@@ -828,8 +875,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_cli_markdown_subcommand() {
+    #[tokio::test]
+    async fn test_cli_markdown_subcommand() {
         let temp_dir = std::env::temp_dir().join("mm_test_md");
         let _ = std::fs::create_dir_all(&temp_dir);
         let md_path = temp_dir.join("test.md");
@@ -844,13 +891,13 @@ mod tests {
             md_path.to_str().unwrap().to_string(),
             "--width=60".to_string(),
         ];
-        assert!(handle_frecency_cli(&args));
+        assert!(handle_frecency_cli(&args).await);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    #[test]
-    fn test_cli_mermaid_subcommand() {
+    #[tokio::test]
+    async fn test_cli_mermaid_subcommand() {
         let temp_dir = std::env::temp_dir().join("mm_test_mermaid");
         let _ = std::fs::create_dir_all(&temp_dir);
         let mmd_path = temp_dir.join("test.mmd");
@@ -861,13 +908,13 @@ mod tests {
             mmd_path.to_str().unwrap().to_string(),
             "--ascii".to_string(),
         ];
-        assert!(handle_frecency_cli(&args));
+        assert!(handle_frecency_cli(&args).await);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    #[test]
-    fn test_cli_markdown_subcommand_no_images() {
+    #[tokio::test]
+    async fn test_cli_markdown_subcommand_no_images() {
         let temp_dir = std::env::temp_dir().join("mm_test_md_no_img");
         let _ = std::fs::create_dir_all(&temp_dir);
         let md_path = temp_dir.join("doc.md");
@@ -883,7 +930,94 @@ mod tests {
             "--no-images".to_string(),
             "--width=50".to_string(),
         ];
-        assert!(handle_frecency_cli(&args));
+        assert!(handle_frecency_cli(&args).await);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_parse_subcommand_path_arg_watch_variations() {
+        // mm md file.md -w
+        let args1 = vec!["md".into(), "file.md".into(), "-w".into()];
+        assert_eq!(parse_subcommand_path_arg(&args1), Some("file.md"));
+
+        // mm md -w file.md
+        let args2 = vec!["md".into(), "-w".into(), "file.md".into()];
+        assert_eq!(parse_subcommand_path_arg(&args2), Some("file.md"));
+
+        // mm md --watch file.md
+        let args3 = vec!["md".into(), "--watch".into(), "file.md".into()];
+        assert_eq!(parse_subcommand_path_arg(&args3), Some("file.md"));
+
+        // mm md file.md --watch
+        let args4 = vec!["md".into(), "file.md".into(), "--watch".into()];
+        assert_eq!(parse_subcommand_path_arg(&args4), Some("file.md"));
+
+        // mm md -w --width 80 file.md
+        let args5 = vec![
+            "md".into(),
+            "-w".into(),
+            "--width".into(),
+            "80".into(),
+            "file.md".into(),
+        ];
+        assert_eq!(parse_subcommand_path_arg(&args5), Some("file.md"));
+        assert_eq!(parse_preview_width_from_args(&args5), Some(80));
+
+        // mm md --watch -W 80 file.md
+        let args6 = vec![
+            "md".into(),
+            "--watch".into(),
+            "-W".into(),
+            "80".into(),
+            "file.md".into(),
+        ];
+        assert_eq!(parse_subcommand_path_arg(&args6), Some("file.md"));
+        assert_eq!(parse_preview_width_from_args(&args6), Some(80));
+
+        // mm md -w -
+        let args7 = vec!["md".into(), "-w".into(), "-".into()];
+        assert_eq!(parse_subcommand_path_arg(&args7), Some("-"));
+
+        // mm md -w
+        let args8 = vec!["md".into(), "-w".into()];
+        assert_eq!(parse_subcommand_path_arg(&args8), None);
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_watch_stdin_rejected() {
+        let args1 = vec!["md".to_string(), "-w".to_string(), "-".to_string()];
+        assert!(handle_frecency_cli(&args1).await);
+
+        let args2 = vec!["md".to_string(), "--watch".to_string()];
+        assert!(handle_frecency_cli(&args2).await);
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_watch_nonexistent_file_rejected() {
+        let args = vec![
+            "md".to_string(),
+            "-w".to_string(),
+            "/tmp/non_existent_md_test_file_987654321.md".to_string(),
+        ];
+        assert!(handle_frecency_cli(&args).await);
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_subcommand_aliases() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md_aliases");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let md_path = temp_dir.join("alias.md");
+        std::fs::write(&md_path, "# Alias test\n").unwrap();
+
+        for alias in &["markdown", "preview-md", "preview-markdown"] {
+            let args = vec![
+                alias.to_string(),
+                md_path.to_str().unwrap().to_string(),
+                "--width=40".to_string(),
+            ];
+            assert!(handle_frecency_cli(&args).await);
+        }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

@@ -52,8 +52,8 @@ async fn main() {
     display_doc(&cli);
     handle_download(&cli);
 
-    if handle_frecency_cli(&config_args).await {
-        exit(0);
+    if let Some(code) = handle_frecency_cli(&config_args).await {
+        exit(code);
     }
 
     // get config overrides
@@ -160,14 +160,15 @@ fn parse_preview_width_from_args(args: &[String]) -> Option<usize> {
             return Some(w);
         }
     }
-    std::env::var("COLUMNS")
+    ratatui::crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
         .ok()
-        .and_then(|c| c.parse::<usize>().ok())
         .filter(|&w| w > 0)
         .or_else(|| {
-            ratatui::crossterm::terminal::size()
-                .map(|(w, _)| w as usize)
+            std::env::var("COLUMNS")
                 .ok()
+                .and_then(|c| c.parse::<usize>().ok())
+                .filter(|&w| w > 0)
         })
 }
 
@@ -175,6 +176,9 @@ fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
+        if arg == "--" {
+            return args.get(i + 1).map(|s| s.as_str());
+        }
         if arg == "--width"
             || arg == "-W"
             || arg == "-t"
@@ -255,9 +259,9 @@ fn parse_bg_from_args(args: &[String]) -> matchmaker::config::DiagramBackground 
     matchmaker::config::DiagramBackground::Transparent
 }
 
-pub async fn handle_frecency_cli(args: &[String]) -> bool {
+pub async fn handle_frecency_cli(args: &[String]) -> Option<i32> {
     if args.is_empty() {
-        return false;
+        return None;
     }
     let mut normalized_args;
     let args = if (args[0] == "-w" || args[0] == "--watch") && args.len() > 1 {
@@ -279,7 +283,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
             } else {
                 println!("{ansi_output}");
             }
-            true
+            Some(0)
         }
         "md" | "markdown" | "preview-md" | "preview-markdown" => {
             let watch = args.iter().any(|a| a == "-w" || a == "--watch");
@@ -295,18 +299,29 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
             if watch {
                 if path_arg.is_none() || path_arg == Some("-") {
                     eprintln!("Error: --watch requires a file path on disk, stdin cannot be watched");
-                    return true;
+                    return Some(1);
                 }
                 let p = path_arg.unwrap();
                 let target_path = std::path::Path::new(p);
                 if !target_path.exists() {
                     eprintln!("Error: file '{}' not found", p);
-                    return true;
+                    return Some(1);
                 }
+                if target_path.is_dir() {
+                    eprintln!("Error: '{}' is a directory, not a markdown file", p);
+                    return Some(1);
+                }
+                let abs_target = if target_path.is_absolute() {
+                    target_path.to_path_buf()
+                } else {
+                    std::env::current_dir()
+                        .map(|c| c.join(target_path))
+                        .unwrap_or_else(|_| target_path.to_path_buf())
+                };
                 let dynamic_width = width.is_none();
                 let opts = matchmaker::utils::markdown::MarkdownOptions {
                     max_width: width,
-                    base_path: Some(target_path.to_path_buf()),
+                    base_path: Some(abs_target),
                     render_mermaid: !no_mermaid,
                     mermaid_ascii: ascii,
                     show_line_numbers: false,
@@ -318,8 +333,9 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                 };
                 if let Err(e) = crate::watch::watch_markdown(target_path, opts, dynamic_width).await {
                     eprintln!("Error during watch: {e}");
+                    return Some(1);
                 }
-                return true;
+                return Some(0);
             }
 
             let content = if let Some(p) = path_arg {
@@ -328,6 +344,15 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
+                    let target_path = std::path::Path::new(p);
+                    if !target_path.exists() {
+                        eprintln!("Error: file '{}' not found", p);
+                        return Some(1);
+                    }
+                    if target_path.is_dir() {
+                        eprintln!("Error: '{}' is a directory, not a markdown file", p);
+                        return Some(1);
+                    }
                     std::fs::read_to_string(p).unwrap_or_else(|e| format!("Error reading {p}: {e}"))
                 }
             } else {
@@ -338,12 +363,21 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     buf
                 } else {
                     eprintln!("Usage: mm md <file.md> [-w|--watch] [--width <N>] [--text] [--ascii] [--no-mermaid] [--no-images] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
-                    return true;
+                    return Some(1);
                 }
             };
             let opts = matchmaker::utils::markdown::MarkdownOptions {
                 max_width: width,
-                base_path: path_arg.filter(|p| *p != "-").map(std::path::PathBuf::from),
+                base_path: path_arg.filter(|p| *p != "-").map(|p| {
+                    let path = std::path::Path::new(p);
+                    if path.is_absolute() {
+                        path.to_path_buf()
+                    } else {
+                        std::env::current_dir()
+                            .map(|c| c.join(path))
+                            .unwrap_or_else(|_| path.to_path_buf())
+                    }
+                }),
                 render_mermaid: !no_mermaid,
                 mermaid_ascii: ascii,
                 show_line_numbers: false,
@@ -359,7 +393,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
             } else {
                 println!("{ansi_output}");
             }
-            true
+            Some(0)
         }
         "mermaid" | "preview-mermaid" | "mmd" => {
             let text_only = args.iter().any(|a| a == "--text");
@@ -384,7 +418,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     buf
                 } else {
                     eprintln!("Usage: mm mermaid <file.mmd> [--width <N>] [--text] [--ascii] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
-                    return true;
+                    return Some(1);
                 }
             };
             if !ascii && !text_only && matchmaker::utils::mermaid::is_kitty_supported() {
@@ -405,7 +439,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     } else {
                         println!("{ansi_output}");
                     }
-                    return true;
+                    return Some(0);
                 }
             }
             let opts = matchmaker::utils::mermaid::MermaidOptions {
@@ -423,7 +457,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
             } else {
                 println!("{ansi_output}");
             }
-            true
+            Some(0)
         }
 
         "add" => {
@@ -441,7 +475,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     log::error!("Failed to record frecency for '{path}': {err}");
                 }
             }
-            true
+            Some(0)
         }
         "remove" | "rm" => {
             if let Some(path) = args.get(1) {
@@ -459,9 +493,9 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                 }
             } else {
                 eprintln!("Usage: mm remove <path>");
-                exit(1);
+                return Some(1);
             }
-            true
+            Some(0)
         }
         "rank" => {
             let path = args.get(1).cloned().unwrap_or_else(|| {
@@ -479,7 +513,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
             } else {
                 println!("Path '{}' not found in frecency database", path);
             }
-            true
+            Some(0)
         }
         "pin" | "bookmark" => {
             let path_arg = args.get(1).map(|s| s.as_str());
@@ -489,7 +523,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     for pin in store.list_pins() {
                         println!("{pin}");
                     }
-                    return true;
+                    return Some(0);
                 }
                 let target = if path_str == "add" {
                     args.get(2).map(|s| s.as_str()).unwrap_or(".")
@@ -509,7 +543,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     println!("{pin}");
                 }
             }
-            true
+            Some(0)
         }
         "unpin" | "unbookmark" => {
             if let Some(path) = args.get(1) {
@@ -521,22 +555,22 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                 }
             } else {
                 eprintln!("Usage: mm unbookmark <path>");
-                exit(1);
+                return Some(1);
             }
-            true
+            Some(0)
         }
         "pins" | "bookmarks" => {
             let store = matchmaker::frecency::FrecencyStore::open();
             for pin in store.list_pins() {
                 println!("{pin}");
             }
-            true
+            Some(0)
         }
         "import-zoxide" | "sync-zoxide" => {
             let store = matchmaker::frecency::FrecencyStore::open();
             let count = store.import_from_zoxide();
             println!("Imported {count} directory records from zoxide.");
-            true
+            Some(0)
         }
         "list" | "query" => {
             let dirs_only = args
@@ -594,7 +628,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                         println!("{path}");
                     }
                 }
-                return true;
+                return Some(0);
             }
 
             let mut pinned_matches: Vec<(String, usize, bool)> = Vec::new();
@@ -656,7 +690,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
             for (path, _, _, _) in matches {
                 println!("{path}");
             }
-            true
+            Some(0)
         }
         "init" => {
             let shell = args.get(1).map(|s| s.as_str()).unwrap_or("zsh");
@@ -681,7 +715,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     eprintln!(
                         "Unsupported shell '{shell}'. Supported shells: zsh, bash, fish, nushell, powershell"
                     );
-                    exit(1);
+                    return Some(1);
                 }
             };
 
@@ -704,7 +738,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
             }
 
             println!("{script}");
-            true
+            Some(0)
         }
         "import" => {
             let target = args.get(1).map(|s| s.as_str()).unwrap_or("zoxide");
@@ -712,9 +746,9 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                 import_zoxide();
             } else {
                 eprintln!("Unknown import target '{target}'. Supported targets: zoxide");
-                exit(1);
+                return Some(1);
             }
-            true
+            Some(0)
         }
         "clean" | "prune" => {
             let store = matchmaker::frecency::FrecencyStore::open();
@@ -724,7 +758,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                 }
                 Err(err) => {
                     eprintln!("Failed to clean frecency database: {err}");
-                    exit(1);
+                    return Some(1);
                 }
             }
             let dir_cache = matchmaker::cache::DirCacheStore::open();
@@ -733,7 +767,7 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                     println!("Cleaned {count} stale entries from directory cache database.");
                 }
             }
-            true
+            Some(0)
         }
         "cache" => {
             let start = std::time::Instant::now();
@@ -748,9 +782,9 @@ pub async fn handle_frecency_cli(args: &[String]) -> bool {
                 cache_file.display(),
                 elapsed
             );
-            true
+            Some(0)
         }
-        _ => false,
+        _ => None,
     }
 }
 
@@ -891,7 +925,7 @@ mod tests {
             md_path.to_str().unwrap().to_string(),
             "--width=60".to_string(),
         ];
-        assert!(handle_frecency_cli(&args).await);
+        assert_eq!(handle_frecency_cli(&args).await, Some(0));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -908,7 +942,7 @@ mod tests {
             mmd_path.to_str().unwrap().to_string(),
             "--ascii".to_string(),
         ];
-        assert!(handle_frecency_cli(&args).await);
+        assert_eq!(handle_frecency_cli(&args).await, Some(0));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -930,7 +964,7 @@ mod tests {
             "--no-images".to_string(),
             "--width=50".to_string(),
         ];
-        assert!(handle_frecency_cli(&args).await);
+        assert_eq!(handle_frecency_cli(&args).await, Some(0));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -982,15 +1016,19 @@ mod tests {
         // mm md -w
         let args8 = vec!["md".into(), "-w".into()];
         assert_eq!(parse_subcommand_path_arg(&args8), None);
+
+        // mm md -w -- file.md
+        let args9 = vec!["md".into(), "-w".into(), "--".into(), "file.md".into()];
+        assert_eq!(parse_subcommand_path_arg(&args9), Some("file.md"));
     }
 
     #[tokio::test]
     async fn test_cli_markdown_watch_stdin_rejected() {
         let args1 = vec!["md".to_string(), "-w".to_string(), "-".to_string()];
-        assert!(handle_frecency_cli(&args1).await);
+        assert_eq!(handle_frecency_cli(&args1).await, Some(1));
 
         let args2 = vec!["md".to_string(), "--watch".to_string()];
-        assert!(handle_frecency_cli(&args2).await);
+        assert_eq!(handle_frecency_cli(&args2).await, Some(1));
     }
 
     #[tokio::test]
@@ -1000,7 +1038,22 @@ mod tests {
             "-w".to_string(),
             "/tmp/non_existent_md_test_file_987654321.md".to_string(),
         ];
-        assert!(handle_frecency_cli(&args).await);
+        assert_eq!(handle_frecency_cli(&args).await, Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_watch_directory_rejected() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md_dir_rejected");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let args = vec![
+            "md".to_string(),
+            "-w".to_string(),
+            temp_dir.to_str().unwrap().to_string(),
+        ];
+        assert_eq!(handle_frecency_cli(&args).await, Some(1));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[tokio::test]
@@ -1016,7 +1069,7 @@ mod tests {
                 md_path.to_str().unwrap().to_string(),
                 "--width=40".to_string(),
             ];
-            assert!(handle_frecency_cli(&args).await);
+            assert_eq!(handle_frecency_cli(&args).await, Some(0));
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);

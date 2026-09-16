@@ -388,10 +388,24 @@ pub async fn handle_frecency_cli(args: &[String]) -> Option<i32> {
                 diagram_background: bg,
             };
             let ansi_output = matchmaker::utils::markdown::render_markdown_ansi(&content, &opts);
-            if ansi_output.ends_with('\n') {
-                print!("{ansi_output}");
+            use std::io::IsTerminal;
+            if std::io::stdout().is_terminal() {
+                let (sync_start, sync_end) = crate::watch::get_sync_update_delimiters();
+                print!("{sync_start}");
+                if ansi_output.ends_with('\n') {
+                    print!("{ansi_output}");
+                } else {
+                    println!("{ansi_output}");
+                }
+                print!("{sync_end}");
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
             } else {
-                println!("{ansi_output}");
+                if ansi_output.ends_with('\n') {
+                    print!("{ansi_output}");
+                } else {
+                    println!("{ansi_output}");
+                }
             }
             Some(0)
         }

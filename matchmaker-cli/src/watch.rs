@@ -15,11 +15,24 @@ pub fn get_terminal_width() -> Option<usize> {
         })
 }
 
-/// Reset terminal styling and ensure cursor is visible.
+/// Returns (sync_start, sync_end) Mode 2026 sequences for atomic terminal frame flushes.
+/// When running inside tmux, wraps in DCS passthrough so Ghostty/terminal receives synchronized updates.
+pub fn get_sync_update_delimiters() -> (&'static str, &'static str) {
+    if std::env::var("TMUX").is_ok() {
+        (
+            "\x1b[?2026h\x1bPtmux;\x1b\x1b[?2026h\x1b\\",
+            "\x1b[?2026l\x1bPtmux;\x1b\x1b[?2026l\x1b\\",
+        )
+    } else {
+        ("\x1b[?2026h", "\x1b[?2026l")
+    }
+}
+
+/// Reset terminal styling, ensure cursor is visible, and leave alternate screen buffer.
 pub fn reset_terminal() {
     let mut stdout = std::io::stdout().lock();
     use std::io::Write;
-    let _ = write!(stdout, "\x1b[0m\x1b[?25h\n");
+    let _ = write!(stdout, "\x1b[0m\x1b[?25h\x1b[?1049l\n");
     let _ = stdout.flush();
 }
 
@@ -53,6 +66,7 @@ pub fn render_markdown_content(
 
 /// Clear screen smoothly (\x1b[2J\x1b[H) and flush rendered Markdown string.
 /// If `render_tx` is provided (e.g. in tests), sends rendered string without polluting stdout.
+/// Uses Mode 2026 synchronized updates to prevent frame tearing across tmux panes.
 pub fn render_and_flush(
     path: &Path,
     opts: &mut MarkdownOptions,
@@ -64,14 +78,16 @@ pub fn render_and_flush(
     if let Some(tx) = render_tx {
         let _ = tx.send(ansi);
     } else {
+        let (sync_start, sync_end) = get_sync_update_delimiters();
         let mut stdout = std::io::stdout().lock();
         use std::io::Write;
-        let _ = write!(stdout, "\x1b[2J\x1b[H");
+        let _ = write!(stdout, "{sync_start}\x1b[2J\x1b[H");
         if ansi.ends_with('\n') {
             let _ = write!(stdout, "{ansi}");
         } else {
             let _ = writeln!(stdout, "{ansi}");
         }
+        let _ = write!(stdout, "{sync_end}");
         let _ = stdout.flush();
     }
 }
@@ -408,11 +424,23 @@ pub async fn watch_markdown_with_controls(
     let mut sigterm =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
 
+    // RAII guard to guarantee reset_terminal() is called even on panic or cancellation
+    struct TerminalWatchGuard(bool);
+    impl Drop for TerminalWatchGuard {
+        fn drop(&mut self) {
+            if self.0 {
+                reset_terminal();
+            }
+        }
+    }
+
+    let _guard = TerminalWatchGuard(render_tx.is_none());
+
     if render_tx.is_none() {
-        // Hide terminal cursor for clean live reloads without cursor flicker
+        // Enter alternate screen buffer and hide cursor for clean live reloads without cursor flicker or scrollback pollution
         let mut stdout = std::io::stdout().lock();
         use std::io::Write;
-        let _ = write!(stdout, "\x1b[?25l");
+        let _ = write!(stdout, "\x1b[?1049h\x1b[?25l");
         let _ = stdout.flush();
     }
 

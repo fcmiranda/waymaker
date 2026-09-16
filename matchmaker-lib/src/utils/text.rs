@@ -515,6 +515,11 @@ pub fn text_to_ansi(text: &Text<'_>) -> String {
             }
             if style.add_modifier.contains(Modifier::UNDERLINED) {
                 prefix.push_str("\x1b[4m");
+            } else if span.content.contains('\u{10EEEE}') {
+                // In Kitty Graphics Protocol, underline style/color encodes placement ID (p).
+                // Guarantee underline is explicitly disabled for placeholder cells so terminal does not
+                // misinterpret any leaked underline attribute as a non-zero placement ID.
+                prefix.push_str("\x1b[24m");
             }
             if style.add_modifier.contains(Modifier::REVERSED) {
                 prefix.push_str("\x1b[7m");

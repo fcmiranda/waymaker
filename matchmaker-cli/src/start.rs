@@ -236,6 +236,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     config.previewer.media = config.render.preview.media;
     config.previewer.markdown_diagrams = config.render.preview.markdown_diagrams;
     config.previewer.inline_diagrams = config.render.preview.inline_diagrams;
+    config.previewer.inline_images = config.render.preview.inline_images;
     config.previewer.diagram_theme = config.render.preview.diagram_theme;
     config.previewer.diagram_background = config.render.preview.diagram_background;
 

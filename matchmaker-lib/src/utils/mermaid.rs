@@ -922,6 +922,12 @@ fn detect_kitty_support() -> bool {
 
 static DETECTED_KITTY_SUPPORT: LazyLock<bool> = LazyLock::new(detect_kitty_support);
 
+/// Check whether the current terminal emulator natively supports Kitty Graphics Protocol
+/// based purely on environment detection, without any diagram-specific overrides.
+pub fn is_kitty_terminal_supported() -> bool {
+    *DETECTED_KITTY_SUPPORT
+}
+
 /// Check whether the current terminal environment supports Kitty Graphics Protocol and Unicode Placeholders.
 ///
 /// Strictly supports terminals verified to implement Kitty Unicode Placeholders (`\u{10EEEE}`)
@@ -1012,14 +1018,8 @@ static TRANSMITTED_IMAGES: LazyLock<Mutex<std::collections::HashSet<u32>>> =
 #[cfg(not(test))]
 static TMUX_PASSTHROUGH_INIT: std::sync::Once = std::sync::Once::new();
 
-/// Transmit raw escape sequences to the terminal directly via /dev/tty or stdout.
-pub fn transmit_kitty_raw(seq: &str) {
-    #[cfg(test)]
-    {
-        let _ = seq;
-        return;
-    }
-
+/// Ensure tmux allows escape sequence passthrough for Kitty graphics.
+pub fn ensure_tmux_passthrough() {
     #[cfg(not(test))]
     {
         if std::env::var("TMUX").is_ok() {
@@ -1040,6 +1040,20 @@ pub fn transmit_kitty_raw(seq: &str) {
                 }
             });
         }
+    }
+}
+
+/// Transmit raw escape sequences to the terminal directly via /dev/tty or stdout.
+pub fn transmit_kitty_raw(seq: &str) {
+    #[cfg(test)]
+    {
+        let _ = seq;
+        return;
+    }
+
+    #[cfg(not(test))]
+    {
+        ensure_tmux_passthrough();
 
         use std::io::Write;
         if let Ok(mut tty) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {

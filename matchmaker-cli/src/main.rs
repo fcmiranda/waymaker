@@ -270,6 +270,7 @@ fn handle_frecency_cli(args: &[String]) -> bool {
             let text_only = args.iter().any(|a| a == "--text");
             let ascii = args.iter().any(|a| a == "--ascii");
             let no_mermaid = args.iter().any(|a| a == "--no-mermaid" || a == "--no-diagrams");
+            let no_images = args.iter().any(|a| a == "--no-images");
             let width = parse_preview_width_from_args(args);
             let theme = parse_theme_from_args(args);
             let bg = parse_bg_from_args(args);
@@ -289,17 +290,19 @@ fn handle_frecency_cli(args: &[String]) -> bool {
                     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
                     buf
                 } else {
-                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii] [--no-mermaid] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
+                    eprintln!("Usage: mm md <file.md> [--width <N>] [--text] [--ascii] [--no-mermaid] [--no-images] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
                     return true;
                 }
             };
             let opts = matchmaker::utils::markdown::MarkdownOptions {
                 max_width: width,
+                base_path: path_arg.filter(|p| *p != "-").map(std::path::PathBuf::from),
                 render_mermaid: !no_mermaid,
                 mermaid_ascii: ascii,
                 show_line_numbers: false,
                 mermaid_image: !ascii && !text_only && !no_mermaid,
                 inline_diagrams: !ascii && !text_only && !no_mermaid,
+                inline_images: !ascii && !text_only && !no_images,
                 diagram_theme: theme,
                 diagram_background: bg,
             };
@@ -857,6 +860,28 @@ mod tests {
             "mermaid".to_string(),
             mmd_path.to_str().unwrap().to_string(),
             "--ascii".to_string(),
+        ];
+        assert!(handle_frecency_cli(&args));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_cli_markdown_subcommand_no_images() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md_no_img");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let md_path = temp_dir.join("doc.md");
+        std::fs::write(
+            &md_path,
+            "# Hello\n\n![My Image](non_existent.png)\n",
+        )
+        .unwrap();
+
+        let args = vec![
+            "md".to_string(),
+            md_path.to_str().unwrap().to_string(),
+            "--no-images".to_string(),
+            "--width=50".to_string(),
         ];
         assert!(handle_frecency_cli(&args));
 

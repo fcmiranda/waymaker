@@ -440,6 +440,7 @@ impl Previewer {
                         let media_enabled = self.config.media;
                         let markdown_diagrams = self.config.markdown_diagrams;
                         let inline_diagrams = self.config.inline_diagrams;
+                        let inline_images = self.config.inline_images;
                         let diagram_theme = self.config.diagram_theme;
                         let diagram_background = self.config.diagram_background;
 
@@ -559,8 +560,10 @@ impl Previewer {
                                 // Markdown file — render with diagram offset tracking
                                 let opts = crate::utils::markdown::MarkdownOptions {
                                     max_width: width,
+                                    base_path: Some(p.to_path_buf()),
                                     render_mermaid: markdown_diagrams,
                                     inline_diagrams,
+                                    inline_images,
                                     diagram_theme,
                                     diagram_background,
                                     ..Default::default()

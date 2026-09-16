@@ -1490,6 +1490,10 @@ pub struct PreviewConfig {
     #[partial(alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid")]
     #[serde(alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid", alias = "kitty_diagrams")]
     pub inline_diagrams: bool,
+    /// Whether to render embedded local images inline using Kitty Unicode Placeholders. Default: true
+    #[partial(alias = "inline_img", alias = "inline_image")]
+    #[serde(alias = "inline_img", alias = "inline_image", alias = "kitty_images")]
+    pub inline_images: bool,
     /// Mermaid diagram theme: "auto" (detects system/terminal theme), "dark", or "light". Default: "auto"
     #[partial(alias = "diagram_theme", alias = "diag_theme", alias = "theme_diag")]
     #[serde(alias = "diagrams_theme", alias = "mermaid_theme", alias = "theme_diagram")]
@@ -1531,6 +1535,7 @@ impl Default for PreviewConfig {
             markdown: true,
             markdown_diagrams: true,
             inline_diagrams: true,
+            inline_images: true,
             diagram_theme: DiagramTheme::default(),
             diagram_background: DiagramBackground::default(),
         }
@@ -1605,6 +1610,9 @@ pub struct PreviewerConfig {
     /// Whether embedded Mermaid diagrams are rendered inline using Kitty Unicode Placeholders. Default: true
     pub inline_diagrams: bool,
 
+    /// Whether embedded images are rendered inline using Kitty Unicode Placeholders. Default: true
+    pub inline_images: bool,
+
     /// Theme for Mermaid diagrams: "auto", "dark", or "light". Default: "auto"
     pub diagram_theme: DiagramTheme,
 
@@ -1631,6 +1639,7 @@ impl Default for PreviewerConfig {
             media: false,
             markdown_diagrams: true,
             inline_diagrams: true,
+            inline_images: true,
             diagram_theme: DiagramTheme::default(),
             diagram_background: DiagramBackground::default(),
         }

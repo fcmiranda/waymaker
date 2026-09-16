@@ -1,13 +1,16 @@
+use indexmap::IndexMap;
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
+use rustc_hash::FxBuildHasher;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use unicode_width::UnicodeWidthStr;
 
 use super::mermaid::{
-    MermaidOptions, is_kitty_supported, render_mermaid,
-    render_mermaid_to_unicode_placeholders_with_options,
+    MermaidOptions, ensure_tmux_passthrough, is_kitty_supported, is_kitty_terminal_supported,
+    render_mermaid, render_mermaid_to_unicode_placeholders_with_options,
 };
 use super::text::text_to_ansi;
 use crate::config::{DiagramBackground, DiagramTheme};
@@ -17,6 +20,8 @@ use crate::config::{DiagramBackground, DiagramTheme};
 pub struct MarkdownOptions {
     /// Maximum width / column budget for word wrapping and diagram layout.
     pub max_width: Option<usize>,
+    /// Base directory or markdown file path for resolving relative image links.
+    pub base_path: Option<PathBuf>,
     /// Whether to render embedded ```mermaid ... ``` code blocks as diagrams.
     pub render_mermaid: bool,
     /// Whether to force ASCII-only characters in rendered Mermaid diagrams.
@@ -27,6 +32,8 @@ pub struct MarkdownOptions {
     pub mermaid_image: bool,
     /// Whether to render embedded Mermaid diagrams inline using Kitty Unicode Placeholders.
     pub inline_diagrams: bool,
+    /// Whether to render embedded local images inline using Kitty Unicode Placeholders.
+    pub inline_images: bool,
     /// Diagram theme: Auto, Dark, or Light.
     pub diagram_theme: DiagramTheme,
     /// Diagram background mode: Transparent or Solid.
@@ -37,11 +44,13 @@ impl Default for MarkdownOptions {
     fn default() -> Self {
         Self {
             max_width: None,
+            base_path: None,
             render_mermaid: true,
             mermaid_ascii: false,
             show_line_numbers: false,
             mermaid_image: false,
             inline_diagrams: false,
+            inline_images: true,
             diagram_theme: DiagramTheme::default(),
             diagram_background: DiagramBackground::default(),
         }
@@ -61,13 +70,18 @@ pub fn render_markdown_ansi(src: &str, opts: &MarkdownOptions) -> String {
     parser_opts.insert(Options::ENABLE_STRIKETHROUGH);
     parser_opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
 
+    ensure_tmux_passthrough();
+
     let parser = Parser::new_ext(src, parser_opts);
     let mut renderer = MarkdownRenderer::new(opts);
     renderer.render(parser);
     let (text, _, transmissions) = renderer.finish_with_transmissions();
     let mut out = String::new();
-    for (_, t) in transmissions {
-        out.push_str(&t);
+    let mut seen_ids = std::collections::HashSet::new();
+    for (id, t) in transmissions {
+        if seen_ids.insert(id) {
+            out.push_str(&t);
+        }
     }
     out.push_str(&text_to_ansi(&text));
     out
@@ -76,13 +90,21 @@ pub fn render_markdown_ansi(src: &str, opts: &MarkdownOptions) -> String {
 /// Read a Markdown file and render it as Ratatui `Text<'static>`.
 pub fn render_markdown_file(path: &Path, opts: &MarkdownOptions) -> anyhow::Result<Text<'static>> {
     let content = fs::read_to_string(path)?;
-    Ok(render_markdown(&content, opts))
+    let mut file_opts = opts.clone();
+    if file_opts.base_path.is_none() {
+        file_opts.base_path = Some(path.to_path_buf());
+    }
+    Ok(render_markdown(&content, &file_opts))
 }
 
 /// Read a Markdown file and render it as an ANSI colored string for terminal stdout.
 pub fn render_markdown_file_ansi(path: &Path, opts: &MarkdownOptions) -> anyhow::Result<String> {
     let content = fs::read_to_string(path)?;
-    Ok(render_markdown_ansi(&content, opts))
+    let mut file_opts = opts.clone();
+    if file_opts.base_path.is_none() {
+        file_opts.base_path = Some(path.to_path_buf());
+    }
+    Ok(render_markdown_ansi(&content, &file_opts))
 }
 
 /// Extract all ` ```mermaid ` blocks from raw Markdown source.
@@ -140,7 +162,346 @@ pub fn render_markdown_file_with_diagram_offsets(
     opts: &MarkdownOptions,
 ) -> anyhow::Result<(Text<'static>, Vec<usize>)> {
     let content = fs::read_to_string(path)?;
-    Ok(render_markdown_with_diagram_offsets(&content, opts))
+    let mut file_opts = opts.clone();
+    if file_opts.base_path.is_none() {
+        file_opts.base_path = Some(path.to_path_buf());
+    }
+    Ok(render_markdown_with_diagram_offsets(&content, &file_opts))
+}
+
+/// Check whether inline image rendering is enabled.
+/// Precedence:
+/// 1. Explicit `MM_INLINE_IMAGES` environment variable override ("0"/"1", etc.).
+/// 2. `opts_inline_images && is_kitty_terminal_supported()`.
+pub fn is_inline_images_enabled(opts_inline_images: bool) -> bool {
+    if let Ok(val) = std::env::var("MM_INLINE_IMAGES") {
+        let v = val.trim();
+        if v == "0"
+            || v.eq_ignore_ascii_case("false")
+            || v.eq_ignore_ascii_case("off")
+            || v.eq_ignore_ascii_case("no")
+        {
+            return false;
+        }
+        if v == "1"
+            || v.eq_ignore_ascii_case("true")
+            || v.eq_ignore_ascii_case("on")
+            || v.eq_ignore_ascii_case("yes")
+        {
+            return true;
+        }
+    }
+    opts_inline_images && is_kitty_terminal_supported()
+}
+
+/// Key for LRU caching of rendered image placeholders.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImageCacheKey {
+    pub path_or_data: String,
+    pub mtime_nanos: Option<u128>,
+    pub file_size: u64,
+    pub max_cols: u32,
+    pub max_rows: u32,
+}
+
+pub type KittyPlaceholderImage = crate::utils::mermaid::KittyPlaceholderDiagram;
+
+static IMAGE_PLACEHOLDER_CACHE: LazyLock<
+    Mutex<IndexMap<ImageCacheKey, KittyPlaceholderImage, FxBuildHasher>>,
+> = LazyLock::new(|| Mutex::new(IndexMap::with_capacity_and_hasher(64, FxBuildHasher)));
+
+#[cfg(test)]
+pub fn clear_image_placeholder_cache() {
+    if let Ok(mut cache) = IMAGE_PLACEHOLDER_CACHE.lock() {
+        cache.clear();
+    }
+}
+
+fn url_decode(s: &str) -> String {
+    let mut result = Vec::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    result.push(byte);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        result.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(result).unwrap_or_else(|_| s.to_string())
+}
+
+/// Resolves a local image path from a URL (e.g. relative path, absolute path, file:// URI, tilde path).
+/// Returns `None` if the path is a remote HTTP/HTTPS URL, a data URI, or does not exist on disk.
+pub fn resolve_local_image_path(url: &str, base_path: Option<&Path>) -> Option<PathBuf> {
+    if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("data:") {
+        return None;
+    }
+
+    let raw = if let Some(stripped) = url.strip_prefix("file://") {
+        if let Some(rest) = stripped.strip_prefix("localhost") {
+            rest
+        } else {
+            stripped
+        }
+    } else if let Some(stripped) = url.strip_prefix("file:") {
+        stripped
+    } else {
+        url
+    };
+
+    // Strip fragment (#...) and query (?...)
+    let no_hash = raw.split('#').next().unwrap_or(raw);
+    let no_query = no_hash.split('?').next().unwrap_or(no_hash);
+    let decoded = url_decode(no_query);
+
+    let candidates = [
+        // 1. Tilde expanded if applicable
+        if let Some(rest) = decoded.strip_prefix("~/") {
+            dirs::home_dir().map(|h| h.join(rest))
+        } else {
+            None
+        },
+        // 2. Decoded path
+        Some(PathBuf::from(&decoded)),
+        // 3. Raw path (if decoding was different)
+        if decoded != no_query {
+            Some(PathBuf::from(no_query))
+        } else {
+            None
+        },
+    ];
+
+    for candidate in candidates.into_iter().flatten() {
+        // If candidate is absolute, check directly
+        if candidate.is_absolute() {
+            if candidate.is_file() {
+                return Some(std::fs::canonicalize(&candidate).unwrap_or(candidate));
+            }
+            continue;
+        }
+
+        // For relative paths, prioritize resolving relative to base_path directory
+        if let Some(base) = base_path {
+            let base_dir = if base.is_dir() {
+                base.to_path_buf()
+            } else if let Some(parent) = base.parent() {
+                if parent.as_os_str().is_empty() {
+                    PathBuf::from(".")
+                } else {
+                    parent.to_path_buf()
+                }
+            } else {
+                base.to_path_buf()
+            };
+
+            let joined = base_dir.join(&candidate);
+            if joined.is_file() {
+                return Some(std::fs::canonicalize(&joined).unwrap_or(joined));
+            }
+        }
+
+        // Fallback: check relative to CWD
+        if candidate.is_file() {
+            return Some(std::fs::canonicalize(&candidate).unwrap_or(candidate));
+        }
+    }
+
+    None
+}
+
+fn decode_data_uri(url: &str) -> Option<Vec<u8>> {
+    let rest = url.strip_prefix("data:")?;
+    let (_, data) = rest.split_once("base64,")?;
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(data.trim())
+        .ok()
+}
+
+/// Render a local image file or data URI to Kitty Unicode Placeholders (`\u{10EEEE}`).
+pub fn render_image_to_unicode_placeholders(
+    url: &str,
+    base_path: Option<&Path>,
+    max_width: Option<usize>,
+) -> Option<KittyPlaceholderImage> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // 1. Compute terminal metrics and dimensions
+    let (cell_w, cell_h) = match crossterm::terminal::window_size() {
+        Ok(ws) if ws.columns > 0 && ws.rows > 0 && ws.width > 0 && ws.height > 0 => {
+            (ws.width as f32 / ws.columns as f32, ws.height as f32 / ws.rows as f32)
+        }
+        _ => (10.0, 20.0),
+    };
+    let cell_w = if cell_w > 0.0 { cell_w } else { 10.0 };
+    let cell_h = if cell_h > 0.0 { cell_h } else { 20.0 };
+
+    let term_cols = match crossterm::terminal::window_size() {
+        Ok(ws) if ws.columns > 0 => ws.columns as usize,
+        _ => match crossterm::terminal::size() {
+            Ok((cols, _)) if cols > 0 => cols as usize,
+            _ => 80,
+        },
+    };
+
+    let term_rows = match crossterm::terminal::window_size() {
+        Ok(ws) if ws.rows > 0 => ws.rows as u32,
+        _ => match crossterm::terminal::size() {
+            Ok((_, rows)) if rows > 0 => rows as u32,
+            _ => 40,
+        },
+    };
+
+    let available_width = max_width.unwrap_or(term_cols);
+    let budget_width = available_width.saturating_sub(4).max(10) as u32;
+    let max_diacritics = 255u32;
+    let max_cols = budget_width.min(max_diacritics);
+    let max_rows = term_rows.saturating_sub(2).clamp(1, 80).min(max_diacritics);
+
+    // Determine cache key
+    let (cache_key, is_data, resolved_path) = if trimmed.starts_with("data:") {
+        use rustc_hash::FxHasher;
+        use std::hash::Hasher;
+        let mut hasher = FxHasher::default();
+        std::hash::Hash::hash(trimmed, &mut hasher);
+        let key = ImageCacheKey {
+            path_or_data: format!("data:{:x}", hasher.finish()),
+            mtime_nanos: None,
+            file_size: trimmed.len() as u64,
+            max_cols,
+            max_rows,
+        };
+        (key, true, None)
+    } else {
+        let resolved = resolve_local_image_path(trimmed, base_path)?;
+        let meta = fs::metadata(&resolved).ok()?;
+        let mtime_nanos = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos());
+        let key = ImageCacheKey {
+            path_or_data: resolved.to_string_lossy().to_string(),
+            mtime_nanos,
+            file_size: meta.len(),
+            max_cols,
+            max_rows,
+        };
+        (key, false, Some(resolved))
+    };
+
+    // 2. Check LRU cache first
+    if let Ok(mut cache) = IMAGE_PLACEHOLDER_CACHE.lock() {
+        if let Some((_, item)) = cache.shift_remove_entry(&cache_key) {
+            let cloned = item.clone();
+            cache.insert(cache_key, item);
+            return Some(cloned);
+        }
+    }
+
+    // 3. Load image
+    let img = if is_data {
+        let bytes = decode_data_uri(trimmed)?;
+        if trimmed.starts_with("data:image/svg") {
+            let svg_str = std::str::from_utf8(&bytes).ok()?;
+            crate::utils::mermaid::render_svg_to_image(svg_str, 1.5)?
+        } else {
+            image::load_from_memory(&bytes).ok()?
+        }
+    } else {
+        let resolved = resolved_path.as_deref().unwrap_or_else(|| Path::new(&cache_key.path_or_data));
+        let is_svg = resolved
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("svg"))
+            .unwrap_or(false);
+
+        if is_svg {
+            let svg_content = fs::read_to_string(resolved).ok()?;
+            crate::utils::mermaid::render_svg_to_image(&svg_content, 1.5)?
+        } else {
+            image::open(resolved).ok()?
+        }
+    };
+
+    let img_w = img.width() as f32;
+    let img_h = img.height() as f32;
+    if img_w <= 0.0 || img_h <= 0.0 {
+        return None;
+    }
+
+    let natural_cols = (img_w / cell_w).round().max(1.0) as u32;
+    let natural_rows = (img_h / cell_h).round().max(1.0) as u32;
+
+    let scale_w = (max_cols as f32) / (natural_cols as f32);
+    let scale_h = (max_rows as f32) / (natural_rows as f32);
+    let scale = scale_w.min(scale_h).min(1.0);
+
+    let cols = ((natural_cols as f32 * scale).round() as u32).clamp(1, max_cols);
+    let rows = ((natural_rows as f32 * scale).round() as u32).clamp(1, max_rows);
+
+    // 4. Bound pixel resolution before PNG encoding for fast transmission
+    let target_pixel_w = (cols * 24).clamp(64, 1920);
+    let target_pixel_h = (rows * 48).clamp(64, 1920);
+    let img = if img.width() > target_pixel_w || img.height() > target_pixel_h {
+        img.resize(target_pixel_w, target_pixel_h, image::imageops::FilterType::Triangle)
+    } else {
+        img
+    };
+
+    // 5. Encode to PNG
+    let mut png_bytes = Vec::new();
+    img.write_to(
+        &mut std::io::Cursor::new(&mut png_bytes),
+        image::ImageFormat::Png,
+    ).ok()?;
+
+    // 6. Generate distinct image ID
+    let image_id = crate::utils::mermaid::next_diagram_image_id();
+
+    // 7. Build transmission sequence
+    let transmission = crate::utils::mermaid::encode_kitty_unicode_transmission(
+        &png_bytes,
+        image_id,
+        cols,
+        rows,
+    );
+
+    // 8. Generate placeholder lines
+    let lines = crate::utils::mermaid::create_unicode_placeholder_lines(
+        image_id,
+        cols,
+        rows,
+        0,
+    );
+
+    let result = KittyPlaceholderImage {
+        image_id,
+        cols,
+        rows,
+        transmission,
+        lines,
+    };
+
+    // 9. Insert into LRU cache
+    if let Ok(mut cache) = IMAGE_PLACEHOLDER_CACHE.lock() {
+        if cache.len() >= 64 {
+            cache.shift_remove_index(0);
+        }
+        cache.insert(cache_key, result.clone());
+    }
+
+    Some(result)
 }
 
 struct ListState {
@@ -308,18 +669,22 @@ impl<'a> MarkdownRenderer<'a> {
 
     fn ensure_pending_prefix(&mut self) {
         if let Some((depth, bullet)) = self.pending_item_prefix.take() {
+            let mut prefix = Vec::new();
             if depth > 0 {
-                self.current_line.push(Span::raw("  ".repeat(depth)));
+                prefix.push(Span::raw("  ".repeat(depth)));
             }
-            self.current_line.push(bullet);
+            prefix.push(bullet);
+            self.current_line.splice(0..0, prefix);
         }
     }
 
     fn flush_line(&mut self) {
+        if self.current_line.is_empty() {
+            return;
+        }
         self.ensure_pending_prefix();
-        if !self.current_line.is_empty() {
-            let spans = std::mem::take(&mut self.current_line);
-            let continuation = self.list_continuation_indent;
+        let spans = std::mem::take(&mut self.current_line);
+        let continuation = self.list_continuation_indent;
 
             if let Some(mw) = self.opts.max_width {
                 let quote_overhead = self.blockquote_depth * 2;
@@ -354,7 +719,6 @@ impl<'a> MarkdownRenderer<'a> {
             } else {
                 self.lines.push(Line::from(spans));
             }
-        }
     }
 
     fn ensure_blank_line(&mut self) {
@@ -442,11 +806,11 @@ impl<'a> MarkdownRenderer<'a> {
             Event::Start(tag) => self.handle_start_tag(tag),
             Event::End(tag_end) => self.handle_end_tag(tag_end),
             Event::Text(text) => {
-                self.ensure_pending_prefix();
                 if self.current_image_url.is_some() {
                     self.current_image_alt.push_str(&text);
                     return;
                 }
+                self.ensure_pending_prefix();
                 if self.current_link_url.is_some() {
                     self.current_link_text.push_str(&text);
                 }
@@ -455,6 +819,10 @@ impl<'a> MarkdownRenderer<'a> {
                     .push(Span::styled(text.into_string(), style));
             }
             Event::Code(code) => {
+                if self.current_image_url.is_some() {
+                    self.current_image_alt.push_str(&code);
+                    return;
+                }
                 self.ensure_pending_prefix();
                 let code_style = Style::default()
                     .fg(Color::Yellow)
@@ -508,7 +876,9 @@ impl<'a> MarkdownRenderer<'a> {
     fn handle_start_tag(&mut self, tag: Tag) {
         match tag {
             Tag::Paragraph => {
-                self.ensure_blank_line();
+                if self.pending_item_prefix.is_none() {
+                    self.ensure_blank_line();
+                }
             }
             Tag::Heading { level, .. } => {
                 self.ensure_blank_line();
@@ -621,7 +991,6 @@ impl<'a> MarkdownRenderer<'a> {
                 );
             }
             Tag::Image { dest_url, .. } => {
-                self.ensure_pending_prefix();
                 self.current_image_url = Some(dest_url.to_string());
                 self.current_image_alt.clear();
             }
@@ -675,6 +1044,58 @@ impl<'a> MarkdownRenderer<'a> {
             TagEnd::Image => {
                 let url = self.current_image_url.take().unwrap_or_default();
                 let alt = std::mem::take(&mut self.current_image_alt);
+
+                let use_inline = is_inline_images_enabled(self.opts.inline_images);
+                if use_inline {
+                    if let Some(img) = render_image_to_unicode_placeholders(
+                        &url,
+                        self.opts.base_path.as_deref(),
+                        self.opts.max_width,
+                    ) {
+                        self.flush_line();
+                        self.transmissions.push((img.image_id, img.transmission));
+                        self.ensure_blank_line();
+
+                        let opt_pending = self.pending_item_prefix.take();
+                        let depth = self.list_stack.len().saturating_sub(1);
+                        let base_indent = if opt_pending.is_some() || depth > 0 {
+                            depth * 2
+                        } else {
+                            0
+                        };
+
+                        for (idx, line) in img.lines.into_iter().enumerate() {
+                            let mut spans = Vec::new();
+                            if self.blockquote_depth > 0 {
+                                spans.push(Span::styled(
+                                    "▌ ".repeat(self.blockquote_depth),
+                                    Style::default().fg(Color::Cyan),
+                                ));
+                            }
+
+                            if let Some((_, ref bullet)) = opt_pending {
+                                if idx == 0 {
+                                    if base_indent > 0 {
+                                        spans.push(Span::raw(" ".repeat(base_indent)));
+                                    }
+                                    spans.push(bullet.clone());
+                                } else {
+                                    let bullet_w = UnicodeWidthStr::width(bullet.content.as_ref());
+                                    spans.push(Span::raw(" ".repeat(base_indent + bullet_w)));
+                                }
+                            } else if base_indent > 0 {
+                                spans.push(Span::raw(" ".repeat(base_indent)));
+                            }
+
+                            spans.extend(line.spans);
+                            self.lines.push(Line::from(spans));
+                        }
+                        self.lines.push(Line::default());
+                        return;
+                    }
+                }
+
+                self.ensure_pending_prefix();
                 let label = if alt.is_empty() { "image" } else { &alt };
                 let img_span = Span::styled(
                     format!("🖼  [{label}]({url})"),
@@ -1365,4 +1786,490 @@ graph TD
             "ANSI output must contain Kitty graphics escape sequence"
         );
     }
+
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn test_render_markdown_inline_local_image() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+
+        // Create a temporary PNG image
+        let temp_dir = std::env::temp_dir().join("mm_test_inline_img");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let img_path = temp_dir.join("test_img.png");
+
+        let mut img_buf = image::RgbaImage::new(100, 100);
+        for pixel in img_buf.pixels_mut() {
+            *pixel = image::Rgba([255, 0, 0, 255]);
+        }
+        img_buf.save(&img_path).unwrap();
+
+        let md = format!("# Document\n\n![Test Image]({})\n\nAfter image", img_path.display());
+        let opts = MarkdownOptions {
+            inline_images: true,
+            max_width: Some(60),
+            ..Default::default()
+        };
+
+        let text = render_markdown(&md, &opts);
+
+        let found_placeholder = text.lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER))
+        });
+
+        let ansi = render_markdown_ansi(&md, &opts);
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        assert!(
+            found_placeholder,
+            "Rendered markdown text must contain inline Kitty placeholder characters for local image"
+        );
+        assert!(
+            ansi.contains("\u{10EEEE}"),
+            "ANSI output must contain Unicode placeholder \\u{{10EEEE}}"
+        );
+        assert!(
+            ansi.contains("_G"),
+            "ANSI output must contain Kitty graphics escape sequence for transmitted image"
+        );
+        assert!(
+            ansi.contains("U=1"),
+            "Kitty graphics transmission must specify U=1 for Unicode placeholder mode"
+        );
+    }
+
+    #[test]
+    fn test_render_markdown_image_relative_path_and_lru_cache() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        clear_image_placeholder_cache();
+
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+
+        let temp_dir = std::env::temp_dir().join("mm_test_rel_img");
+        let sub_dir = temp_dir.join("assets");
+        let _ = std::fs::create_dir_all(&sub_dir);
+        let img_path = sub_dir.join("pic.png");
+
+        let mut img_buf = image::RgbaImage::new(80, 80);
+        for pixel in img_buf.pixels_mut() {
+            *pixel = image::Rgba([0, 255, 0, 255]);
+        }
+        img_buf.save(&img_path).unwrap();
+
+        let md_file = temp_dir.join("readme.md");
+        std::fs::write(&md_file, "![My Pic](./assets/pic.png)").unwrap();
+
+        let opts = MarkdownOptions {
+            inline_images: true,
+            max_width: Some(50),
+            ..Default::default()
+        };
+
+        // 1. First render: loads from disk, caches in LRU
+        let (text1, _) = render_markdown_file_with_diagram_offsets(&md_file, &opts).unwrap();
+        let placeholder1 = text1.lines.iter().find(|l| {
+            l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER))
+        });
+        assert!(placeholder1.is_some(), "Relative image must be found and rendered inline");
+
+        // 2. Second render: must hit LRU cache with same image ID
+        let (text2, _) = render_markdown_file_with_diagram_offsets(&md_file, &opts).unwrap();
+        let placeholder2 = text2.lines.iter().find(|l| {
+            l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER))
+        });
+        assert!(placeholder2.is_some(), "Second render must also succeed from LRU cache");
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_render_markdown_image_fallback_when_disabled_or_missing() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "0");
+        }
+
+        let md = "![Test Pic](some_image.png)";
+        let opts = MarkdownOptions::default();
+        let text = render_markdown(md, &opts);
+        let joined: String = text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            joined.contains("🖼  [Test Pic](some_image.png)"),
+            "Must fall back to text representation when Kitty is disabled"
+        );
+
+        // When enabled but file is missing
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+        let text_missing = render_markdown(md, &opts);
+        let joined_missing: String = text_missing
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            joined_missing.contains("🖼  [Test Pic](some_image.png)"),
+            "Must cleanly fall back to text representation when image file does not exist"
+        );
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_render_markdown_image_url_encoded_and_spaces() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+
+        let temp_dir = std::env::temp_dir().join("mm_test_spaces_img");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let img_path = temp_dir.join("photo with spaces.png");
+
+        let mut img_buf = image::RgbaImage::new(50, 50);
+        for pixel in img_buf.pixels_mut() {
+            *pixel = image::Rgba([0, 0, 255, 255]);
+        }
+        img_buf.save(&img_path).unwrap();
+
+        // Reference using %20
+        let md = "![Space Pic](photo%20with%20spaces.png)";
+        let opts = MarkdownOptions {
+            base_path: Some(temp_dir.join("doc.md")),
+            inline_images: true,
+            ..Default::default()
+        };
+        let text = render_markdown(md, &opts);
+        let has_placeholder = text.lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER))
+        });
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        assert!(
+            has_placeholder,
+            "Percent-encoded image URLs must resolve on disk and render as inline Kitty placeholders"
+        );
+    }
+
+    #[test]
+    fn test_render_markdown_image_data_uri() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+
+        let mut img_buf = image::RgbaImage::new(10, 10);
+        for pixel in img_buf.pixels_mut() {
+            *pixel = image::Rgba([255, 255, 0, 255]);
+        }
+        let mut png_bytes = Vec::new();
+        img_buf
+            .write_to(
+                &mut std::io::Cursor::new(&mut png_bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
+        let data_uri = format!("data:image/png;base64,{b64}");
+        let md = format!("![Data URI]({data_uri})");
+
+        let opts = MarkdownOptions {
+            inline_images: true,
+            ..Default::default()
+        };
+        let text = render_markdown(&md, &opts);
+        let has_placeholder = text.lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER))
+        });
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+
+        assert!(
+            has_placeholder,
+            "Data URIs must decode and render inline Kitty placeholders"
+        );
+    }
+
+    #[test]
+    fn test_render_markdown_image_disabled_flag_independence() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        let prev_diag = std::env::var("MM_INLINE_DIAGRAMS").ok();
+        unsafe {
+            std::env::remove_var("MM_INLINE_IMAGES");
+            std::env::set_var("MM_INLINE_DIAGRAMS", "1");
+        }
+
+        let temp_dir = std::env::temp_dir().join("mm_test_flag_indep");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let img_path = temp_dir.join("photo.png");
+
+        let mut img_buf = image::RgbaImage::new(40, 40);
+        for pixel in img_buf.pixels_mut() {
+            *pixel = image::Rgba([100, 150, 200, 255]);
+        }
+        img_buf.save(&img_path).unwrap();
+
+        let md = format!("![Photo]({})\n\n```mermaid\ngraph TD;\nA-->B;\n```", img_path.display());
+
+        // inline_images = false, inline_diagrams = true
+        let opts = MarkdownOptions {
+            inline_images: false,
+            inline_diagrams: true,
+            ..Default::default()
+        };
+
+        let text = render_markdown(&md, &opts);
+        let joined: String = text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+            match prev_diag {
+                Some(v) => std::env::set_var("MM_INLINE_DIAGRAMS", v),
+                None => std::env::remove_var("MM_INLINE_DIAGRAMS"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        // Image MUST be fallback text
+        assert!(
+            joined.contains("🖼  [Photo]"),
+            "When inline_images=false, images must NOT be rendered inline even if inline_diagrams=true"
+        );
+        // Diagram MUST still have placeholder lines
+        let has_diagram_placeholder = text.lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER))
+        });
+        assert!(
+            has_diagram_placeholder,
+            "Diagram must still render inline when inline_diagrams=true"
+        );
+    }
+
+    #[test]
+    fn test_is_inline_images_enabled_env_semantics() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        let prev_diag = std::env::var("MM_INLINE_DIAGRAMS").ok();
+
+        // 1. MM_INLINE_IMAGES=1 forces enabled regardless of opts
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+            std::env::set_var("MM_INLINE_DIAGRAMS", "0");
+        }
+        assert!(is_inline_images_enabled(false), "MM_INLINE_IMAGES=1 must force enable images even if opts.inline_images=false");
+        assert!(is_inline_images_enabled(true), "MM_INLINE_IMAGES=1 must force enable images even if MM_INLINE_DIAGRAMS=0");
+
+        // 2. MM_INLINE_IMAGES=0 forces disabled regardless of opts
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "0");
+            std::env::set_var("MM_INLINE_DIAGRAMS", "1");
+        }
+        assert!(!is_inline_images_enabled(true), "MM_INLINE_IMAGES=0 must force disable images even if opts.inline_images=true and diagrams=1");
+
+        // 3. MM_INLINE_DIAGRAMS=0 must NOT disable images if terminal supports it
+        unsafe {
+            std::env::remove_var("MM_INLINE_IMAGES");
+            std::env::set_var("MM_INLINE_DIAGRAMS", "0");
+        }
+        if super::super::mermaid::is_kitty_terminal_supported() {
+            assert!(is_inline_images_enabled(true), "MM_INLINE_DIAGRAMS=0 must not affect inline images when terminal is supported");
+        }
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+            match prev_diag {
+                Some(v) => std::env::set_var("MM_INLINE_DIAGRAMS", v),
+                None => std::env::remove_var("MM_INLINE_DIAGRAMS"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_render_markdown_image_in_list_item_no_orphan_bullet() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+
+        let temp_dir = std::env::temp_dir().join("mm_test_list_img");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let img_path = temp_dir.join("bullet_pic.png");
+
+        let mut img_buf = image::RgbaImage::new(30, 30);
+        for pixel in img_buf.pixels_mut() {
+            *pixel = image::Rgba([12, 34, 56, 255]);
+        }
+        img_buf.save(&img_path).unwrap();
+
+        let md = format!("- ![Bullet Pic]({})\n- Normal item", img_path.display());
+        let opts = MarkdownOptions {
+            inline_images: true,
+            ..Default::default()
+        };
+        let text = render_markdown(&md, &opts);
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        // There should be NO line consisting solely of a bullet "• "
+        for line in &text.lines {
+            let line_str: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let trimmed = line_str.trim();
+            assert_ne!(trimmed, "•", "List item image must not produce an isolated orphan bullet line");
+        }
+    }
+
+    #[test]
+    fn test_render_markdown_image_file_scheme_and_relative_priority() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+
+        let temp_dir = std::env::temp_dir().join("mm_test_file_scheme");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let img_path = temp_dir.join("photo.png");
+
+        let mut img_buf = image::RgbaImage::new(20, 20);
+        for pixel in img_buf.pixels_mut() {
+            *pixel = image::Rgba([99, 88, 77, 255]);
+        }
+        img_buf.save(&img_path).unwrap();
+
+        // 1. Test file://localhost/path
+        let file_url = format!("file://localhost{}", img_path.display());
+        let resolved = resolve_local_image_path(&file_url, None);
+        assert_eq!(
+            resolved,
+            Some(std::fs::canonicalize(&img_path).unwrap()),
+            "file://localhost/<abs_path> must resolve to absolute path with leading slash preserved"
+        );
+
+        // 2. Test relative priority over CWD
+        let doc_dir = temp_dir.join("subdocs");
+        let _ = std::fs::create_dir_all(&doc_dir);
+        let doc_img = doc_dir.join("nested.png");
+        let mut doc_img_buf = image::RgbaImage::new(20, 20);
+        for pixel in doc_img_buf.pixels_mut() {
+            *pixel = image::Rgba([1, 2, 3, 255]);
+        }
+        doc_img_buf.save(&doc_img).unwrap();
+
+        let resolved_rel = resolve_local_image_path("nested.png", Some(&doc_dir.join("readme.md")));
+        assert_eq!(
+            resolved_rel,
+            Some(std::fs::canonicalize(&doc_img).unwrap()),
+            "Relative image path must resolve relative to document directory"
+        );
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_render_markdown_image_svg_data_uri() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("MM_INLINE_IMAGES").ok();
+        unsafe {
+            std::env::set_var("MM_INLINE_IMAGES", "1");
+        }
+
+        let svg_data = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="green"/></svg>"#;
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(svg_data);
+        let data_uri = format!("data:image/svg+xml;base64,{b64}");
+        let md = format!("![SVG Data]({data_uri})");
+
+        let opts = MarkdownOptions {
+            inline_images: true,
+            ..Default::default()
+        };
+        let text = render_markdown(&md, &opts);
+        let has_placeholder = text.lines.iter().any(|l| {
+            l.spans.iter().any(|s| s.content.contains(super::super::mermaid::PLACEHOLDER))
+        });
+
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("MM_INLINE_IMAGES", v),
+                None => std::env::remove_var("MM_INLINE_IMAGES"),
+            }
+        }
+
+        assert!(
+            has_placeholder,
+            "SVG data URIs must decode and render inline Kitty placeholders"
+        );
+    }
 }
+

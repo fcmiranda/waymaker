@@ -1171,6 +1171,7 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
     previewer_config.media = mm.render_config.preview.media;
     previewer_config.markdown_diagrams = mm.render_config.preview.markdown_diagrams;
     previewer_config.inline_diagrams = mm.render_config.preview.inline_diagrams;
+    previewer_config.inline_images = mm.render_config.preview.inline_images;
     previewer_config.diagram_theme = mm.render_config.preview.diagram_theme;
     previewer_config.diagram_background = mm.render_config.preview.diagram_background;
     // initialize previewer

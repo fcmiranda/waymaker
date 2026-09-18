@@ -342,7 +342,7 @@ pub fn action_handler(
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                 MMAction::SetModeIndex(index),
             )));
-            if state.ui.config.nav_mode {
+            if state.ui.config.nav.active {
                 let focus_to_set = if let Some(saved) = mode_history.get(&index) {
                     saved.focus
                 } else if index == 1 {
@@ -443,7 +443,7 @@ pub fn action_handler(
             let _ = render_tx.send(RenderCommand::Action(Action::Custom(
                 MMAction::SetModeIndex(index),
             )));
-            if state.ui.config.nav_mode {
+            if state.ui.config.nav.active {
                 let focus_to_set = if let Some(saved) = mode_history.get(&index) {
                     saved.focus
                 } else if index == 1 {
@@ -2082,7 +2082,7 @@ mod tests {
         assert_eq!(mm_state.picker_ui.query.input, "normal_query");
 
         // 8. Test nav mode focus behavior
-        mm_state.ui.config.nav_mode = true;
+        mm_state.ui.config.nav.active = true;
         mm_state.focus = matchmaker::render::Focus::Results;
         action_handler(
             MMAction::ReloadNext(None),

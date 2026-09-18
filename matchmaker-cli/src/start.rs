@@ -29,7 +29,9 @@ use log::debug;
 use matchmaker::{
     Action, ConfigInjector, MatchError, Matchmaker, OddEnds, PickOptions, SSS, acs,
     binds::{BindMap, BindMapExt},
-    config::{BlinkRate, CommandSetting, EnvValue, MatcherConfig, StartConfig},
+    config::{
+        BlinkRate, CommandSetting, EnvValue, MatcherConfig, StartCommandConfig, StartConfig,
+    },
     event::{EventLoop, RenderSender},
     make_previewer,
     message::{Event, Interrupt},
@@ -123,8 +125,8 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         );
     }
 
-    if config.start.command.base_command.is_none() {
-        config.start.command.base_command = Some(config.start.command.command.clone());
+    if config.start.command.default.base_command.is_none() {
+        config.start.command.default.base_command = Some(config.start.command.default.command.clone());
     }
 
     // Apply matching directory / path rules (from config.toml and loaded presets)
@@ -205,7 +207,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     if cli.frecency {
-        config.matcher.worker.frecency = true;
+        config.matcher.worker.frecency.active = true;
     }
 
     if cli.icons {
@@ -213,7 +215,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     if cli.symlink_target {
-        config.render.results.symlink_target = true;
+        config.render.results.symlink.active = true;
     }
 
     if let Some(pos) = cli.pos {
@@ -221,7 +223,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     // Synchronize [preview] media_size with [previewer] media_size if configured in TOML
-    if let Some(size) = config.render.preview.media_size {
+    if let Some(size) = config.render.preview.media.size {
         config.previewer.media_size = size;
     }
 
@@ -233,12 +235,12 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         apply_media_size_str(size_str, &mut config);
     }
 
-    config.previewer.media = config.render.preview.media;
-    config.previewer.markdown_diagrams = config.render.preview.markdown_diagrams;
-    config.previewer.inline_diagrams = config.render.preview.inline_diagrams;
+    config.previewer.media = config.render.preview.media.active;
+    config.previewer.markdown_diagrams = config.render.preview.diagrams.active;
+    config.previewer.inline_diagrams = config.render.preview.diagrams.inline;
     config.previewer.inline_images = config.render.preview.inline_images;
-    config.previewer.diagram_theme = config.render.preview.diagram_theme;
-    config.previewer.diagram_background = config.render.preview.diagram_background;
+    config.previewer.diagram_theme = config.render.preview.diagrams.theme;
+    config.previewer.diagram_background = config.render.preview.diagrams.background;
 
     for spec in &cli.color {
         apply_color_spec(&mut config, spec);
@@ -249,7 +251,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     if cli.nav_hints {
-        config.render.ui.nav_hints = true;
+        config.render.ui.nav.hints = true;
     }
 
     if cli.parent_peek {
@@ -281,7 +283,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
             }
 
             if parse_ok && !actions.is_empty() {
-                config.render.ui.nav_binds.insert(key, actions);
+                config.render.ui.nav.binds.insert(key, actions);
             }
         } else {
             eprintln!(
@@ -291,20 +293,21 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         }
     }
 
-    if config.render.ui.nav_mode {
-        let defaults = matchmaker::config::UiConfig::default().nav_binds;
+    if config.render.ui.nav.active {
+        let defaults = matchmaker::config::UiConfig::default().nav.binds;
         for (k, v) in defaults {
-            config.render.ui.nav_binds.entry(k).or_insert(v);
+            config.render.ui.nav.binds.entry(k).or_insert(v);
         }
     }
 
-    if config.render.ui.nav_mode && !config.render.ui.nav_basic {
+    if config.render.ui.nav.active && !config.render.ui.nav.basic {
         use matchmaker::action::Actions;
         let mut nb = |k: &str, actions: Actions<matchmaker::action::NullActionExt>| {
             config
                 .render
                 .ui
-                .nav_binds
+                .nav
+                .binds
                 .entry(k.to_string())
                 .or_insert(actions);
         };
@@ -367,7 +370,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     });
 
     config.binds = BindMap::default_binds().modify(|x| x.extend(config.binds));
-    if config.render.ui.nav_mode {
+    if config.render.ui.nav.active {
         if !user_has_slash && !user_has_focus_action {
             config.binds.insert(
                 slash_trigger,
@@ -468,8 +471,8 @@ fn parse_blink_rate(s: &str) -> BlinkRate {
 }
 
 fn apply_nav_props(props: &[String], config: &mut Config) {
-    config.render.ui.nav_mode = true;
-    config.render.ui.nav_bar = None;
+    config.render.ui.nav.active = true;
+    config.render.ui.nav.bar = None;
     config.render.action.border.sides = Some(ratatui::widgets::Borders::NONE);
     config.render.query.status_inline = true;
 
@@ -478,20 +481,20 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
             match prop.split_once(':') {
                 None => match prop {
                     "bar" => {
-                        config.render.ui.nav_bar = Some(ratatui::widgets::BorderType::Thick);
+                        config.render.ui.nav.bar = Some(ratatui::widgets::BorderType::Thick);
                     }
                     "action-bar" => {
                         config.render.action.border.sides = Some(ratatui::widgets::Borders::BOTTOM);
                     }
-                    "blink" => config.render.ui.nav_blink = true,
-                    "bold" => config.render.ui.nav_bold = true,
-                    "notify" => config.render.ui.nav_notify = true,
-                    "passthrough" => config.render.ui.nav_passthrough = true,
+                    "blink" => config.render.ui.nav.blink = true,
+                    "bold" => config.render.ui.nav.bold = true,
+                    "notify" => config.render.ui.nav.notify = true,
+                    "passthrough" => config.render.ui.nav.passthrough = true,
                     "no-filter" => {
                         config.render.query.show = false;
                     }
                     "basic" => {
-                        config.render.ui.nav_basic = true;
+                        config.render.ui.nav.basic = true;
                         // Silence only the directory-navigation binds (h/l).
                         // Position-jump binds (gg, G, gb, gt) are kept so
                         // basic mode still supports full vertical navigation.
@@ -500,12 +503,13 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                             config
                                 .render
                                 .ui
-                                .nav_binds
+                                .nav
+                                .binds
                                 .insert(key.to_string(), empty.clone());
                         }
                     }
-                    "hints" => config.render.ui.nav_hints = true,
-                    "no-hints" => config.render.ui.nav_hints = false,
+                    "hints" => config.render.ui.nav.hints = true,
+                    "no-hints" => config.render.ui.nav.hints = false,
                     "parent-peek" | "parent_peek" => config.render.ui.parent_peek.enabled = true,
                     "no-parent-peek" | "no_parent_peek" => {
                         config.render.ui.parent_peek.enabled = false
@@ -515,19 +519,19 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                     _ => eprintln!("warning: unknown --nav property '{}'", prop),
                 },
                 Some(("bar", s)) => {
-                    config.render.ui.nav_bar = Some(parse_border_type(s));
+                    config.render.ui.nav.bar = Some(parse_border_type(s));
                 }
                 Some(("action-bar", s)) => {
                     config.render.action.border.sides = Some(ratatui::widgets::Borders::BOTTOM);
                     config.render.action.border.r#type = Some(parse_border_type(s));
                 }
                 Some(("blink", s)) => {
-                    config.render.ui.nav_blink = true;
-                    config.render.ui.nav_blink_rate = parse_blink_rate(s);
+                    config.render.ui.nav.blink = true;
+                    config.render.ui.nav.blink_rate = parse_blink_rate(s);
                 }
                 Some(("hints", s)) => match s.trim().to_ascii_lowercase().as_str() {
-                    "false" | "off" | "no" | "0" => config.render.ui.nav_hints = false,
-                    _ => config.render.ui.nav_hints = true,
+                    "false" | "off" | "no" | "0" => config.render.ui.nav.hints = false,
+                    _ => config.render.ui.nav.hints = true,
                 },
                 Some(("parent-peek" | "parent_peek", s)) => {
                     match s.trim().to_ascii_lowercase().as_str() {
@@ -578,14 +582,14 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                 }
                 Some(("focus-on-start", s)) => match s.trim().to_ascii_lowercase().as_str() {
                     "picker" => {
-                        config.render.ui.nav_focus_on_start = matchmaker::config::NavFocus::Picker
+                        config.render.ui.nav.focus_on_start = matchmaker::config::NavFocus::Picker
                     }
-                    _ => config.render.ui.nav_focus_on_start = matchmaker::config::NavFocus::Filter,
+                    _ => config.render.ui.nav.focus_on_start = matchmaker::config::NavFocus::Filter,
                 },
-                Some(("marker", s)) => config.render.ui.nav_marker = s.to_string(),
-                Some(("prompt", s)) => config.render.ui.nav_prompt = s.to_string(),
+                Some(("marker", s)) => config.render.ui.nav.marker = s.to_string(),
+                Some(("prompt", s)) => config.render.ui.nav.prompt = s.to_string(),
                 Some(("color", s)) => match s.trim().parse::<ratatui::style::Color>() {
-                    Ok(color) => config.render.ui.nav_color = color,
+                    Ok(color) => config.render.ui.nav.color = color,
                     Err(e) => eprintln!("warning: invalid --nav color '{}': {}", s, e),
                 },
                 Some((k, _)) => eprintln!("warning: unknown --nav property '{}'", k),
@@ -596,11 +600,11 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
 
 fn set_media_size(config: &mut Config, size: u32) {
     config.previewer.media_size = size;
-    config.render.preview.media_size = Some(size);
+    config.render.preview.media.size = Some(size);
 }
 
 fn apply_media_size_str(s: &str, config: &mut Config) {
-    config.render.preview.media = true;
+    config.render.preview.media.active = true;
     match s.to_ascii_lowercase().as_str() {
         "xs" => set_media_size(config, 128),
         "s" => set_media_size(config, 256),
@@ -619,7 +623,7 @@ fn apply_media_size_str(s: &str, config: &mut Config) {
 }
 
 fn apply_media_props(props: &[String], config: &mut Config) {
-    config.render.preview.media = true;
+    config.render.preview.media.active = true;
 
     for raw in props {
         for prop in raw.split(',').filter(|s| !s.is_empty()) {
@@ -628,7 +632,7 @@ fn apply_media_props(props: &[String], config: &mut Config) {
                     // Try parsing as a standalone protocol or size
                     match prop.to_ascii_lowercase().as_str() {
                         "kitty" | "sixel" | "halfblocks" | "iterm2" => {
-                            config.render.preview.media_protocol = Some(prop.to_string());
+                            config.render.preview.media.protocol = Some(prop.to_string());
                         }
                         "xs" => set_media_size(config, 128),
                         "s" => set_media_size(config, 256),
@@ -661,7 +665,7 @@ fn apply_media_props(props: &[String], config: &mut Config) {
                     }
                 },
                 Some(("type" | "protocol", s)) => {
-                    config.render.preview.media_protocol = Some(s.to_string());
+                    config.render.preview.media.protocol = Some(s.to_string());
                 }
                 Some((k, _)) => eprintln!("warning: unknown --media property '{}'", k),
             }
@@ -764,8 +768,8 @@ pub async fn start(
     no_read: bool,
     group_prefix: Option<String>,
 ) -> Result<(), MatchError> {
-    let nav_mode = config.render.ui.nav_mode;
-    let nav_notify = config.render.ui.nav_notify;
+    let nav_mode = config.render.ui.nav.active;
+    let nav_notify = config.render.ui.nav.notify;
 
     let Config {
         render,
@@ -781,10 +785,14 @@ pub async fn start(
             StartConfig {
                 input_separator,
                 command:
-                    CommandSetting {
-                        separator,
-                        command,
-                        base_command,
+                    StartCommandConfig {
+                        default:
+                            CommandSetting {
+                                separator,
+                                command,
+                                base_command,
+                            },
+                        additional: mut additional_commands,
                     },
                 directory,
                 sync,
@@ -792,7 +800,6 @@ pub async fn start(
                 output_template,
                 ansi,
                 trim,
-                mut additional_commands,
                 mode,
                 sort,
                 reload_interval,
@@ -808,10 +815,10 @@ pub async fn start(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| command.clone());
 
-    if sort && !worker.sort_threshold.is_smart() {
+    if sort && !worker.sort.threshold.is_smart() {
         // Force nucleo to preserve insertion order (stable sort) so the alphabetically
         // sorted input is displayed in the same order when no query is typed.
-        worker.sort_threshold = matchmaker::config::SortThreshold::NEVER;
+        worker.sort.threshold = matchmaker::config::SortThreshold::NEVER;
     }
 
     // -------- determine command ------------
@@ -1101,7 +1108,7 @@ pub async fn start(
         }
 
         let mut old_cwd = None;
-        if state.ui.config.nav_mode {
+        if state.ui.config.nav.active {
             if let Ok(cwd) = std::env::current_dir() {
                 history.insert(cwd.clone(), state.picker_ui.query.input.clone());
 
@@ -1144,7 +1151,7 @@ pub async fn start(
             if let Ok(new_cwd) = std::env::current_dir() {
                 let store = matchmaker::frecency::FrecencyStore::open();
                 let _ = store.add(&new_cwd.to_string_lossy());
-                if state.ui.config.nav_mode {
+                if state.ui.config.nav.active {
                     state.focus = matchmaker::render::Focus::Results;
                     if state.picker_ui.query.mode_index() != 0 {
                         let _ = chdir_render_tx.send(matchmaker::message::RenderCommand::Action(
@@ -1261,14 +1268,14 @@ pub async fn start(
                     if let Ok(preset_config) =
                         load_type::<PartialConfig, _>(&preset_path, |s| toml::from_str(s))
                     {
-                        if let Some(ref cmd_setting) = preset_config.start.command.as_ref() {
+                        if let Some(ref cmd_setting) = preset_config.start.command.default.as_ref() {
                             if !cmd_setting.command.is_empty() {
                                 active_cmd = cmd_setting.command.clone();
                             }
                         }
                     }
                 }
-                if let Some(ref cmd_setting) = rule.override_config.start.command {
+                if let Some(ref cmd_setting) = rule.override_config.start.command.default {
                     if !cmd_setting.command.is_empty() {
                         active_cmd = cmd_setting.command.clone();
                     }
@@ -2069,19 +2076,19 @@ mod tests {
         let mut config = Config::default();
         apply_media_size_str("800", &mut config);
         assert_eq!(config.previewer.media_size, 800);
-        assert_eq!(config.render.preview.media_size, Some(800));
-        assert!(config.render.preview.media);
+        assert_eq!(config.render.preview.media.size, Some(800));
+        assert!(config.render.preview.media.active);
 
         apply_media_size_str("xl", &mut config);
         assert_eq!(config.previewer.media_size, 2048);
-        assert_eq!(config.render.preview.media_size, Some(2048));
+        assert_eq!(config.render.preview.media.size, Some(2048));
 
         apply_media_size_str("full", &mut config);
         assert_eq!(config.previewer.media_size, 0);
-        assert_eq!(config.render.preview.media_size, Some(0));
+        assert_eq!(config.render.preview.media.size, Some(0));
 
         apply_media_props(&["size:1280".to_string()], &mut config);
         assert_eq!(config.previewer.media_size, 1280);
-        assert_eq!(config.render.preview.media_size, Some(1280));
+        assert_eq!(config.render.preview.media.size, Some(1280));
     }
 }

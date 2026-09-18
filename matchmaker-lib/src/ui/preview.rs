@@ -125,7 +125,7 @@ impl PreviewUI {
         }
 
         let mut picker = None;
-        if config.media {
+        if config.media.active {
             if std::env::var("TMUX").is_ok()
                 && std::env::var("TERM_PROGRAM").map(|v| v != "tmux").unwrap_or(true)
             {
@@ -145,7 +145,7 @@ impl PreviewUI {
                     .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks())
             };
 
-            if let Some(ref protocol_str) = config.media_protocol {
+            if let Some(ref protocol_str) = config.media.protocol {
                 let protocol_type = match protocol_str.to_ascii_lowercase().as_str() {
                     "kitty" => Some(ratatui_image::picker::ProtocolType::Kitty),
                     "sixel" => Some(ratatui_image::picker::ProtocolType::Sixel),
@@ -172,7 +172,7 @@ impl PreviewUI {
             }
         }
 
-        let zoom = config.zoom.unwrap_or(1.0);
+        let zoom = config.media.zoom.unwrap_or(1.0);
 
         Self {
             view,
@@ -415,8 +415,8 @@ impl PreviewUI {
                     if let Some(img) = crate::utils::mermaid::render_mermaid_to_image_with_options(
                         src,
                         2.0,
-                        self.config.diagram_theme,
-                        self.config.diagram_background,
+                        self.config.diagrams.theme,
+                        self.config.diagrams.background,
                     ) {
                         if let Ok(mut g) = self.view.image.lock() {
                             *g = Some(img);
@@ -842,8 +842,8 @@ impl PreviewUI {
             let mut hasher = rustc_hash::FxHasher::default();
             src.hash(&mut hasher);
             let theme_fp = crate::utils::mermaid::compute_theme_fingerprint(
-                self.config.diagram_theme,
-                self.config.diagram_background,
+                self.config.diagrams.theme,
+                self.config.diagrams.background,
             );
             theme_fp.hash(&mut hasher);
             let src_hash = hasher.finish();
@@ -865,8 +865,8 @@ impl PreviewUI {
                 let img = crate::utils::mermaid::render_mermaid_to_image_with_options(
                     src,
                     2.0, // High-DPI scale for vector crispness
-                    self.config.diagram_theme,
-                    self.config.diagram_background,
+                    self.config.diagrams.theme,
+                    self.config.diagrams.background,
                 )?;
                 let (w, h) = (img.width(), img.height());
                 let mut bytes = Vec::new();
@@ -1378,7 +1378,7 @@ impl PreviewUI {
 
         if self.active_border().is_none() {
             if let Some(title) = &title_text {
-                let is_media = self.config.media && {
+                let is_media = self.config.media.active && {
                     let p = std::path::Path::new(title);
                     if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
                         matches!(
@@ -1826,7 +1826,10 @@ mod tests {
     fn test_preview_get_image_state() {
         use crate::preview::previewer::Previewer;
         let config = PreviewConfig {
-            media: true,
+            media: crate::config::PreviewMediaConfig {
+                active: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let (previewer, _tx) = Previewer::new(Default::default());
@@ -1880,7 +1883,10 @@ mod tests {
     fn test_diagram_placeholder_lines_generation_and_panning() {
         use crate::preview::previewer::Previewer;
         let config = PreviewConfig {
-            media: true,
+            media: crate::config::PreviewMediaConfig {
+                active: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let (previewer, _tx) = Previewer::new(Default::default());

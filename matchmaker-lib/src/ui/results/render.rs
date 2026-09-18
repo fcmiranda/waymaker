@@ -280,7 +280,7 @@ impl ResultsUI {
 
         // When symlink targets are enabled, expand column 0 to use all
         // remaining horizontal space so the annotation has room to display.
-        if self.config.symlink_target && !widths.is_empty() && widths[0] != 0 {
+        if self.config.symlink.active && !widths.is_empty() && widths[0] != 0 {
             let other_cols: u16 = widths[1..].iter().sum();
             let col0_max = self
                 .width
@@ -307,8 +307,8 @@ impl ResultsUI {
             self.cursor = self.cursor.min(results.len().saturating_sub(1) as u16);
         }
 
-        let tier_sep_style = self.config.tier_separator_style;
-        let is_underline_mode = self.config.tier_separator == HorizontalSeparator::Underline;
+        let tier_sep_style = self.config.tier.style;
+        let is_underline_mode = self.config.tier.separator == HorizontalSeparator::Underline;
         let apply_tier_underline =
             |t: &mut ratatui::text::Text<'_>, target_w: usize, skip_spans: usize| {
                 if let Some(last_line) = t.lines.last_mut() {
@@ -351,7 +351,7 @@ impl ResultsUI {
                 Some(crate::nucleo::GroupHeader::Named(_)) => 1,
                 Some(crate::nucleo::GroupHeader::TierSeparator) => {
                     if !matches!(
-                        self.config.tier_separator,
+                        self.config.tier.separator,
                         HorizontalSeparator::None | HorizontalSeparator::Underline
                     ) {
                         1
@@ -547,11 +547,11 @@ impl ResultsUI {
                                             self.get_flash_op(&icon_name, &cwd),
                                         );
                                     }
-                                    if self.config.symlink_target {
+                                    if self.config.symlink.active {
                                         maybe_append_symlink_target(
                                             &mut t,
                                             &icon_name,
-                                            self.config.symlink_target_style.into(),
+                                            self.config.symlink.style.into(),
                                             widths[target_prefix_col],
                                         );
                                     }
@@ -631,11 +631,11 @@ impl ResultsUI {
                                     self.get_flash_op(&icon_name, &cwd),
                                 );
                             }
-                            if self.config.symlink_target && col_idx == 0 {
+                            if self.config.symlink.active && col_idx == 0 {
                                 maybe_append_symlink_target(
                                     col,
                                     &icon_name,
-                                    self.config.symlink_target_style.into(),
+                                    self.config.symlink.style.into(),
                                     self.width,
                                 );
                             }
@@ -760,11 +760,11 @@ impl ResultsUI {
                                     self.get_flash_op(&icon_name, &cwd),
                                 );
                             }
-                            if self.config.symlink_target {
+                            if self.config.symlink.active {
                                 maybe_append_symlink_target(
                                     &mut t,
                                     &icon_name,
-                                    self.config.symlink_target_style.into(),
+                                    self.config.symlink.style.into(),
                                     widths[target_prefix_col],
                                 );
                             }
@@ -863,11 +863,11 @@ impl ResultsUI {
                             self.get_flash_op(&icon_name, &cwd),
                         );
                     }
-                    if self.config.symlink_target && col_idx == 0 {
+                    if self.config.symlink.active && col_idx == 0 {
                         maybe_append_symlink_target(
                             col,
                             &icon_name,
-                            self.config.symlink_target_style.into(),
+                            self.config.symlink.style.into(),
                             self.width,
                         );
                     }
@@ -950,7 +950,7 @@ impl ResultsUI {
                             }
                         }
                         crate::nucleo::GroupHeader::TierSeparator => {
-                            let tier_sep = self.config.tier_separator;
+                            let tier_sep = self.config.tier.separator;
                             if matches!(
                                 tier_sep,
                                 HorizontalSeparator::None | HorizontalSeparator::Underline
@@ -958,7 +958,7 @@ impl ResultsUI {
                                 None
                             } else {
                                 let sep_char = tier_sep.as_str();
-                                let tier_style: Style = self.config.tier_separator_style.into();
+                                let tier_style: Style = self.config.tier.style.into();
                                 let total_w = self.width as usize;
 
                                 if as_cols {
@@ -1151,11 +1151,11 @@ impl ResultsUI {
                                     self.get_flash_op(&icon_name_hz, &cwd),
                                 );
                             }
-                            if self.config.symlink_target {
+                            if self.config.symlink.active {
                                 maybe_append_symlink_target(
                                     &mut t,
                                     &icon_name_hz,
-                                    self.config.symlink_target_style.into(),
+                                    self.config.symlink.style.into(),
                                     widths[target_prefix_col],
                                 );
                             }
@@ -1285,11 +1285,11 @@ impl ResultsUI {
                             self.get_flash_op(&icon_name_hz, &cwd),
                         );
                     }
-                    if self.config.symlink_target && x == 0 {
+                    if self.config.symlink.active && x == 0 {
                         maybe_append_symlink_target(
                             &mut col,
                             &icon_name_hz,
-                            self.config.symlink_target_style.into(),
+                            self.config.symlink.style.into(),
                             self.width,
                         );
                     }

@@ -1,8 +1,10 @@
 # Find and pick emojis
 
 [start]
+
+[start.command]
 command = '''zstd -dc "$(dirname -- "$MM_OVERRIDE")"/emoji.zst'''
-additional_commands = [
+additional = [
   "",
   '''zstd -dc "$(dirname -- "$MM_OVERRIDE")"/emoji_compat.zst''',
 ]

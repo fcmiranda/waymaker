@@ -866,8 +866,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
     mut paste_handler: Option<PasteHandler<T, S>>,
 ) -> Result<Vec<S>, MatchError> {
     let mut state = State::new();
-    if ui.config.nav_mode {
-        match ui.config.nav_focus_on_start {
+    if ui.config.nav.active {
+        match ui.config.nav.focus_on_start {
             crate::config::NavFocus::Picker => state.focus = Focus::Results,
             crate::config::NavFocus::Filter => state.focus = Focus::Input,
         }
@@ -935,12 +935,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
         if state.sort_menu_active {
             apply_sort_menu(&mut buffer, &mut state.sort_menu_active);
-        } else if ui.config.nav_mode {
-            if !ui.config.nav_passthrough {
+        } else if ui.config.nav.active {
+            if !ui.config.nav.passthrough {
                 apply_focus_binds_mode(
                     &mut buffer,
                     state.focus,
-                    &ui.config.nav_binds,
+                    &ui.config.nav.binds,
                     picker_ui.action_visible
                         || overlay_ui.as_ref().map_or(false, |o| o.index().is_some()),
                     &mut state.pending_nav_key,
@@ -1560,8 +1560,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                             crate::utils::mermaid::render_mermaid_to_image_with_options(
                                                 &src,
                                                 2.0,
-                                                p.config.diagram_theme,
-                                                p.config.diagram_background,
+                                                p.config.diagrams.theme,
+                                                p.config.diagrams.background,
                                             )
                                         {
                                             if let Ok(mut guard) = p.view.image.lock() {
@@ -1600,8 +1600,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         if let Some(img) = crate::utils::mermaid::render_mermaid_to_image_with_options(
                                             &src,
                                             2.0,
-                                            p.config.diagram_theme,
-                                            p.config.diagram_background,
+                                            p.config.diagrams.theme,
+                                            p.config.diagrams.background,
                                         ) {
                                             if let Ok(mut guard) = p.view.image.lock() {
                                                 *guard = Some(img);
@@ -1739,11 +1739,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             state.set_interrupt(Interrupt::Reload, payload);
                         }
                         Action::ChDir(payload) => {
-                            if ui.config.nav_mode {
+                            if ui.config.nav.active {
                                 state.focus = Focus::Results;
                                 state.focus_blink = true;
                                 state.focus_tick = 0;
-                                let prompt = &ui.config.nav_prompt;
+                                let prompt = &ui.config.nav.prompt;
                                 if !prompt.is_empty() {
                                     picker_ui
                                         .query
@@ -1977,7 +1977,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 tui.redraw();
                                 continue;
                             }
-                            if ui.config.nav_mode {
+                            if ui.config.nav.active {
                                 state.focus = match state.focus {
                                     Focus::Input => Focus::Results,
                                     Focus::Results => Focus::Input,
@@ -1985,7 +1985,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 state.focus_blink = true;
                                 state.focus_tick = 0;
 
-                                let prompt = &ui.config.nav_prompt;
+                                let prompt = &ui.config.nav.prompt;
                                 if !prompt.is_empty() {
                                     let prompt = match state.focus {
                                         Focus::Results => {
@@ -2009,11 +2009,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 tui.redraw();
                                 continue;
                             }
-                            if ui.config.nav_mode {
+                            if ui.config.nav.active {
                                 state.focus = Focus::Input;
                                 state.focus_blink = true;
                                 state.focus_tick = 0;
-                                let prompt = &ui.config.nav_prompt;
+                                let prompt = &ui.config.nav.prompt;
                                 if !prompt.is_empty() {
                                     picker_ui.query.set_prompt(None);
                                 }
@@ -2031,11 +2031,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 tui.redraw();
                                 continue;
                             }
-                            if ui.config.nav_mode {
+                            if ui.config.nav.active {
                                 state.focus = Focus::Results;
                                 state.focus_blink = true;
                                 state.focus_tick = 0;
-                                let prompt = &ui.config.nav_prompt;
+                                let prompt = &ui.config.nav.prompt;
                                 if !prompt.is_empty() {
                                     picker_ui
                                         .query
@@ -2077,8 +2077,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         crate::ACTION_BOX_ACTIVE
                                             .store(false, std::sync::atomic::Ordering::Relaxed);
                                     }
-                                    if !(ui.config.nav_mode
-                                        && !ui.config.nav_passthrough
+                                    if !(ui.config.nav.active
+                                        && !ui.config.nav.passthrough
                                         && state.focus == Focus::Results)
                                     {
                                         query.push_char(c)
@@ -2243,8 +2243,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
             }
         }
 
-        if ui.config.nav_mode {
-            let blink_ticks = ui.config.nav_blink_rate.ticks();
+        if ui.config.nav.active {
+            let blink_ticks = ui.config.nav.blink_rate.ticks();
             let prev_blink = state.focus_blink;
             state.focus_tick = state.focus_tick.wrapping_add(1);
             if state.focus_tick >= blink_ticks {
@@ -2355,8 +2355,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     let show_nav_hints = if state.preview_fullscreen {
                         true
                     } else {
-                        ui.config.nav_mode
-                            && ui.config.nav_hints
+                        ui.config.nav.active
+                            && ui.config.nav.hints
                             && state.focus == Focus::Results
                             && !footer_ui.show
                     };
@@ -2368,7 +2368,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     } else if footer_ui.show {
                         footer_ui.height()
                     } else if show_nav_hints {
-                        let count = if ui.config.nav_basic {
+                        let count = if ui.config.nav.basic {
                             BASIC_NAV_HINTS.len()
                         } else {
                             NAV_HINTS.len()
@@ -2567,12 +2567,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             None
                         };
 
-                    let nav_color = ui.config.nav_color;
-                    let nav_mode = ui.config.nav_mode;
-                    let nav_do_blink = ui.config.nav_blink;
-                    let nav_bold = ui.config.nav_bold;
-                    let nav_bar = ui.config.nav_bar;
-                    let nav_marker = ui.config.nav_marker.clone();
+                    let nav_color = ui.config.nav.color;
+                    let nav_mode = ui.config.nav.active;
+                    let nav_do_blink = ui.config.nav.blink;
+                    let nav_bold = ui.config.nav.bold;
+                    let nav_bar = ui.config.nav.bar;
+                    let nav_marker = ui.config.nav.marker.clone();
                     let nav_char = picker_ui
                         .results
                         .config
@@ -2590,7 +2590,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         bar: None,
                         marker: String::new(),
                         nav_char: nav_char.clone(),
-                        nav_prompt: ui.config.nav_prompt.clone(),
+                        nav_prompt: ui.config.nav.prompt.clone(),
                     });
                     let results_focus_info = nav_mode.then_some(FocusInfo {
                         focused: state.focus == Focus::Results,
@@ -2601,7 +2601,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         bar: nav_bar,
                         marker: nav_marker,
                         nav_char,
-                        nav_prompt: ui.config.nav_prompt.clone(),
+                        nav_prompt: ui.config.nav.prompt.clone(),
                     });
 
                     if picker_ui.action_visible {
@@ -2700,7 +2700,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 frame,
                                 footer,
                                 false,
-                                ui.config.nav_hints_columns,
+                                ui.config.nav.hints_columns,
                                 true,
                                 zoom_pct,
                             );
@@ -2713,8 +2713,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             render_nav_hints(
                                 frame,
                                 footer,
-                                ui.config.nav_basic,
-                                ui.config.nav_hints_columns,
+                                ui.config.nav.basic,
+                                ui.config.nav.hints_columns,
                                 false,
                                 None,
                             );
@@ -3039,7 +3039,7 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
             frame.render_widget(b, area);
         }
 
-        let media_fit_str = ui.config.media_fit.as_deref().unwrap_or("fit");
+        let media_fit_str = ui.config.media.fit.as_deref().unwrap_or("fit");
         let resize_mode = match media_fit_str.to_lowercase().as_str() {
             "crop" | "cover" => ratatui_image::Resize::Crop(None),
             "scale" | "stretch" | "fit" | "contain" => ratatui_image::Resize::Scale(None),
@@ -4107,8 +4107,8 @@ mod test {
     fn test_nav_hints_grid_height_and_columns() {
         use crate::config::UiConfig;
         let mut ui = UiConfig::default();
-        assert!(ui.nav_hints);
-        assert_eq!(ui.nav_hints_columns, 4);
+        assert!(ui.nav.hints);
+        assert_eq!(ui.nav.hints_columns, 4);
 
         // In 4 columns:
         // Full hints (16 items) -> (16 + 4 - 1) / 4 = 4 rows
@@ -4118,11 +4118,11 @@ mod test {
         assert_eq!(ui.nav_hints_height(BASIC_NAV_HINTS.len()), 2);
 
         // If columns configured to 1 -> 1 row
-        ui.nav_hints_columns = 1;
+        ui.nav.hints_columns = 1;
         assert_eq!(ui.nav_hints_height(NAV_HINTS.len()), 1);
 
         // If nav_hints disabled -> 0 rows
-        ui.nav_hints = false;
+        ui.nav.hints = false;
         assert_eq!(ui.nav_hints_height(NAV_HINTS.len()), 0);
     }
 

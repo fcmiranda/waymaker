@@ -1,14 +1,14 @@
 # Matchmaker Jump Mode Preset (`mm -o jump`)
 # Interactive directory navigation, frecency ranking, and TUI traversal.
 
-[ui]
-nav_mode = true
-nav_focus_on_start = "picker"
-nav_bar = "Plain"
-nav_color = "Black"
-nav_notify = true
-nav_hints = true
-nav_hints_columns = 4
+[ui.nav]
+active = true
+focus_on_start = "picker"
+bar = "Plain"
+color = "Black"
+notify = true
+hints = true
+hints_columns = 4
 
 [ui.parent_peek]
 enabled = true
@@ -23,53 +23,70 @@ match_indent = false
 
 [query]
 status_inline = true
-filter_underline = true
-filter_underline_style.fg = "DarkGray"
 
-local_prompt = "> "
-local_prompt_style.fg = "cyan"
-local_underline_style.fg = "cyan"
+[query.filter]
+underline = true
+underline_style.fg = "DarkGray"
 
-frecency_prompt = "󱅤 "
-frecency_prompt_style.fg = "blue"
-frecency_underline_style.fg = "blue"
+[query.local]
+prompt = "> "
+prompt_style.fg = "cyan"
+underline_style.fg = "cyan"
 
-bookmarks_prompt = " "
-bookmarks_prompt_style.fg = "yellow"
-bookmarks_underline_style.fg = "yellow"
+[query.frecency]
+prompt = "󱅤 "
+prompt_style.fg = "blue"
+underline_style.fg = "blue"
+
+[query.bookmarks]
+prompt = " "
+prompt_style.fg = "yellow"
+underline_style.fg = "yellow"
 
 [matcher]
-sort = "smart"
-sort_cap = 2000
 depth_penalty = 15
-frecency = true
-frecency_weight = 2
 typo_tolerance = true
 dir_first = true
+
+[matcher.sort]
+threshold = "smart"
+cap = 2000
+
+[matcher.frecency]
+active = true
+weight = 2
 
 [results]
 scroll_wrap = true
 max = 15
 reverse = false
 icons = true
-bookmark_folder_icon = "󰮟"
-bookmark_file_icon = "󱀻"
-bookmark_icon_style.fg = "yellow"
-frecency_folder_icon = "󰪻"
-frecency_folder_icon_style.fg = "blue"
-frecency_icon = "󱋢"
-frecency_icon_style.fg = "blue"
-symlink_target = true
-symlink_target_style.fg = "cyan"
+
+[results.bookmark]
+folder_icon = "󰮟"
+file_icon = "󱀻"
+icon_style.fg = "yellow"
+
+[results.frecency]
+folder_icon = "󰪻"
+folder_icon_style.fg = "blue"
+icon = "󱋢"
+icon_style.fg = "blue"
+
+[results.symlink]
+active = true
+style.fg = "cyan"
 
 [previewer]
 debounce_ms = 35
 delay_clear = true
 
 [preview]
-media = true
-media_size = 1280
 markdown = true
+
+[preview.media]
+active = true
+size = 1280
 
 [preview.border]
 title_fg = "cyan"
@@ -118,7 +135,7 @@ percentage = 50
 "ctrl-p"        = "SwitchPreview"
 "ctrl-v"        = "@paste_into"
 
-[ui.nav_binds]
+[ui.nav.binds]
 # Modos de dados (ciclar fontes e favoritos)
 "tab"           = "@reloadnext"
 "shift-backtab" = "@reloadprev"
@@ -185,14 +202,14 @@ style.modifier = "BOLD"
 separator_style.fg = "Blue"
 
 [start]
-additional_commands = [
+
+[start.command]
+command = ""
+additional = [
     "",
     "mm list --dirs 2>/dev/null",
     "mm list --bookmarks 2>/dev/null"
 ]
-
-[start.command]
-command = ""
 
 # Automatic folder-specific sort rules
 [[folder_rules]]

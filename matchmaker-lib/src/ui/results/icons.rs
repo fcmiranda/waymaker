@@ -342,15 +342,17 @@ pub(super) fn insert_icon_span(
             || std::path::Path::new(trimmed).is_dir();
         let icon = if is_dir {
             results_config
-                .bookmark_folder_icon
+                .bookmark
+                .folder_icon
                 .as_deref()
-                .or(results_config.bookmark_icon.as_deref())
+                .or(results_config.bookmark.icon.as_deref())
                 .unwrap_or("󰮟")
         } else {
             results_config
-                .bookmark_file_icon
+                .bookmark
+                .file_icon
                 .as_deref()
-                .or(results_config.bookmark_icon.as_deref())
+                .or(results_config.bookmark.icon.as_deref())
                 .unwrap_or("󱀻")
         };
         let color = bookmark_color(results_config, name);
@@ -362,17 +364,19 @@ pub(super) fn insert_icon_span(
             || std::path::Path::new(trimmed).is_dir();
         if is_dir {
             let icon = results_config
-                .frecency_folder_icon
+                .frecency
+                .folder_icon
                 .as_deref()
                 .unwrap_or("󰪻");
             let color = results_config
-                .frecency_folder_icon_style
+                .frecency
+                .folder_icon_style
                 .fg
                 .unwrap_or(Color::Blue);
             (icon.into(), color)
         } else {
-            let icon = results_config.frecency_icon.as_deref().unwrap_or("󱋢");
-            let color = results_config.frecency_icon_style.fg.unwrap_or(Color::Blue);
+            let icon = results_config.frecency.icon.as_deref().unwrap_or("󱋢");
+            let color = results_config.frecency.icon_style.fg.unwrap_or(Color::Blue);
             (icon.into(), color)
         }
     } else {
@@ -417,15 +421,17 @@ pub(crate) fn bookmark_color(results_config: &crate::config::ResultsConfig, name
         trimmed.ends_with('/') || trimmed.ends_with('\\') || std::path::Path::new(trimmed).is_dir();
     if is_dir {
         results_config
-            .bookmark_folder_icon_style
+            .bookmark
+            .folder_icon_style
             .fg
-            .or(results_config.bookmark_icon_style.fg)
+            .or(results_config.bookmark.icon_style.fg)
             .unwrap_or(Color::Yellow)
     } else {
         results_config
-            .bookmark_file_icon_style
+            .bookmark
+            .file_icon_style
             .fg
-            .or(results_config.bookmark_icon_style.fg)
+            .or(results_config.bookmark.icon_style.fg)
             .unwrap_or(Color::Yellow)
     }
 }

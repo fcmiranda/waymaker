@@ -180,8 +180,8 @@ mod tests {
 
             [[rule]]
             path = "~/dev/**"
-            matcher.sort = "smart"
-            matcher.frecency = true
+            matcher.sort.threshold = "smart"
+            matcher.frecency.active = true
         "#;
 
         let partial: PartialConfig =
@@ -210,7 +210,7 @@ mod tests {
 
         println!("Config worker: {:#?}", config.matcher.worker);
         assert_eq!(
-            config.matcher.worker.sort_threshold,
+            config.matcher.worker.sort.threshold,
             matchmaker::config::SortThreshold::SMART
         );
     }
@@ -259,7 +259,7 @@ mod tests {
 
         // Check that 'tab' is present in nav_binds and binds
         assert!(
-            config.render.ui.nav_binds.contains_key("tab"),
+            config.render.ui.nav.binds.contains_key("tab"),
             "nav_binds should have 'tab'"
         );
         let tab_trigger: matchmaker::binds::Trigger = "tab".parse().unwrap();

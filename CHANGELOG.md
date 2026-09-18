@@ -8,9 +8,27 @@
 - Attach interactive child process streams (`stdin`, `stdout`, `stderr`) to `/dev/tty` for flawless editor execution (`nvim`, `$EDITOR`) in subshells
 - Record frecency ranking automatically for all opened files/directories when invoking `Execute` or `Become`
 
+### 🚜 Refactor
+
+- Nest prefix-sharing configuration fields monorepo-wide into structured sub-tables:
+  - `[ui.nav]`: Navigation mode settings (`active`, `bar`, `blink`, `blink_rate`, `bold`, `color`, `marker`, `prompt`, `notify`, `passthrough`, `basic`, `focus_on_start`, `hints`, `hints_columns`, `binds`).
+  - `[preview.media]`: Media preview settings (`active`, `protocol`, `size`, `zoom`, `fit`).
+  - `[preview.diagrams]`: Diagram preview settings (`active`, `inline`, `theme`, `background`).
+  - `[query.filter]`: Filter mode settings (`prompt`, `prompt_style`, `style`, `underline`, `underline_style`).
+  - `[query.local]`, `[query.frecency]`, `[query.bookmarks]`: Query mode-specific prompt & underline styling (`prompt`, `prompt_style`, `underline_style`).
+  - `[results.symlink]`: Symlink target display & styling (`active`, `style`).
+  - `[results.tier]`: Directory-first tier separator settings (`separator`, `style`).
+  - `[results.bookmark]`: Bookmark item icons & styling (`icon`, `file_icon`, `folder_icon`, `icon_style`, `file_icon_style`, `folder_icon_style`).
+  - `[results.frecency]`: Frecency item icons & styling (`icon`, `folder_icon`, `icon_style`, `folder_icon_style`).
+  - `[matcher.sort]` / `[worker.sort]`: Sorting thresholds and caps (`threshold`, `cap`).
+  - `[matcher.frecency]` / `[worker.frecency]`: Frecency scoring settings (`active`, `weight`, `half_life_days`).
+  - `[start.command]`: Command execution settings (`default`/`command`, `additional`/`additional_commands`).
+- Migrate all presets, asset configurations, documentation, and user dotfile presets to nested TOML keys.
+
 ### 📚 Documentation
 
 - Document new results styling options, TTY execution handling, and frecency tracking across all markdown guides
+- Update configuration reference and documentation guides for nested sub-table structure
 
 ## [0.0.42] - 2026-05-29
 

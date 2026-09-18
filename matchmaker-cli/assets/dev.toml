@@ -149,7 +149,9 @@ max = 120
 
 [matcher]
 trim = true
-sort_threshold = 1
+
+[matcher.sort]
+threshold = 1
 
 [columns]
 split = '\s+'

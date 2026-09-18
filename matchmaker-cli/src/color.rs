@@ -76,7 +76,7 @@ pub fn apply_color_spec(config: &mut Config, spec: &str) {
             "header-border" => config.render.header.border.color = color,
             "header-label" | "header-title" => config.render.header.border.title_fg = color,
             "group-header" => config.render.results.group_header_style.fg = Some(color),
-            "nav" => config.render.ui.nav_color = color,
+            "nav" => config.render.ui.nav.color = color,
             "selected-fg" => config.render.results.selected_style.fg = Some(color),
             "selected-bg" => config.render.results.selected_style.bg = Some(color),
             "selected-prefix" => config.render.results.selected_prefix_style.fg = Some(color),
@@ -84,8 +84,8 @@ pub fn apply_color_spec(config: &mut Config, spec: &str) {
             "spinner" => config.render.results.spinner_style.fg = Some(color),
             "yank" => config.render.results.yank_prefix_style.fg = Some(color),
             "cut" => config.render.results.cut_prefix_style.fg = Some(color),
-            "symlink" => config.render.results.symlink_target_style.fg = Some(color),
-            "tier-separator" => config.render.results.tier_separator_style.fg = Some(color),
+            "symlink" => config.render.results.symlink.style.fg = Some(color),
+            "tier-separator" => config.render.results.tier.style.fg = Some(color),
             _ => log::warn!("--color: unknown key '{key}'"),
         }
     }

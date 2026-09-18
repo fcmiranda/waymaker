@@ -149,19 +149,19 @@ impl ConfigMatchmaker {
         worker.group_header = Some(Box::new(|item| item.inner.group.clone()));
 
         worker.reverse_items(worker_config.reverse);
-        worker.set_stability(worker_config.sort_threshold);
+        worker.set_stability(worker_config.sort.threshold);
         worker.depth_penalty = worker_config.depth_penalty;
-        worker.frecency = worker_config.frecency;
-        worker.frecency_weight = worker_config.frecency_weight;
+        worker.frecency = worker_config.frecency.active;
+        worker.frecency_weight = worker_config.frecency.weight;
         worker.location_bias = worker_config.location_bias;
-        worker.frecency_half_life_days = worker_config.frecency_half_life_days;
-        worker.sort_cap = worker_config.sort_cap;
+        worker.frecency_half_life_days = worker_config.frecency.half_life_days;
+        worker.sort_cap = worker_config.sort.cap;
         worker.typo_tolerance = worker_config.typo_tolerance;
         worker.dir_first = worker_config.dir_first;
-        if worker_config.frecency {
+        if worker_config.frecency.active {
             let store = crate::frecency::FrecencyStore::open();
             worker.frecency_snapshot =
-                Some(store.get_snapshot_with_half_life(worker_config.frecency_half_life_days));
+                Some(store.get_snapshot_with_half_life(worker_config.frecency.half_life_days));
         }
 
         let injector = worker.injector();
@@ -1165,12 +1165,12 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
         mm.render_config.preview.trim_commands();
     }
     let mut previewer_config = previewer_config;
-    previewer_config.media = mm.render_config.preview.media;
-    previewer_config.markdown_diagrams = mm.render_config.preview.markdown_diagrams;
-    previewer_config.inline_diagrams = mm.render_config.preview.inline_diagrams;
+    previewer_config.media = mm.render_config.preview.media.active;
+    previewer_config.markdown_diagrams = mm.render_config.preview.diagrams.active;
+    previewer_config.inline_diagrams = mm.render_config.preview.diagrams.inline;
     previewer_config.inline_images = mm.render_config.preview.inline_images;
-    previewer_config.diagram_theme = mm.render_config.preview.diagram_theme;
-    previewer_config.diagram_background = mm.render_config.preview.diagram_background;
+    previewer_config.diagram_theme = mm.render_config.preview.diagrams.theme;
+    previewer_config.diagram_background = mm.render_config.preview.diagrams.background;
     // initialize previewer
     let (previewer, tx) = Previewer::new(previewer_config.clone());
     let preview_tx = tx.clone();
@@ -1189,7 +1189,7 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
             if state.preview_visible() &&
             let m = state.preview_payload().clone()
             {
-                let media = state.preview_ui.as_ref().map(|p| p.config.media).unwrap_or(false);
+                let media = state.preview_ui.as_ref().map(|p| p.config.media.active).unwrap_or(false);
                 let markdown = state.preview_ui.as_ref().map(|p| p.config.markdown).unwrap_or(true);
                 let mut msg = None;
 

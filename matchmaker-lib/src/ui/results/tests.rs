@@ -49,8 +49,8 @@ fn test_parse_template_colon_style() {
 #[test]
 fn test_results_ui_renders_tier_separator() {
     let mut results_config = ResultsConfig::default();
-    results_config.tier_separator = HorizontalSeparator::Top;
-    results_config.tier_separator_style = StyleSetting {
+    results_config.tier.separator = HorizontalSeparator::Top;
+    results_config.tier.style = StyleSetting {
         fg: Some(Color::DarkGray),
         ..Default::default()
     };
@@ -106,8 +106,8 @@ fn test_results_ui_renders_tier_separator() {
 fn test_results_ui_renders_tier_separator_underline() {
     let mut results_config = ResultsConfig::default();
     results_config.icons = true;
-    results_config.tier_separator = HorizontalSeparator::Underline;
-    results_config.tier_separator_style = StyleSetting {
+    results_config.tier.separator = HorizontalSeparator::Underline;
+    results_config.tier.style = StyleSetting {
         fg: Some(Color::Cyan),
         ..Default::default()
     };
@@ -174,7 +174,7 @@ fn test_results_ui_bookmark_styling_focused_and_unfocused() {
     let mut results_config = ResultsConfig::default();
     results_config.icons = true;
     results_config.uncolor_current_icon = true;
-    results_config.bookmark_icon_style = StyleSetting {
+    results_config.bookmark.icon_style = StyleSetting {
         fg: Some(bookmark_color),
         ..Default::default()
     };
@@ -283,7 +283,7 @@ fn test_results_ui_mode_2_bookmarks_and_folders_styling() {
     let mut results_config = ResultsConfig::default();
     results_config.icons = true;
     results_config.uncolor_current_icon = true;
-    results_config.bookmark_icon_style = StyleSetting {
+    results_config.bookmark.icon_style = StyleSetting {
         fg: Some(bookmark_color),
         ..Default::default()
     };

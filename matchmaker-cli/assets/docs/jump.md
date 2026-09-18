@@ -73,28 +73,34 @@ Matchmaker Jump Mode goes beyond simple directory jumping, supporting rich overl
 Below is the optimized Jump Mode configuration:
 
 ```toml
-[ui]
-nav_mode = true
-nav_bar = "Plain"
-nav_color = "Black"
+[ui.nav]
+active = true
+bar = "Plain"
+color = "Black"
 
 [matcher]
-sort = "smart"
-sort_cap = 2000
 depth_penalty = 15
-frecency = true
-frecency_weight = 2
 typo_tolerance = true
 dir_first = true
+
+[matcher.sort]
+threshold = "smart"
+cap = 2000
+
+[matcher.frecency]
+active = true
+weight = 2
 
 [results]
 reverse = false
 icons = true
 uncolor_current_icon = true
 row_connection = "Full"
-symlink_target = true
-symlink_target_style.fg = "cyan"
 current_nav_bar = "QuadrantInside"
+
+[results.symlink]
+active = true
+style.fg = "cyan"
 
 [results.current_nav_bar_style]
 fg = "yellow"
@@ -109,7 +115,9 @@ debounce_ms = 25
 delay_clear = true
 
 [preview]
-media = true
+
+[preview.media]
+active = true
 
 [preview.border]
 title_fg = "cyan"
@@ -132,7 +140,7 @@ percentage = 80
 "ctrl-h" = ["ChDir(..)", "Cancel", "Reload", "Pos(0)"]
 "ctrl-u" = ["Reload(curr=\"$(pwd)\"; while [ \"$curr\" != \"/\" ] && [ -n \"$curr\" ]; do curr=\"$(dirname \"$curr\")\"; echo \"$curr\"; done)", "Cancel", "Pos(0)"]
 
-[ui.nav_binds]
+[ui.nav.binds]
 "f" = "@reloadnext"
 "e" = "Execute(nvim {+})"
 "l" = ["ChDir({=})", "Cancel", "Reload", "Pos(0)"]
@@ -153,7 +161,10 @@ style.modifier = "BOLD"
 separator_style.fg = "Cyan"
 
 [start]
-additional_commands = [
+
+[start.command]
+command = ""
+additional = [
     "",
     "fd -H -E.git -Enode_modules -E.cache -Etarget -Edist -Ebuild --strip-cwd-prefix . 2>/dev/null",
     "mm list --dirs 2>/dev/null | sed -E \"s#^$HOME(/|$)##\" | grep -v \"^$\""

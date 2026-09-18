@@ -2221,7 +2221,7 @@ mod tests {
         ];
 
         let mut worker_config = WorkerConfig::default();
-        worker_config.sort_threshold = SortThreshold::SMART;
+        worker_config.sort.threshold = SortThreshold::SMART;
 
         let (mut mm, injector, _) = Matchmaker::new_from_config(
             RenderConfig::default(),

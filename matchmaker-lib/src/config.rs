@@ -44,6 +44,97 @@ pub struct MatcherConfig {
     pub worker: WorkerConfig,
 }
 
+/// Configuration for sorting behavior in worker.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct WorkerSortConfig {
+    /// How "stable" the results are. Higher values prioritize the initial ordering.
+    #[serde(alias = "sort_threshold", alias = "sort")]
+    pub threshold: SortThreshold,
+    /// Maximum number of top matched items to re-sort by frecency/depth penalty (0 = unlimited). Default is 1000.
+    #[partial(alias = "sc")]
+    #[serde(alias = "sort_cap")]
+    pub cap: usize,
+}
+
+impl Default for WorkerSortConfig {
+    fn default() -> Self {
+        Self {
+            threshold: SortThreshold::default(),
+            cap: 1000,
+        }
+    }
+}
+
+pub fn deserialize_worker_sort<'de, D>(deserializer: D) -> Result<WorkerSortConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum SortHelper {
+        Threshold(SortThreshold),
+        Config(WorkerSortConfig),
+    }
+
+    match SortHelper::deserialize(deserializer)? {
+        SortHelper::Threshold(t) => Ok(WorkerSortConfig {
+            threshold: t,
+            ..WorkerSortConfig::default()
+        }),
+        SortHelper::Config(c) => Ok(c),
+    }
+}
+
+/// Configuration for frecency scoring in worker.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct WorkerFrecencyConfig {
+    /// Enable frecency (frequency + recency) score boosting for matched items.
+    #[partial(alias = "frec")]
+    #[serde(alias = "frecency")]
+    pub active: bool,
+    /// Multiplier for frecency bonus score added to matching items. Default is 1.
+    #[serde(alias = "frecency_weight")]
+    pub weight: u32,
+    /// Half-life in days for continuous exponential frecency decay. Default is 7 days (0 switches to legacy discrete buckets).
+    #[partial(alias = "hl")]
+    #[serde(alias = "frecency_half_life_days")]
+    pub half_life_days: u32,
+}
+
+impl Default for WorkerFrecencyConfig {
+    fn default() -> Self {
+        Self {
+            active: false,
+            weight: 1,
+            half_life_days: 7,
+        }
+    }
+}
+
+pub fn deserialize_worker_frecency<'de, D>(deserializer: D) -> Result<WorkerFrecencyConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum FrecencyHelper {
+        Bool(bool),
+        Config(WorkerFrecencyConfig),
+    }
+
+    match FrecencyHelper::deserialize(deserializer)? {
+        FrecencyHelper::Bool(b) => Ok(WorkerFrecencyConfig {
+            active: b,
+            ..WorkerFrecencyConfig::default()
+        }),
+        FrecencyHelper::Config(c) => Ok(c),
+    }
+}
+
 /// "Input/output specific". Configures the matchmaker worker.
 ///
 /// Does not deny unknown fields.
@@ -51,20 +142,17 @@ pub struct MatcherConfig {
 #[serde(default)]
 #[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
 pub struct WorkerConfig {
-    /// How "stable" the results are. Higher values prioritize the initial ordering.
-    #[serde(alias = "sort")]
-    pub sort_threshold: SortThreshold,
+    /// Sort settings for worker.
+    #[partial(recurse)]
+    #[serde(deserialize_with = "deserialize_worker_sort", default)]
+    pub sort: WorkerSortConfig,
     /// Score penalty subtracted per path depth level ('/' or '\'). 0 disables penalty.
     #[partial(alias = "dp")]
     pub depth_penalty: u32,
-    /// Enable frecency (frequency + recency) score boosting for matched items.
-    #[partial(alias = "frec")]
-    pub frecency: bool,
-    /// Multiplier for frecency bonus score added to matching items. Default is 1.
-    pub frecency_weight: u32,
-    /// Maximum number of top matched items to re-sort by frecency/depth penalty (0 = unlimited). Default is 1000.
-    #[partial(alias = "sc")]
-    pub sort_cap: usize,
+    /// Frecency scoring settings for worker.
+    #[partial(recurse)]
+    #[serde(deserialize_with = "deserialize_worker_frecency", default)]
+    pub frecency: WorkerFrecencyConfig,
     /// Enable typo tolerance for search queries >= 3 characters.
     #[partial(alias = "tt")]
     pub typo_tolerance: bool,
@@ -81,27 +169,56 @@ pub struct WorkerConfig {
     /// Percentage bonus boost for items located inside or relative to current working directory (CWD). Default is 30 (i.e. +30%).
     #[partial(alias = "lb")]
     pub location_bias: u32,
-    /// Half-life in days for continuous exponential frecency decay. Default is 7 days (0 switches to legacy discrete buckets).
-    #[partial(alias = "hl")]
-    pub frecency_half_life_days: u32,
 }
 
 impl Default for WorkerConfig {
     fn default() -> Self {
         Self {
-            sort_threshold: SortThreshold::default(),
+            sort: WorkerSortConfig::default(),
             depth_penalty: 0,
-            frecency: false,
-            frecency_weight: 1,
-            sort_cap: 1000,
+            frecency: WorkerFrecencyConfig::default(),
             typo_tolerance: false,
             dir_first: false,
             raw: false,
             track: false,
             reverse: false,
             location_bias: 30,
-            frecency_half_life_days: 7,
         }
+    }
+}
+
+/// Startup command execution configuration.
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct StartCommandConfig {
+    /// (cli only) Default command to execute when stdin is not being read.
+    #[partial(alias = "cmd", alias = "x")]
+    #[serde(alias = "command")]
+    pub default: CommandSetting,
+    /// (cli only) Additional command which can be cycled through using Action::ReloadNext
+    #[partial(alias = "ax")]
+    #[serde(alias = "additional_commands")]
+    pub additional: Vec<String>,
+}
+
+pub fn deserialize_start_command<'de, D>(deserializer: D) -> Result<StartCommandConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum CmdHelper {
+        Setting(CommandSetting),
+        Config(StartCommandConfig),
+    }
+
+    match CmdHelper::deserialize(deserializer)? {
+        CmdHelper::Setting(s) => Ok(StartCommandConfig {
+            default: s,
+            ..StartCommandConfig::default()
+        }),
+        CmdHelper::Config(c) => Ok(c),
     }
 }
 
@@ -124,12 +241,10 @@ pub struct StartConfig {
     #[serde(alias = "output")]
     pub output_template: Option<String>,
 
-    /// (cli only)  Default command to execute when stdin is not being read.
-    #[partial(alias = "cmd", alias = "x")]
-    pub command: CommandSetting,
-    /// (cli only) Additional command which can be cycled through using Action::ReloadNext
-    #[partial(alias = "ax")]
-    pub additional_commands: Vec<String>,
+    /// (cli only) Command and alternative commands configuration.
+    #[partial(recurse)]
+    #[serde(deserialize_with = "deserialize_start_command", default)]
+    pub command: StartCommandConfig,
 
     #[partial(alias = "d")]
     pub directory: EnvValue,
@@ -260,6 +375,200 @@ impl Default for TerminalConfig {
     }
 }
 
+///// Configuration for Navigation mode (`--nav`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct NavConfig {
+    /// Enable navigation mode: pressing `ToggleFocus` switches keyboard focus
+    /// between the input bar and the results list.
+    #[partial(alias = "fm")]
+    #[serde(alias = "nav_mode", alias = "focus_mode", alias = "mode")]
+    pub active: bool,
+
+    /// Navigation-mode indicator colour (set via `--color nav:` or `--nav color:`).
+    #[serde(deserialize_with = "camelcase_normalized")]
+    #[serde(alias = "nav_color", alias = "focus_color")]
+    pub color: Color,
+
+    /// Make the navigation indicator blink.
+    #[partial(alias = "fm_blink")]
+    #[serde(alias = "nav_blink", alias = "focus_blink")]
+    pub blink: bool,
+
+    /// Blink speed when `nav_blink = true`.
+    #[partial(alias = "fm_blink_rate")]
+    #[serde(alias = "nav_blink_rate", alias = "focus_blink_rate")]
+    pub blink_rate: BlinkRate,
+
+    /// Apply bold styling to navigation indicator.
+    #[partial(alias = "fm_bold")]
+    #[serde(alias = "nav_bold", alias = "focus_bold")]
+    pub bold: bool,
+
+    /// Left-bar border style for the navigation indicator.
+    #[partial(alias = "fm_bar")]
+    #[serde(alias = "nav_bar", alias = "focus_bar")]
+    pub bar: Option<BorderType>,
+
+    /// Marker rendered on the current result row when results pane is focused.
+    #[partial(alias = "fm_marker")]
+    #[serde(alias = "nav_marker", alias = "focus_marker")]
+    pub marker: String,
+
+    /// Prompt text shown while the results pane is focused.
+    #[partial(alias = "fm_prompt")]
+    #[serde(alias = "nav_prompt", alias = "focus_prompt")]
+    pub prompt: String,
+
+    /// Key bindings active while navigation mode is enabled and results pane has focus.
+    #[serde(alias = "nav_binds", alias = "focus_binds")]
+    #[partial(no_recurse, unwrap)]
+    pub binds: HashMap<String, Actions<NullActionExt>>,
+
+    /// Show notifications for file-manager clipboard actions.
+    #[serde(alias = "nav_notify", alias = "focus_notify", alias = "fm_notify")]
+    pub notify: bool,
+
+    /// When true, characters typed while the results pane is focused bypass the
+    /// nav-bind intercept and fall through to the query input.  Useful when you
+    /// want the navigation-mode visual indicators but still want live filtering
+    /// while scrolling results.  Enable with `--nav no-filter` or in TOML as
+    /// `nav_passthrough = true`.
+    #[serde(alias = "nav_passthrough")]
+    pub passthrough: bool,
+
+    /// When true only the basic j / k / J / K navigation binds are active;
+    /// the h / l / gg / G / gb / gt binds are silenced and the file-manager
+    /// semantic binds (d, a, r, …) are not injected.  Enable with
+    /// `--nav basic` or in TOML as `nav_basic = true`.
+    #[serde(alias = "nav_basic")]
+    pub basic: bool,
+
+    #[partial(alias = "fm_focus_on_start")]
+    #[serde(alias = "nav_focus_on_start", alias = "focus_on_start")]
+    #[serde(default)]
+    pub focus_on_start: NavFocus,
+
+    /// Show keybinding hints in footer/status when Results pane is focused in navigation mode.
+    #[serde(alias = "nav_hints", alias = "focus_hints", alias = "fm_hints")]
+    pub hints: bool,
+
+    /// Number of columns to display in the navigation hints grid in the footer.
+    /// If 0 or 1, renders as a single row.
+    /// Default: 4.
+    #[serde(alias = "nav_hints_columns", alias = "hints_columns")]
+    pub hints_columns: usize,
+}
+
+impl Default for NavConfig {
+    fn default() -> Self {
+        let mut binds = HashMap::new();
+        binds.insert("j".to_string(), Actions::from([Action::Down(1)]));
+        binds.insert("k".to_string(), Actions::from([Action::Up(1)]));
+        binds.insert(
+            "l".to_string(),
+            Actions::from([
+                Action::ChDir("{=}".to_string()),
+                Action::Reload("".to_string()),
+                Action::Pos(0),
+            ]),
+        );
+        binds.insert(
+            "h".to_string(),
+            Actions::from([
+                Action::ChDir("..".to_string()),
+                Action::Reload("".to_string()),
+                Action::Pos(0),
+            ]),
+        );
+        binds.insert("J".to_string(), Actions::from([Action::PreviewDown(1)]));
+        binds.insert("K".to_string(), Actions::from([Action::PreviewUp(1)]));
+        binds.insert("gg".to_string(), Actions::from([Action::PreviewUp(0)]));
+        binds.insert("G".to_string(), Actions::from([Action::PreviewDown(0)]));
+        binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
+        binds.insert("\\".to_string(), Actions::from([Action::ToggleParentPeek]));
+        binds.insert("|".to_string(), Actions::from([Action::ToggleParentPeek]));
+        binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
+        binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
+        binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
+        binds.insert(".".to_string(), Actions::from([Action::NextColumn]));
+        binds.insert(">".to_string(), Actions::from([Action::PrevColumn]));
+        binds.insert(
+            "f".to_string(),
+            Actions::from([Action::Semantic("frecency".to_string())]),
+        );
+        binds.insert(
+            "b".to_string(),
+            Actions::from([Action::Semantic("bookmarks".to_string())]),
+        );
+        binds.insert("esc".to_string(), Actions::from([Action::Quit(130)]));
+        binds.insert("q".to_string(), Actions::from([Action::Quit(130)]));
+        binds.insert(
+            "*".to_string(),
+            Actions::from([Action::Semantic("bookmark".to_string())]),
+        );
+
+        Self {
+            active: false,
+            color: Color::Yellow,
+            blink: false,
+            blink_rate: BlinkRate::Normal,
+            bold: false,
+            bar: None,
+            marker: "".to_string(),
+            prompt: "".to_string(),
+            binds,
+            notify: false,
+            passthrough: false,
+            basic: false,
+            focus_on_start: NavFocus::Filter,
+            hints: true,
+            hints_columns: 4,
+        }
+    }
+}
+
+impl NavConfig {
+    /// Calculate the required height in rows for the navigation hints footer.
+    pub fn hints_height(&self, item_count: usize) -> u16 {
+        if !self.hints {
+            return 0;
+        }
+        let cols = if self.hints_columns == 0 {
+            4
+        } else {
+            self.hints_columns
+        };
+        if cols <= 1 {
+            1
+        } else {
+            let rows = (item_count + cols - 1) / cols;
+            rows.max(1) as u16
+        }
+    }
+}
+
+pub fn deserialize_nav<'de, D>(deserializer: D) -> Result<NavConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NavHelper {
+        Bool(bool),
+        Config(NavConfig),
+    }
+
+    match NavHelper::deserialize(deserializer)? {
+        NavHelper::Bool(b) => Ok(NavConfig {
+            active: b,
+            ..NavConfig::default()
+        }),
+        NavHelper::Config(c) => Ok(c),
+    }
+}
+
 /// The container ui.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -270,85 +579,10 @@ pub struct UiConfig {
     pub border: BorderSetting,
     pub tick_rate: u8, // separate from render, but best place ig
 
-    /// Enable navigation mode: pressing `ToggleFocus` switches keyboard focus
-    /// between the input bar and the results list.
-    #[partial(alias = "fm")]
-    #[serde(alias = "focus_mode")]
-    pub nav_mode: bool,
-
-    /// Navigation-mode indicator colour (set via `--color nav:` or `--nav color:`).
-    #[serde(deserialize_with = "camelcase_normalized")]
-    #[serde(alias = "focus_color")]
-    pub nav_color: Color,
-
-    /// Make the navigation indicator blink.
-    #[partial(alias = "fm_blink")]
-    #[serde(alias = "focus_blink")]
-    pub nav_blink: bool,
-
-    /// Blink speed when `nav_blink = true`.
-    #[partial(alias = "fm_blink_rate")]
-    #[serde(alias = "focus_blink_rate")]
-    pub nav_blink_rate: BlinkRate,
-
-    /// Apply bold styling to navigation indicator.
-    #[partial(alias = "fm_bold")]
-    #[serde(alias = "focus_bold")]
-    pub nav_bold: bool,
-
-    /// Left-bar border style for the navigation indicator.
-    #[partial(alias = "fm_bar")]
-    #[serde(alias = "focus_bar")]
-    pub nav_bar: Option<BorderType>,
-
-    /// Marker rendered on the current result row when results pane is focused.
-    #[partial(alias = "fm_marker")]
-    #[serde(alias = "focus_marker")]
-    pub nav_marker: String,
-
-    /// Prompt text shown while the results pane is focused.
-    #[partial(alias = "fm_prompt")]
-    #[serde(alias = "focus_prompt")]
-    pub nav_prompt: String,
-
-    /// Key bindings active while navigation mode is enabled and results pane has focus.
-    #[serde(alias = "focus_binds")]
-    #[partial(no_recurse, unwrap)]
-    pub nav_binds: HashMap<String, Actions<NullActionExt>>,
-
-    /// Show notifications for file-manager clipboard actions.
-    #[serde(alias = "focus_notify")]
-    #[serde(alias = "fm_notify")]
-    pub nav_notify: bool,
-
-    /// When true, characters typed while the results pane is focused bypass the
-    /// nav-bind intercept and fall through to the query input.  Useful when you
-    /// want the navigation-mode visual indicators but still want live filtering
-    /// while scrolling results.  Enable with `--nav no-filter` or in TOML as
-    /// `nav_passthrough = true`.
-    pub nav_passthrough: bool,
-
-    /// When true only the basic j / k / J / K navigation binds are active;
-    /// the h / l / gg / G / gb / gt binds are silenced and the file-manager
-    /// semantic binds (d, a, r, …) are not injected.  Enable with
-    /// `--nav basic` or in TOML as `nav_basic = true`.
-    pub nav_basic: bool,
-
-    #[partial(alias = "fm_focus_on_start")]
-    #[serde(alias = "focus_on_start")]
-    #[serde(default)]
-    pub nav_focus_on_start: NavFocus,
-
-    /// Show keybinding hints in footer/status when Results pane is focused in navigation mode.
-    #[serde(alias = "focus_hints")]
-    #[serde(alias = "fm_hints")]
-    pub nav_hints: bool,
-
-    /// Number of columns to display in the navigation hints grid in the footer.
-    /// If 0 or 1, renders as a single row.
-    /// Default: 4.
-    #[serde(alias = "hints_columns")]
-    pub nav_hints_columns: usize,
+    /// Navigation mode (`--nav`) settings.
+    #[partial(recurse)]
+    #[serde(deserialize_with = "deserialize_nav", default)]
+    pub nav: NavConfig,
 
     /// Configuration for the 3-pane Parent Peek left directory pane.
     #[partial(recurse)]
@@ -384,95 +618,88 @@ impl UiConfig {
 
     /// Calculate the required height in rows for the navigation hints footer.
     pub fn nav_hints_height(&self, item_count: usize) -> u16 {
-        if !self.nav_hints {
-            return 0;
-        }
-        let cols = if self.nav_hints_columns == 0 {
-            4
-        } else {
-            self.nav_hints_columns
-        };
-        if cols <= 1 {
-            1
-        } else {
-            let rows = (item_count + cols - 1) / cols;
-            rows.max(1) as u16
-        }
+        self.nav.hints_height(item_count)
     }
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
-        let mut nav_binds = HashMap::new();
-        nav_binds.insert("j".to_string(), Actions::from([Action::Down(1)]));
-        nav_binds.insert("k".to_string(), Actions::from([Action::Up(1)]));
-        nav_binds.insert(
-            "l".to_string(),
-            Actions::from([
-                Action::ChDir("{=}".to_string()),
-                Action::Reload("".to_string()),
-                Action::Pos(0),
-            ]),
-        );
-        nav_binds.insert(
-            "h".to_string(),
-            Actions::from([
-                Action::ChDir("..".to_string()),
-                Action::Reload("".to_string()),
-                Action::Pos(0),
-            ]),
-        );
-        nav_binds.insert("J".to_string(), Actions::from([Action::PreviewDown(1)]));
-        nav_binds.insert("K".to_string(), Actions::from([Action::PreviewUp(1)]));
-        nav_binds.insert("gg".to_string(), Actions::from([Action::PreviewUp(0)]));
-        nav_binds.insert("G".to_string(), Actions::from([Action::PreviewDown(0)]));
-        nav_binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
-        nav_binds.insert("\\".to_string(), Actions::from([Action::ToggleParentPeek]));
-        nav_binds.insert("|".to_string(), Actions::from([Action::ToggleParentPeek]));
-        nav_binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
-        nav_binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
-        nav_binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
-        nav_binds.insert(".".to_string(), Actions::from([Action::NextColumn]));
-        nav_binds.insert(">".to_string(), Actions::from([Action::PrevColumn]));
-        nav_binds.insert(
-            "f".to_string(),
-            Actions::from([Action::Semantic("frecency".to_string())]),
-        );
-        nav_binds.insert(
-            "b".to_string(),
-            Actions::from([Action::Semantic("bookmarks".to_string())]),
-        );
-        nav_binds.insert("esc".to_string(), Actions::from([Action::Quit(130)]));
-        nav_binds.insert("q".to_string(), Actions::from([Action::Quit(130)]));
-        nav_binds.insert(
-            "*".to_string(),
-            Actions::from([Action::Semantic("bookmark".to_string())]),
-        );
-
         Self {
             border: BorderSetting::default(),
             tick_rate: 15,
-            nav_mode: false,
-            nav_color: Color::Yellow,
-            nav_blink: false,
-            nav_blink_rate: BlinkRate::Normal,
-            nav_bold: false,
-            nav_bar: None,
-            nav_marker: "".to_string(),
-            nav_prompt: "".to_string(),
-            nav_binds,
-            nav_notify: false,
-            nav_passthrough: false,
-            nav_basic: false,
-            nav_focus_on_start: NavFocus::Filter,
-            nav_hints: true,
-            nav_hints_columns: 4,
+            nav: NavConfig::default(),
             parent_peek: ParentPeekConfig::default(),
             sort_menu: SortMenuConfig::default(),
             folder_rules: Vec::new(),
             default_sort: None,
         }
     }
+}
+
+/// Configuration for query filtering mode.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct QueryFilterConfig {
+    /// Style for the query prompt when in filter mode (focused).
+    #[partial(recurse)]
+    #[serde(alias = "filter_prompt_style")]
+    pub prompt_style: StyleSetting,
+
+    /// Style for the query text when in filter mode (focused).
+    #[partial(recurse)]
+    #[serde(alias = "filter_style")]
+    pub style: StyleSetting,
+
+    /// Prompt prefix when in filter mode (focused).
+    #[serde(alias = "filter_prompt")]
+    pub prompt: Option<String>,
+
+    /// Whether the underline separator is shown when in filter mode (focused).
+    /// If None, inherits from `underline`.
+    #[serde(alias = "filter_underline")]
+    pub underline: Option<bool>,
+
+    /// Style and color of the query underline separator when in filter mode (focused).
+    #[partial(recurse)]
+    #[serde(alias = "filter_underline_style")]
+    pub underline_style: StyleSetting,
+}
+
+impl Default for QueryFilterConfig {
+    fn default() -> Self {
+        Self {
+            prompt_style: StyleSetting {
+                modifier: Modifier::empty(),
+                ..Default::default()
+            },
+            style: StyleSetting {
+                modifier: Modifier::empty(),
+                ..Default::default()
+            },
+            prompt: None,
+            underline: None,
+            underline_style: StyleSetting {
+                modifier: Modifier::empty(),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// Prompt and style configuration for query modes (local, frecency, bookmarks).
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct QueryModeConfig {
+    /// Mode-specific prompt text.
+    pub prompt: Option<String>,
+    /// Style for the mode-specific prompt.
+    #[partial(recurse)]
+    pub prompt_style: StyleSetting,
+    /// Style for the underline separator in this mode.
+    #[partial(recurse)]
+    pub underline_style: StyleSetting,
 }
 
 /// The query (input) bar ui.
@@ -491,20 +718,9 @@ pub struct QueryConfig {
     #[partial(recurse)]
     pub prompt_style: StyleSetting,
 
-    /// Style for the query prompt when in filter mode (focused).
-    #[partial(recurse)]
-    pub filter_prompt_style: StyleSetting,
-
-    /// Style for the query text when in filter mode (focused).
-    #[partial(recurse)]
-    pub filter_style: StyleSetting,
-
     /// The prompt prefix.
     #[serde(deserialize_with = "deserialize_string_or_char_as_double_width")]
     pub prompt: String,
-
-    /// Prompt prefix when in filter mode (focused).
-    pub filter_prompt: Option<String>,
 
     /// Cursor style.
     pub cursor: CursorSetting,
@@ -530,34 +746,21 @@ pub struct QueryConfig {
     #[partial(recurse)]
     pub underline_style: StyleSetting,
 
-    /// Whether the underline separator is shown when in filter mode (focused).
-    /// If None, inherits from `underline`.
-    pub filter_underline: Option<bool>,
+    /// Filter-mode configuration.
+    #[partial(recurse)]
+    pub filter: QueryFilterConfig,
 
-    /// Style and color of the query underline separator when in filter mode (focused).
+    /// Prompt and styling for local mode (index 0).
     #[partial(recurse)]
-    pub filter_underline_style: StyleSetting,
+    pub local: QueryModeConfig,
 
-    /// Prompt query for local mode (index 0).
-    pub local_prompt: Option<String>,
+    /// Prompt and styling for frecency mode (index 1).
     #[partial(recurse)]
-    pub local_prompt_style: StyleSetting,
-    #[partial(recurse)]
-    pub local_underline_style: StyleSetting,
+    pub frecency: QueryModeConfig,
 
-    /// Prompt query for frecency mode (index 1).
-    pub frecency_prompt: Option<String>,
+    /// Prompt and styling for bookmarks mode (index 2).
     #[partial(recurse)]
-    pub frecency_prompt_style: StyleSetting,
-    #[partial(recurse)]
-    pub frecency_underline_style: StyleSetting,
-
-    /// Prompt query for bookmarks mode (index 2).
-    pub bookmarks_prompt: Option<String>,
-    #[partial(recurse)]
-    pub bookmarks_prompt_style: StyleSetting,
-    #[partial(recurse)]
-    pub bookmarks_underline_style: StyleSetting,
+    pub bookmarks: QueryModeConfig,
 }
 
 impl Default for QueryConfig {
@@ -569,17 +772,8 @@ impl Default for QueryConfig {
                 modifier: Modifier::empty(),
                 ..Default::default()
             },
-            filter_prompt_style: StyleSetting {
-                modifier: Modifier::empty(),
-                ..Default::default()
-            },
-            filter_style: StyleSetting {
-                modifier: Modifier::empty(),
-                ..Default::default()
-            },
             prompt: "> ".to_string(),
-            filter_prompt: None,
-            cursor: Default::default(),
+            cursor: CursorSetting::default(),
             initial: Default::default(),
 
             scroll_padding: true,
@@ -590,29 +784,29 @@ impl Default for QueryConfig {
                 modifier: Modifier::empty(),
                 ..Default::default()
             },
-            filter_underline: None,
-            filter_underline_style: StyleSetting {
-                modifier: Modifier::empty(),
-                ..Default::default()
-            },
 
-            local_prompt: None,
-            local_prompt_style: Default::default(),
-            local_underline_style: Default::default(),
-
-            frecency_prompt: Some("󱅤 ".to_string()),
-            frecency_prompt_style: StyleSetting {
-                fg: Some(Color::Blue),
-                ..Default::default()
+            filter: QueryFilterConfig::default(),
+            local: QueryModeConfig {
+                prompt: None,
+                prompt_style: Default::default(),
+                underline_style: Default::default(),
             },
-            frecency_underline_style: Default::default(),
-
-            bookmarks_prompt: Some(" ".to_string()),
-            bookmarks_prompt_style: StyleSetting {
-                fg: Some(Color::Yellow),
-                ..Default::default()
+            frecency: QueryModeConfig {
+                prompt: Some("󱅤 ".to_string()),
+                prompt_style: StyleSetting {
+                    fg: Some(Color::Blue),
+                    ..Default::default()
+                },
+                underline_style: Default::default(),
             },
-            bookmarks_underline_style: Default::default(),
+            bookmarks: QueryModeConfig {
+                prompt: Some(" ".to_string()),
+                prompt_style: StyleSetting {
+                    fg: Some(Color::Yellow),
+                    ..Default::default()
+                },
+                underline_style: Default::default(),
+            },
         }
     }
 }
@@ -994,6 +1188,163 @@ impl Default for AutoscrollSettings {
     }
 }
 
+/// Symlink target display configuration.
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResultsSymlinkConfig {
+    /// Show symlink targets appended to the first column text.
+    /// Defaults to false.
+    #[serde(alias = "symlink_target", alias = "target")]
+    pub active: bool,
+    /// Style for the appended symlink target text.
+    #[partial(recurse)]
+    #[serde(alias = "symlink_target_style")]
+    pub style: StyleSetting,
+}
+
+impl Default for ResultsSymlinkConfig {
+    fn default() -> Self {
+        Self {
+            active: false,
+            style: StyleSetting {
+                fg: Some(Color::DarkGray),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+pub fn deserialize_results_symlink<'de, D>(deserializer: D) -> Result<ResultsSymlinkConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum SymlinkHelper {
+        Bool(bool),
+        Config(ResultsSymlinkConfig),
+    }
+
+    match SymlinkHelper::deserialize(deserializer)? {
+        SymlinkHelper::Bool(b) => Ok(ResultsSymlinkConfig {
+            active: b,
+            ..ResultsSymlinkConfig::default()
+        }),
+        SymlinkHelper::Config(c) => Ok(c),
+    }
+}
+
+/// Tier separator line configuration for 3-tiered sort when dir_first is enabled.
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResultsTierConfig {
+    /// Horizontal separator style drawn between the 3 tiers (direct dirs, direct files, deep items)
+    /// when dir_first is enabled. Defaults to Top ("▔").
+    #[serde(deserialize_with = "camelcase_normalized")]
+    #[serde(alias = "tier_separator")]
+    pub separator: HorizontalSeparator,
+    /// Style override for the tier separator line.
+    #[partial(recurse)]
+    #[serde(alias = "tier_separator_style")]
+    pub style: StyleSetting,
+}
+
+impl Default for ResultsTierConfig {
+    fn default() -> Self {
+        Self {
+            separator: HorizontalSeparator::Top,
+            style: StyleSetting {
+                fg: Some(Color::DarkGray),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// Icon configuration for pinned / bookmarked items.
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResultsBookmarkConfig {
+    /// Icon for pinned / bookmarked items.
+    #[serde(alias = "bookmark_icon")]
+    pub icon: Option<String>,
+    /// Icon for pinned / bookmarked file items. Defaults to Some("󱀻".to_string()).
+    #[serde(alias = "bookmark_file_icon")]
+    pub file_icon: Option<String>,
+    /// Icon for pinned / bookmarked folder items. Defaults to Some("󰮟".to_string()).
+    #[serde(alias = "bookmark_folder_icon")]
+    pub folder_icon: Option<String>,
+    /// Style / color for the bookmark icon. Defaults to Yellow.
+    #[partial(recurse)]
+    #[serde(alias = "bookmark_icon_style")]
+    pub icon_style: StyleSetting,
+    /// Style / color for the bookmark file icon. Defaults to Yellow.
+    #[partial(recurse)]
+    #[serde(alias = "bookmark_file_icon_style")]
+    pub file_icon_style: StyleSetting,
+    /// Style / color for the bookmark folder icon. Defaults to Yellow.
+    #[partial(recurse)]
+    #[serde(alias = "bookmark_folder_icon_style")]
+    pub folder_icon_style: StyleSetting,
+}
+
+impl Default for ResultsBookmarkConfig {
+    fn default() -> Self {
+        Self {
+            icon: None,
+            file_icon: Some("󱀻".to_string()),
+            folder_icon: Some("󰮟".to_string()),
+            icon_style: StyleSetting {
+                fg: Some(Color::Yellow),
+                ..Default::default()
+            },
+            file_icon_style: Default::default(),
+            folder_icon_style: Default::default(),
+        }
+    }
+}
+
+/// Icon configuration for frecency-scored items.
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResultsFrecencyConfig {
+    /// Icon for frecency folder items. Defaults to Some("󰪻".to_string()).
+    #[serde(alias = "frecency_folder_icon")]
+    pub folder_icon: Option<String>,
+    /// Style / color for the frecency folder icon. Defaults to Blue.
+    #[partial(recurse)]
+    #[serde(alias = "frecency_folder_icon_style")]
+    pub folder_icon_style: StyleSetting,
+    /// Icon for frecency general / file items. Defaults to Some("󱋢".to_string()).
+    #[serde(alias = "frecency_icon")]
+    pub icon: Option<String>,
+    /// Style / color for the frecency item icon. Defaults to Blue.
+    #[partial(recurse)]
+    #[serde(alias = "frecency_icon_style")]
+    pub icon_style: StyleSetting,
+}
+
+impl Default for ResultsFrecencyConfig {
+    fn default() -> Self {
+        Self {
+            folder_icon: Some("󰪻".to_string()),
+            folder_icon_style: StyleSetting {
+                fg: Some(Color::Blue),
+                ..Default::default()
+            },
+            icon: Some("󱋢".to_string()),
+            icon_style: StyleSetting {
+                fg: Some(Color::Blue),
+                ..Default::default()
+            },
+        }
+    }
+}
+
 #[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -1124,12 +1475,10 @@ pub struct ResultsConfig {
     #[partial(recurse)]
     pub current_nav_bar_style: StyleSetting,
 
-    /// Show symlink targets appended to the first column text.
-    /// Defaults to false.
-    pub symlink_target: bool,
-    /// Style for the appended symlink target text.
+    /// Symlink display settings.
     #[partial(recurse)]
-    pub symlink_target_style: StyleSetting,
+    #[serde(deserialize_with = "deserialize_results_symlink", default)]
+    pub symlink: ResultsSymlinkConfig,
 
     /// Style for multi-selected rows (not the cursor row).
     #[partial(recurse)]
@@ -1148,44 +1497,20 @@ pub struct ResultsConfig {
     #[partial(recurse)]
     pub group_header_style: StyleSetting,
 
-    /// Horizontal separator style drawn between the 3 tiers (direct dirs, direct files, deep items)
-    /// when dir_first is enabled. Defaults to Top ("▔").
-    #[serde(deserialize_with = "camelcase_normalized")]
-    pub tier_separator: HorizontalSeparator,
-    /// Style override for the tier separator line.
+    /// Tier separator settings.
     #[partial(recurse)]
-    pub tier_separator_style: StyleSetting,
+    pub tier: ResultsTierConfig,
 
     /// Initial cursor position (0-based index or negative for from-the-end).
     pub pos: Option<i32>,
 
-    /// Icon for pinned / bookmarked items.
-    pub bookmark_icon: Option<String>,
-    /// Icon for pinned / bookmarked file items. Defaults to Some("󱀻".to_string()).
-    pub bookmark_file_icon: Option<String>,
-    /// Icon for pinned / bookmarked folder items. Defaults to Some("󰮟".to_string()).
-    pub bookmark_folder_icon: Option<String>,
-    /// Style / color for the bookmark icon. Defaults to Yellow.
+    /// Bookmark icons and styles.
     #[partial(recurse)]
-    pub bookmark_icon_style: StyleSetting,
-    /// Style / color for the bookmark file icon. Defaults to Yellow.
-    #[partial(recurse)]
-    pub bookmark_file_icon_style: StyleSetting,
-    /// Style / color for the bookmark folder icon. Defaults to Yellow.
-    #[partial(recurse)]
-    pub bookmark_folder_icon_style: StyleSetting,
+    pub bookmark: ResultsBookmarkConfig,
 
-    /// Icon for frecency folder items. Defaults to Some("󰪻".to_string()).
-    pub frecency_folder_icon: Option<String>,
-    /// Style / color for the frecency folder icon. Defaults to Blue.
+    /// Frecency icons and styles.
     #[partial(recurse)]
-    pub frecency_folder_icon_style: StyleSetting,
-
-    /// Icon for frecency general / file items. Defaults to Some("󱋢".to_string()).
-    pub frecency_icon: Option<String>,
-    /// Style / color for the frecency item icon. Defaults to Blue.
-    #[partial(recurse)]
-    pub frecency_icon_style: StyleSetting,
+    pub frecency: ResultsFrecencyConfig,
 }
 
 impl Default for ResultsConfig {
@@ -1254,11 +1579,7 @@ impl Default for ResultsConfig {
             current_icon_style: Default::default(),
             current_nav_bar: None,
             current_nav_bar_style: Default::default(),
-            symlink_target: false,
-            symlink_target_style: StyleSetting {
-                fg: Some(Color::DarkGray),
-                ..Default::default()
-            },
+            symlink: ResultsSymlinkConfig::default(),
             selected_style: StyleSetting {
                 modifier: Modifier::BOLD,
                 ..Default::default()
@@ -1283,30 +1604,9 @@ impl Default for ResultsConfig {
                 modifier: Modifier::BOLD,
                 ..Default::default()
             },
-            tier_separator: HorizontalSeparator::Top,
-            tier_separator_style: StyleSetting {
-                fg: Some(Color::DarkGray),
-                ..Default::default()
-            },
-            bookmark_icon: None,
-            bookmark_file_icon: Some("󱀻".to_string()),
-            bookmark_folder_icon: Some("󰮟".to_string()),
-            bookmark_icon_style: StyleSetting {
-                fg: Some(Color::Yellow),
-                ..Default::default()
-            },
-            bookmark_file_icon_style: Default::default(),
-            bookmark_folder_icon_style: Default::default(),
-            frecency_folder_icon: Some("󰪻".to_string()),
-            frecency_folder_icon_style: StyleSetting {
-                fg: Some(Color::Blue),
-                ..Default::default()
-            },
-            frecency_icon: Some("󱋢".to_string()),
-            frecency_icon_style: StyleSetting {
-                fg: Some(Color::Blue),
-                ..Default::default()
-            },
+            tier: ResultsTierConfig::default(),
+            bookmark: ResultsBookmarkConfig::default(),
+            frecency: ResultsFrecencyConfig::default(),
         }
     }
 }
@@ -1436,6 +1736,114 @@ impl Default for DisplayConfig {
 ///     ..Default::default()
 /// };
 /// ```
+/// Native media preview settings.
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PreviewMediaConfig {
+    /// Whether to enable native media previews using ratatui-image
+    #[partial(alias = "m")]
+    #[serde(alias = "media")]
+    pub active: bool,
+    /// Overriding graphics protocol for media previews (e.g. "kitty", "sixel", "halfblocks", "iterm2")
+    #[serde(alias = "media_protocol")]
+    pub protocol: Option<String>,
+    /// Pixel resolution for media previews (images, videos, PDFs). Default: 1280. 0 = original
+    #[serde(alias = "media_size")]
+    pub size: Option<u32>,
+    /// Initial zoom level for image previews. Default: 1.0
+    pub zoom: Option<f32>,
+    /// Resize/fit mode for media previews: "crop", "fit", or "scale" (default: "crop")
+    #[serde(alias = "media_fit")]
+    pub fit: Option<String>,
+}
+
+impl Default for PreviewMediaConfig {
+    fn default() -> Self {
+        Self {
+            active: false,
+            protocol: None,
+            size: None,
+            zoom: None,
+            fit: None,
+        }
+    }
+}
+
+pub fn deserialize_preview_media<'de, D>(deserializer: D) -> Result<PreviewMediaConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MediaHelper {
+        Bool(bool),
+        Config(PreviewMediaConfig),
+    }
+
+    match MediaHelper::deserialize(deserializer)? {
+        MediaHelper::Bool(b) => Ok(PreviewMediaConfig {
+            active: b,
+            ..PreviewMediaConfig::default()
+        }),
+        MediaHelper::Config(c) => Ok(c),
+    }
+}
+
+/// Diagram rendering settings (Mermaid).
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PreviewDiagramsConfig {
+    /// Whether to render embedded Mermaid diagrams inside markdown files. Default: true
+    #[partial(alias = "md_diag", alias = "diag")]
+    #[serde(alias = "markdown_diagrams", alias = "diagrams", alias = "mermaid")]
+    pub active: bool,
+    /// Whether to render embedded Mermaid diagrams inline using Kitty Unicode Placeholders. Default: true
+    #[partial(alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid")]
+    #[serde(alias = "inline_diagrams", alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid", alias = "kitty_diagrams")]
+    pub inline: bool,
+    /// Mermaid diagram theme: "auto" (detects system/terminal theme), "dark", or "light". Default: "auto"
+    #[partial(alias = "diagram_theme", alias = "diag_theme", alias = "theme_diag")]
+    #[serde(alias = "diagram_theme", alias = "diagrams_theme", alias = "mermaid_theme", alias = "theme_diagram")]
+    pub theme: DiagramTheme,
+    /// Mermaid diagram background mode: "transparent" (inherits terminal background) or "solid". Default: "transparent"
+    #[partial(alias = "diagram_background", alias = "diag_bg", alias = "diag_background")]
+    #[serde(alias = "diagram_background", alias = "diagrams_background", alias = "mermaid_background", alias = "diagram_bg", alias = "diagrams_bg")]
+    pub background: DiagramBackground,
+}
+
+impl Default for PreviewDiagramsConfig {
+    fn default() -> Self {
+        Self {
+            active: true,
+            inline: true,
+            theme: DiagramTheme::default(),
+            background: DiagramBackground::default(),
+        }
+    }
+}
+
+pub fn deserialize_preview_diagrams<'de, D>(deserializer: D) -> Result<PreviewDiagramsConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum DiagramsHelper {
+        Bool(bool),
+        Config(PreviewDiagramsConfig),
+    }
+
+    match DiagramsHelper::deserialize(deserializer)? {
+        DiagramsHelper::Bool(b) => Ok(PreviewDiagramsConfig {
+            active: b,
+            ..PreviewDiagramsConfig::default()
+        }),
+        DiagramsHelper::Config(c) => Ok(c),
+    }
+}
+
 #[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -1468,40 +1876,25 @@ pub struct PreviewConfig {
     /// Whether to show a scrollbar in the preview pane.
     #[partial(alias = "sb")]
     pub scrollbar: bool,
-    /// Whether to enable native media previews using ratatui-image
-    #[partial(alias = "m")]
-    pub media: bool,
-    /// Overriding graphics protocol for media previews (e.g. "kitty", "sixel", "halfblocks", "iterm2")
-    pub media_protocol: Option<String>,
-    /// Pixel resolution for media previews (images, videos, PDFs). Default: 1280. 0 = original
-    pub media_size: Option<u32>,
-    /// Initial zoom level for image previews. Default: 1.0
-    pub zoom: Option<f32>,
-    /// Resize/fit mode for media previews: "crop", "fit", or "scale" (default: "crop")
-    pub media_fit: Option<String>,
+
+    /// Media preview configuration.
+    #[partial(recurse)]
+    #[serde(deserialize_with = "deserialize_preview_media", default)]
+    pub media: PreviewMediaConfig,
+
     /// Whether to enable native markdown rendering with embedded Mermaid diagrams
     #[partial(alias = "md")]
     pub markdown: bool,
-    /// Whether to render embedded Mermaid diagrams inside markdown files. Default: true
-    #[partial(alias = "md_diag", alias = "diag")]
-    #[serde(alias = "diagrams", alias = "mermaid")]
-    pub markdown_diagrams: bool,
-    /// Whether to render embedded Mermaid diagrams inline using Kitty Unicode Placeholders. Default: true
-    #[partial(alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid")]
-    #[serde(alias = "inline_diag", alias = "inline_diagram", alias = "inline_mermaid", alias = "kitty_diagrams")]
-    pub inline_diagrams: bool,
+
+    /// Diagram rendering configuration.
+    #[partial(recurse)]
+    #[serde(deserialize_with = "deserialize_preview_diagrams", default)]
+    pub diagrams: PreviewDiagramsConfig,
+
     /// Whether to render embedded local images inline using Kitty Unicode Placeholders. Default: true
     #[partial(alias = "inline_img", alias = "inline_image")]
     #[serde(alias = "inline_img", alias = "inline_image", alias = "kitty_images")]
     pub inline_images: bool,
-    /// Mermaid diagram theme: "auto" (detects system/terminal theme), "dark", or "light". Default: "auto"
-    #[partial(alias = "diagram_theme", alias = "diag_theme", alias = "theme_diag")]
-    #[serde(alias = "diagrams_theme", alias = "mermaid_theme", alias = "theme_diagram")]
-    pub diagram_theme: DiagramTheme,
-    /// Mermaid diagram background mode: "transparent" (inherits terminal background) or "solid". Default: "transparent"
-    #[partial(alias = "diagram_background", alias = "diag_bg", alias = "diag_background")]
-    #[serde(alias = "diagrams_background", alias = "mermaid_background", alias = "diagram_bg", alias = "diagrams_bg")]
-    pub diagram_background: DiagramBackground,
 }
 
 impl PreviewConfig {
@@ -1527,17 +1920,10 @@ impl Default for PreviewConfig {
             reevaluate_show_on_resize: false,
             drag_width: None,
             scrollbar: false,
-            media: false,
-            media_protocol: None,
-            media_size: None,
-            zoom: None,
-            media_fit: None,
+            media: PreviewMediaConfig::default(),
             markdown: true,
-            markdown_diagrams: true,
-            inline_diagrams: true,
+            diagrams: PreviewDiagramsConfig::default(),
             inline_images: true,
-            diagram_theme: DiagramTheme::default(),
-            diagram_background: DiagramBackground::default(),
         }
     }
 }
@@ -2084,52 +2470,57 @@ mod tests {
     #[test]
     fn test_preview_config_diagram_options_toml() {
         let default_cfg: PreviewConfig = toml::from_str("").unwrap();
-        assert_eq!(default_cfg.diagram_theme, DiagramTheme::Auto);
-        assert_eq!(default_cfg.diagram_background, DiagramBackground::Transparent);
+        assert_eq!(default_cfg.diagrams.theme, DiagramTheme::Auto);
+        assert_eq!(default_cfg.diagrams.background, DiagramBackground::Transparent);
 
         let toml_str = r#"
-            diagram_theme = "dark"
-            diagram_background = "solid"
+            [diagrams]
+            theme = "dark"
+            background = "solid"
         "#;
         let config: PreviewConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.diagram_theme, DiagramTheme::Dark);
-        assert_eq!(config.diagram_background, DiagramBackground::Solid);
+        assert_eq!(config.diagrams.theme, DiagramTheme::Dark);
+        assert_eq!(config.diagrams.background, DiagramBackground::Solid);
 
         // Test aliases
         let toml_alias = r#"
+            [diagrams]
             diagrams_theme = "light"
             diagram_bg = "transparent"
         "#;
         let config_alias: PreviewConfig = toml::from_str(toml_alias).unwrap();
-        assert_eq!(config_alias.diagram_theme, DiagramTheme::Light);
-        assert_eq!(config_alias.diagram_background, DiagramBackground::Transparent);
+        assert_eq!(config_alias.diagrams.theme, DiagramTheme::Light);
+        assert_eq!(config_alias.diagrams.background, DiagramBackground::Transparent);
     }
 
     #[test]
     fn test_results_config_tier_separator_toml() {
         let toml_str = r#"
-            tier_separator = "dashed"
-            [tier_separator_style]
+            [tier]
+            separator = "dashed"
+            [tier.style]
             fg = "Cyan"
         "#;
         let config: ResultsConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.tier_separator, HorizontalSeparator::Dashed);
+        assert_eq!(config.tier.separator, HorizontalSeparator::Dashed);
         assert_eq!(
-            config.tier_separator_style.fg,
+            config.tier.style.fg,
             Some(ratatui::style::Color::Cyan)
         );
 
         let toml_top = r#"
-            tier_separator = "top"
+            [tier]
+            separator = "top"
         "#;
         let config_top: ResultsConfig = toml::from_str(toml_top).unwrap();
-        assert_eq!(config_top.tier_separator, HorizontalSeparator::Top);
+        assert_eq!(config_top.tier.separator, HorizontalSeparator::Top);
 
         let toml_bottom = r#"
-            tier_separator = "bottom"
+            [tier]
+            separator = "bottom"
         "#;
         let config_bottom: ResultsConfig = toml::from_str(toml_bottom).unwrap();
-        assert_eq!(config_bottom.tier_separator, HorizontalSeparator::Bottom);
+        assert_eq!(config_bottom.tier.separator, HorizontalSeparator::Bottom);
     }
 
     #[test]

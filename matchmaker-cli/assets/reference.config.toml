@@ -68,82 +68,6 @@ stream = "Stdout"
 # Valores: inteiros (ex: 30, 60, 120) | Default: 60
 tick_rate = 60
 
-# Habilita o Modo Navegação (estilo gerenciador de arquivos/ranger/yazi).
-# Permite alternar o foco entre o input de busca e a lista de resultados.
-# Valores: true, false | Default: false
-nav_mode = false
-
-# Onde o foco do teclado inicia ao abrir o Matchmaker quando nav_mode = true.
-# Valores: "Filter" (na barra de busca), "Picker" (na lista de resultados) | Default: "Filter"
-nav_focus_on_start = "Filter"
-
-# Cor do indicador quando o painel de resultados está em foco.
-# Valores: "Yellow", "Cyan", "Green", "Red", "Blue", "Magenta", "White", "Black", "#RRGGBB" | Default: "Yellow"
-nav_color = "Yellow"
-
-# Faz o indicador de foco piscar.
-# Valores: true, false | Default: false
-nav_blink = false
-
-# Velocidade do piscar quando nav_blink = true.
-# Valores: "Slow", "Normal", "Rapid" | Default: "Normal"
-nav_blink_rate = "Normal"
-
-# Aplica estilo negrito ao indicador de foco.
-# Valores: true, false | Default: false
-nav_bold = false
-
-# Estilo da barra lateral de foco na linha selecionada.
-# Valores: "Plain", "Rounded", "Double", "Thick", "QuadrantOutside", "QuadrantInside", "None" | Default: "None"
-# nav_bar = "Thick"
-
-# Marcador em texto exibido na linha selecionada em modo navegação.
-# Valores: texto livre (ex: ">> ", "▶ ") | Default: ""
-nav_marker = ""
-
-# Texto de prompt exibido enquanto a lista de resultados está em foco.
-# Valores: texto livre (ex: "[NAV] > ") | Default: ""
-nav_prompt = ""
-
-# Exibe notificações flutuantes ao executar ações de clipboard (yank/cut).
-# Valores: true, false | Default: false
-nav_notify = false
-
-# Quando true, teclas digitadas enquanto os resultados estão em foco vão para a busca.
-# Valores: true, false | Default: false
-nav_passthrough = false
-
-# Ativa apenas binds básicos (j/k/J/K) no modo navegação sem atalhos de gerenciador de arquivos.
-# Valores: true, false | Default: false
-nav_basic = false
-
-# Exibe dicas de atalhos no rodapé/status ao focar nos resultados.
-# Valores: true, false | Default: true
-nav_hints = true
-
-# Número de colunas para as dicas de atalhos no rodapé (se <= 1, exibe em linha única).
-# Valores: número inteiro | Default: 4
-nav_hints_columns = 4
-
-# Borda externa do container global da UI.
-[ui.border]
-# Tipo de borda: "Plain", "Rounded", "Double", "Thick", "None" | Default: "None"
-type = "None"
-# Cor da borda: "Reset", "Blue", "Cyan", "DarkGray", "#RRGGBB", etc. | Default: "Reset"
-color = "Reset"
-# Cor de fundo: "Reset", "Black", etc. | Default: "Reset"
-bg = "Reset"
-# Lados visíveis: "ALL", "TOP | BOTTOM", "LEFT | RIGHT", "TOP", "" (nenhum) | Default: "ALL"
-sides = "ALL"
-# Espaçamento interno (padding): número único (todos os lados) ou [vertical, horizontal] ou [top, right, bottom, left]
-padding = 0
-# Título na borda | Default: ""
-title = ""
-# Modificador do título: "BOLD", "DIM", "ITALIC", "UNDERLINED", "None" | Default: "None"
-title_modifier = "None"
-# Cor do texto do título: "Reset" (herda cor da borda) ou cor específica | Default: "Reset"
-title_fg = "Reset"
-
 # Layout de 3 painéis (Parent Peek / Navegação estilo Miller Columns).
 [ui.parent_peek]
 # Habilita o painel esquerdo mostrando o diretório pai | Default: false
@@ -164,8 +88,67 @@ show = true
 color = "DarkGray"
 type = "Plain"
 
+# Modo Navegação (estilo gerenciador de arquivos/ranger/yazi).
+[ui.nav]
+# Habilita o Modo Navegação.
+# Permite alternar o foco entre o input de busca e a lista de resultados.
+# Valores: true, false | Default: false
+active = false
+
+# Onde o foco do teclado inicia ao abrir o Matchmaker quando nav.active = true.
+# Valores: "Filter" (na barra de busca), "Picker" (na lista de resultados) | Default: "Filter"
+focus_on_start = "Filter"
+
+# Cor do indicador quando o painel de resultados está em foco.
+# Valores: "Yellow", "Cyan", "Green", "Red", "Blue", "Magenta", "White", "Black", "#RRGGBB" | Default: "Yellow"
+color = "Yellow"
+
+# Faz o indicador de foco piscar.
+# Valores: true, false | Default: false
+blink = false
+
+# Velocidade do piscar quando nav.blink = true.
+# Valores: "Slow", "Normal", "Rapid" | Default: "Normal"
+blink_rate = "Normal"
+
+# Aplica estilo negrito ao indicador de foco.
+# Valores: true, false | Default: false
+bold = false
+
+# Estilo da barra lateral de foco na linha selecionada.
+# Valores: "Plain", "Rounded", "Double", "Thick", "QuadrantOutside", "QuadrantInside", "None" | Default: "None"
+# bar = "Thick"
+
+# Marcador em texto exibido na linha selecionada em modo navegação.
+# Valores: texto livre (ex: ">> ", "▶ ") | Default: ""
+marker = ""
+
+# Texto de prompt exibido enquanto a lista de resultados está em foco.
+# Valores: texto livre (ex: "[NAV] > ") | Default: ""
+prompt = ""
+
+# Exibe notificações flutuantes ao executar ações de clipboard (yank/cut).
+# Valores: true, false | Default: false
+notify = false
+
+# Quando true, teclas digitadas enquanto os resultados estão em foco vão para a busca.
+# Valores: true, false | Default: false
+passthrough = false
+
+# Ativa apenas binds básicos (j/k/J/K) no modo navegação sem atalhos de gerenciador de arquivos.
+# Valores: true, false | Default: false
+basic = false
+
+# Exibe dicas de atalhos no rodapé/status ao focar nos resultados.
+# Valores: true, false | Default: true
+hints = true
+
+# Número de colunas para as dicas de atalhos no rodapé (se <= 1, exibe em linha única).
+# Valores: número inteiro | Default: 4
+hints_columns = 4
+
 # Binds customizados para o modo navegação quando a lista está focada.
-[ui.nav_binds]
+[ui.nav.binds]
 "j" = "Down"
 "k" = "Up"
 "l" = ["ChDir({=})", "Reload", "Pos(0)"]
@@ -190,11 +173,6 @@ show = true
 # Valores: string (ex: "> ", " ", "🔍 ") | Default: "> "
 prompt = "> "
 
-# Prefixo customizado da barra de busca quando estiver focado no modo filtro (digitando).
-# Se omitido ou None, utiliza o valor de `prompt`.
-# Valores: string (ex: " ", "FILTER > "), None | Default: None
-# filter_prompt = " "
-
 # Texto inicial preenchido na barra de busca.
 # Valores: string | Default: ""
 initial = ""
@@ -217,19 +195,24 @@ status_inline = false
 # bg = "Reset"
 # modifier = "None"
 
+# Configurações específicas quando focado no modo filtro (digitando).
+[query.filter]
+# Prefixo customizado da barra de busca quando estiver focado no modo filtro.
+# prompt = " "
+
 # Estilo do texto digitado especificamente quando focado no modo filtro.
-[query.filter_style]
+[query.filter.style]
 # fg = "White"
+# modifier = "BOLD"
+
+# Estilo do símbolo de prompt especificamente quando focado no modo filtro.
+[query.filter.prompt_style]
+# fg = "Yellow"
 # modifier = "BOLD"
 
 # Estilo do símbolo de prompt padrão ("> ").
 [query.prompt_style]
 fg = "Gray"
-# modifier = "BOLD"
-
-# Estilo do símbolo de prompt especificamente quando focado no modo filtro.
-[query.filter_prompt_style]
-# fg = "Yellow"
 # modifier = "BOLD"
 
 # Borda ao redor da barra de busca.
@@ -316,9 +299,6 @@ stacked_columns = false
 # Valores: "None", "Empty", "Light", "Normal", "Heavy", "Dashed" | Default: "None"
 separator = "None"
 
-# Separador horizontal entre as 3 camadas ordenadas (diretórios diretos, arquivos diretos, itens profundos).
-# Valores: "None", "Empty", "Light", "Normal", "Heavy", "Dashed", "Top", "Bottom", "Underline" | Default: "Top"
-tier_separator = "Top"
 
 # Como o estilo da linha selecionada se conecta pelas colunas:
 # - "Disjoint": Estilos aplicados por coluna individual.
@@ -340,9 +320,6 @@ uncolor_current_icon = false
 # Valores: true, false | Default: false
 invert_current_icon = false
 
-# Exibe o destino de links simbólicos ("-> /caminho/destino").
-# Valores: true, false | Default: false
-symlink_target = false
 
 # Estilo do texto padrão dos itens.
 [results.style]
@@ -385,12 +362,18 @@ modifier = "BOLD"
 fg = "Red"
 modifier = "BOLD"
 
-# Estilo do texto de destino do link simbólico.
-[results.symlink_target_style]
+# Exibe o destino de links simbólicos ("-> /caminho/destino").
+[results.symlink]
+active = false
+
+[results.symlink.style]
 fg = "DarkGray"
 
-# Estilo da linha separadora entre camadas (tier separator).
-[results.tier_separator_style]
+# Separador horizontal entre as 3 camadas ordenadas (diretórios diretos, arquivos diretos, itens profundos).
+[results.tier]
+separator = "Top"
+
+[results.tier.style]
 fg = "DarkGray"
 
 # Configuração de rolagem horizontal automática (autoscroll).
@@ -457,17 +440,18 @@ wrap = false
 # Valores: true, false | Default: false
 scroll_wrap = false
 
+[preview.media]
 # Habilita visualização nativa de imagens, PDFs e vídeos via hardware/Kitty graphics.
 # Valores: true, false | Default: false
-media = true
+active = true
 
 # Força protocolo gráfico específico para imagens.
 # Valores: "kitty", "sixel", "halfblocks", "iterm2", None (auto-detectar) | Default: None
-# media_protocol = "kitty"
+# protocol = "kitty"
 
 # Resolução em pixels para geração de thumbnails de mídia/vídeo/PDF.
 # Valores: inteiros (px) (ex: 512, 800, 1200, 1600) | Default: 512
-media_size = 1200
+size = 1200
 
 # Nível de zoom inicial para imagens e PDFs.
 # Valores: ponto flutuante (ex: 1.0, 1.2, 1.5) | Default: 1.0
@@ -478,7 +462,7 @@ zoom = 1.0
 # - "crop": Preenche a área toda ampliando a imagem/PDF e cortando excessos.
 # - "scale": Estica para preencher a área exata.
 # Valores: "fit", "crop", "scale" | Default: "crop"
-media_fit = "fit"
+fit = "fit"
 
 # Largura da área de arrasto com o mouse para redimensionar o preview (0 = desativa).
 # Valores: inteiros >= 0, None (usa largura da borda) | Default: None
@@ -611,25 +595,6 @@ prefer_prefix = false
 # Valores: true, false | Default: false
 match_paths = false
 
-# Ordenação dos resultados:
-# - "smart" / "auto": Mantém ordem natural quando a busca está vazia e ordena por relevância ao digitar.
-# - true / 0: Sempre ordena por pontuação.
-# - false: Nunca ordena (mantém ordem de inserção da stream).
-# Valores: "smart", "auto", true, false, inteiros >= 0 | Default: "smart"
-sort_threshold = "smart"
-
-# Habilita pontuação baseada em Frecência (frequência + recência de acesso).
-# Valores: true, false | Default: false
-frecency = true
-
-# Multiplicador de pontos extras para frecência.
-# Valores: inteiros >= 1 | Default: 1
-frecency_weight = 1
-
-# Meia-vida em dias para decaimento exponencial contínuo da frecência (0 = legado).
-# Valores: inteiros (dias) | Default: 7
-frecency_half_life_days = 7
-
 # Bônus percentual de pontuação para itens dentro do diretório atual (CWD).
 # Valores: inteiros (%) (ex: 30 = +30%, 0 = desativado) | Default: 30
 location_bias = 30
@@ -647,27 +612,36 @@ typo_tolerance = false
 # Valores: true, false | Default: false
 dir_first = false
 
+[matcher.sort]
+# Ordenação dos resultados:
+# - "smart" / "auto": Mantém ordem natural quando a busca está vazia e ordena por relevância ao digitar.
+# - true / 0: Sempre ordena por pontuação.
+# - false: Nunca ordena (mantém ordem de inserção da stream).
+# Valores: "smart", "auto", true, false, inteiros >= 0 | Default: "smart"
+threshold = "smart"
+
 # Limite máximo de itens recalculados para ordenação de frecência/depth (0 = sem limite).
 # Valores: inteiros >= 0 | Default: 1000
-sort_cap = 1000
+cap = 1000
+
+[matcher.frecency]
+# Habilita pontuação baseada em Frecência (frequência + recência de acesso).
+# Valores: true, false | Default: false
+active = true
+
+# Multiplicador de pontos extras para frecência.
+# Valores: inteiros >= 1 | Default: 1
+weight = 1
+
+# Meia-vida em dias para decaimento exponencial contínuo da frecência (0 = legado).
+# Valores: inteiros (dias) | Default: 7
+half_life_days = 7
 
 
 # ==============================================================================
 # 10. ENTRADA E COMANDOS DE INICIALIZAÇÃO ([start])
 # ==============================================================================
 [start]
-# Comando executado para gerar itens quando o stdin não estiver conectado.
-# Pode ser definido como string ou bloco [start.command].
-[start.command]
-command = ""
-separator = "\n"
-
-# Lista de comandos alternativos cicláveis via ReloadNext (ex: ctrl-f).
-additional_commands = [
-    "",
-    "mm list --dirs 2>/dev/null"
-]
-
 # Separador de itens de entrada.
 # Valores: "\n", "\0", "\\0", etc. | Default: "\n"
 input_separator = "\n"
@@ -692,9 +666,15 @@ ansi = false
 # Valores: true, false | Default: false
 trim = false
 
-# Ordena linhas alfabeticamente ao ler do stdin.
-# Valores: true, false | Default: false
-sort = false
+# Configuração de comandos de inicialização.
+[start.command]
+command = ""
+
+# Lista de comandos alternativos cicláveis via ReloadNext (ex: ctrl-f).
+additional = [
+    "",
+    "mm list --dirs 2>/dev/null"
+]
 
 # Intervalo em milissegundos para recarregar periodicamente a lista.
 # Valores: inteiros (ms), None | Default: None

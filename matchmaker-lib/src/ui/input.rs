@@ -377,9 +377,9 @@ impl QueryUI {
         if focused || nav_prompt.is_none() || nav_prompt.unwrap().is_empty() {
             let (prompt_text, style) = match self.mode_index {
                 1 => {
-                    let text = self.config.frecency_prompt.as_deref().unwrap_or("󱅤 ");
-                    let st = if !self.config.frecency_prompt_style.is_empty() {
-                        self.config.frecency_prompt_style
+                    let text = self.config.frecency.prompt.as_deref().unwrap_or("󱅤 ");
+                    let st = if !self.config.frecency.prompt_style.is_empty() {
+                        self.config.frecency.prompt_style
                     } else {
                         StyleSetting {
                             fg: Some(Color::Blue),
@@ -389,9 +389,9 @@ impl QueryUI {
                     (text, st)
                 }
                 2 => {
-                    let text = self.config.bookmarks_prompt.as_deref().unwrap_or(" ");
-                    let st = if !self.config.bookmarks_prompt_style.is_empty() {
-                        self.config.bookmarks_prompt_style
+                    let text = self.config.bookmarks.prompt.as_deref().unwrap_or(" ");
+                    let st = if !self.config.bookmarks.prompt_style.is_empty() {
+                        self.config.bookmarks.prompt_style
                     } else {
                         StyleSetting {
                             fg: Some(Color::Yellow),
@@ -403,20 +403,22 @@ impl QueryUI {
                 _ => {
                     let text = if focused {
                         self.config
-                            .local_prompt
+                            .local
+                            .prompt
                             .as_deref()
-                            .or(self.config.filter_prompt.as_deref())
+                            .or(self.config.filter.prompt.as_deref())
                             .unwrap_or(&self.config.prompt)
                     } else {
                         self.config
-                            .local_prompt
+                            .local
+                            .prompt
                             .as_deref()
                             .unwrap_or(&self.config.prompt)
                     };
-                    let st = if !self.config.local_prompt_style.is_empty() {
-                        self.config.local_prompt_style
-                    } else if focused && !self.config.filter_prompt_style.is_empty() {
-                        self.config.filter_prompt_style
+                    let st = if !self.config.local.prompt_style.is_empty() {
+                        self.config.local.prompt_style
+                    } else if focused && !self.config.filter.prompt_style.is_empty() {
+                        self.config.filter.prompt_style
                     } else {
                         self.config.prompt_style
                     };
@@ -431,8 +433,8 @@ impl QueryUI {
     }
 
     pub fn active_text_style(&self, focused: bool) -> Style {
-        if focused && !self.config.filter_style.is_empty() {
-            self.config.filter_style.r#override(Style::reset())
+        if focused && !self.config.filter.style.is_empty() {
+            self.config.filter.style.r#override(Style::reset())
         } else {
             self.config.style.r#override(Style::reset())
         }
@@ -442,21 +444,22 @@ impl QueryUI {
         if focused {
             let active = self
                 .config
-                .filter_underline
+                .filter
+                .underline
                 .unwrap_or(self.config.underline)
-                || !self.config.filter_underline_style.is_empty()
-                || !self.config.frecency_underline_style.is_empty()
-                || !self.config.bookmarks_underline_style.is_empty()
-                || !self.config.local_underline_style.is_empty();
+                || !self.config.filter.underline_style.is_empty()
+                || !self.config.frecency.underline_style.is_empty()
+                || !self.config.bookmarks.underline_style.is_empty()
+                || !self.config.local.underline_style.is_empty();
 
             let style = match self.mode_index {
                 1 => {
-                    if !self.config.frecency_underline_style.is_empty() {
-                        self.config.frecency_underline_style
-                    } else if !self.config.frecency_prompt_style.is_empty() {
-                        self.config.frecency_prompt_style
-                    } else if !self.config.filter_underline_style.is_empty() {
-                        self.config.filter_underline_style
+                    if !self.config.frecency.underline_style.is_empty() {
+                        self.config.frecency.underline_style
+                    } else if !self.config.frecency.prompt_style.is_empty() {
+                        self.config.frecency.prompt_style
+                    } else if !self.config.filter.underline_style.is_empty() {
+                        self.config.filter.underline_style
                     } else {
                         StyleSetting {
                             fg: Some(Color::Blue),
@@ -465,12 +468,12 @@ impl QueryUI {
                     }
                 }
                 2 => {
-                    if !self.config.bookmarks_underline_style.is_empty() {
-                        self.config.bookmarks_underline_style
-                    } else if !self.config.bookmarks_prompt_style.is_empty() {
-                        self.config.bookmarks_prompt_style
-                    } else if !self.config.filter_underline_style.is_empty() {
-                        self.config.filter_underline_style
+                    if !self.config.bookmarks.underline_style.is_empty() {
+                        self.config.bookmarks.underline_style
+                    } else if !self.config.bookmarks.prompt_style.is_empty() {
+                        self.config.bookmarks.prompt_style
+                    } else if !self.config.filter.underline_style.is_empty() {
+                        self.config.filter.underline_style
                     } else {
                         StyleSetting {
                             fg: Some(Color::Yellow),
@@ -479,10 +482,10 @@ impl QueryUI {
                     }
                 }
                 _ => {
-                    if !self.config.local_underline_style.is_empty() {
-                        self.config.local_underline_style
-                    } else if !self.config.filter_underline_style.is_empty() {
-                        self.config.filter_underline_style
+                    if !self.config.local.underline_style.is_empty() {
+                        self.config.local.underline_style
+                    } else if !self.config.filter.underline_style.is_empty() {
+                        self.config.filter.underline_style
                     } else {
                         self.config.underline_style
                     }
@@ -490,7 +493,7 @@ impl QueryUI {
             };
             (active, style)
         } else {
-            let active = self.config.underline && self.config.filter_underline != Some(true);
+            let active = self.config.underline && self.config.filter.underline != Some(true);
             (active, self.config.underline_style)
         }
     }

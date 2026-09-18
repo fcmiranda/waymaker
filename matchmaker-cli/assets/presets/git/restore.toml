@@ -2,8 +2,10 @@
 source = 'base.toml'
 
 [start]
+
+[start.command]
 command = 'git log --pretty=format:"%h%x00%ad%x00%s" --date=format:"$DATE_FORMAT" -- "${1:-.}"'
-additional_commands = [
+additional = [
     "",
     '''
   if $HAS_AWK; then

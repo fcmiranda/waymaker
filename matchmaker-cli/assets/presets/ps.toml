@@ -5,8 +5,10 @@ ansi = false
 trim = true
 
 [start]
+
+[start.command]
 command = "ps -eo pgid,pid,user,%cpu,vsz,rss,etime,stat,command"
-additional_commands = [
+additional = [
     "",
     "lsof -nP -i",
 ]

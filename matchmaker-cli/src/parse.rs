@@ -44,6 +44,16 @@ static ALIASES: &[(&str, &str)] = &[
     ("initial", "query.initial"),
     ("fm", "ui.nav.active"),
     ("ui-fm-color", "ui.nav.color"),
+    ("start.cmd", "start.command.default"),
+    ("start.command", "start.command.default"),
+    ("matcher.sort", "matcher.sort.threshold"),
+    ("matcher.frecency", "matcher.frecency.active"),
+    ("worker.sort", "matcher.sort.threshold"),
+    ("worker.frecency", "matcher.frecency.active"),
+    ("results.symlink", "results.symlink.active"),
+    ("results.tier", "results.tier.separator"),
+    ("preview.media", "preview.media.active"),
+    ("preview.diagrams", "preview.diagrams.active"),
 ];
 
 /// Get (path, value) pairs by consuming either a single word, splitting at '=' into a valid key, or a pair of consecutive words.

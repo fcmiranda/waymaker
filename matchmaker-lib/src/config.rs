@@ -266,6 +266,11 @@ pub struct StartConfig {
     /// Reload interval in milliseconds. If set, triggers a reload action periodically.
     #[partial(alias = "ri")]
     pub reload_interval: Option<u64>,
+
+    /// Shell executable and arguments to run start commands with.
+    #[partial(alias = "sh")]
+    #[serde(default)]
+    pub shell: Option<Vec<String>>,
 }
 
 /// Exit conditions of the render loop.
@@ -274,6 +279,8 @@ pub struct StartConfig {
 #[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
 pub struct ExitConfig {
     /// Exit automatically if there is only one match.
+    #[partial(alias = "first")]
+    #[serde(alias = "first")]
     pub select_1: bool,
     /// Allow returning without any items selected.
     pub allow_empty: bool,
@@ -1895,6 +1902,9 @@ pub struct PreviewConfig {
     #[partial(alias = "inline_img", alias = "inline_image")]
     #[serde(alias = "inline_img", alias = "inline_image", alias = "kitty_images")]
     pub inline_images: bool,
+
+    #[serde(default)]
+    pub initial_layout: u8,
 }
 
 impl PreviewConfig {
@@ -1913,6 +1923,7 @@ impl Default for PreviewConfig {
                 ..Default::default()
             },
             initial: Default::default(),
+            initial_layout: 0,
             layout: Default::default(),
             scroll_wrap: false,
             wrap: false,
@@ -1948,6 +1959,9 @@ pub struct PreviewInitialSetting {
 
     #[partial(alias = "t")]
     pub tail: bool,
+
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl Default for PreviewInitialSetting {
@@ -1958,6 +1972,7 @@ impl Default for PreviewInitialSetting {
             percentage: Default::default(),
             header_lines: Default::default(),
             tail: false,
+            hidden: false,
         }
     }
 }

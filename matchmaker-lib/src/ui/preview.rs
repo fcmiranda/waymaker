@@ -174,7 +174,9 @@ impl PreviewUI {
 
         let zoom = config.media.zoom.unwrap_or(1.0);
 
-        Self {
+        let idx = config.initial_layout;
+
+        let mut ret = Self {
             view,
             #[cfg(feature = "partial")]
             initial: config.initial.clone(),
@@ -202,7 +204,9 @@ impl PreviewUI {
             last_pan_instant: None,
             diagram_png_cache: None,
             last_placeholder_transmission: None,
-        }
+        };
+        ret.set_layout(idx);
+        ret
     }
 
     pub fn update_dimensions(&mut self, area: &Rect) {

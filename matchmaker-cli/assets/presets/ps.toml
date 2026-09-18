@@ -27,7 +27,7 @@ default = 9
 [preview]
 # show = false
 wrap = false
-trim_ends = true
+
 
 [[preview.layout]]
 # Tree view

@@ -1,6 +1,6 @@
 # Preset to run cargo examples and binaries
 
-[start]
+[start.command]
 command = '''
 # Examples
 if [ -f Cargo.toml ]; then

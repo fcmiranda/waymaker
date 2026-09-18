@@ -6,9 +6,9 @@ PATH = { value = 'echo "$(dirname -- "$MM_OVERRIDE"):$PATH"', exec = true, force
 OPENcmd = { value = '''if command -v fs >/dev/null 2>&1; then  echo fs :oelif [ "${OSTYPE#darwin}" = "$OSTYPE" ]; then  echo xdg-openelse  echo openfi''', exec = true }
 
 [start]
-command = 'ob-vaults -c'
 sync = true
-on_accept = '''for vault in {+vault}; do; eval $OPENcmd "'obsidian://open?vault=$vault'"; done'''
+[start.command]
+command = 'ob-vaults -c'
 
 [columns]
 split = '\t'
@@ -50,7 +50,7 @@ FS_OPTS='opener=ob-open' fs
 "@open_2" = "ExecuteSilent(fs :tool lessfilter edit {path})"
 "ctrl-d" = "ExecuteSilent(eval $OPENcmd $(dirname -- {+path}))"
 "@copy" = "CopyAsync(echo {path})"
-"Start" = 'ToggleExitFirst(false)'
+"@accept" = '''Become(for vault in {+vault}; do; eval $OPENcmd "'obsidian://open?vault=$vault'"; done)'''
 
 [query]
 prompt = "obsidian> "

@@ -803,6 +803,7 @@ pub async fn start(
                 mode,
                 sort,
                 reload_interval,
+                shell,
             },
         mut exit,
         mut envs,
@@ -1947,19 +1948,33 @@ pub async fn start(
                 Ok(0)
             })
         }
-    } else if !command.is_empty()
-        && let Some((mut _child, stdout)) = Command::from_script(&command)
+    } else if !command.is_empty() {
+        let mut cmd_builder = if let Some(ref sh) = shell.as_ref()
+            && !sh.is_empty()
+        {
+            let mut iter = sh.iter();
+            let mut program = Command::new(iter.next().unwrap());
+            program.args(iter).arg(&command);
+            program
+        } else {
+            Command::from_script(&command)
+        };
+        if let Some((mut _child, stdout)) = cmd_builder
             .envs(envs)
             .args(&*COMMAND_ARGS.lock().unwrap())
             .spawn_piped()
             ._ebog()
-    {
-        map_reader(
-            stdout,
-            push_fn,
-            separator.or(input_separator),
-            abort_empty.then_some(render_tx),
-        )
+        {
+            map_reader(
+                stdout,
+                push_fn,
+                separator.or(input_separator),
+                abort_empty.then_some(render_tx),
+            )
+        } else {
+            eprintln!("error: no input detected.");
+            std::process::exit(99)
+        }
     } else {
         eprintln!("error: no input detected.");
         std::process::exit(99)

@@ -495,16 +495,19 @@ mod tests {
                 name: "col1".to_string().into(),
                 ignore: true,
                 hidden: false,
+                options: Default::default(),
             },
             matchmaker::config::ColumnSetting {
                 name: "col2".to_string().into(),
                 ignore: true,
                 hidden: false,
+                options: Default::default(),
             },
             matchmaker::config::ColumnSetting {
                 name: "col3".to_string().into(),
                 ignore: true,
                 hidden: false,
+                options: Default::default(),
             },
         ];
         columns_config.split =

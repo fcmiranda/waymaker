@@ -1,6 +1,6 @@
 # Browse and ssh into your tailnet
 
-[start]
+[start.command]
 command = "tailscale status | awk 'NF{print; next} {exit}'"
 
 [columns]

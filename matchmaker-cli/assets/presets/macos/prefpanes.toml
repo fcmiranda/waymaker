@@ -4,7 +4,7 @@
 [envs]
 IMAGEcmd = { value = "command -v chafa", exec = true }
 
-[start]
+[start.command]
 command = '''
     {
         cat "$(dirname -- "$MM_OVERRIDE")"/extensions.csv

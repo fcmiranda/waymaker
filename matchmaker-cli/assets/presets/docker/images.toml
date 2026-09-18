@@ -5,6 +5,7 @@ source = "base.toml"
 trim = true
 
 [start]
+[start.command]
 command = '$DOCKERcmd image ls --format "{{.Repository}}	{{.Tag}}	{{.ID}}	{{.CreatedAt}}	{{.Size}}"'
 input_separator = "\n"
 

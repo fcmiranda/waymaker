@@ -2,6 +2,7 @@
 source = "base.toml"
 
 [start]
+[start.command]
 command = '"$(dirname -- "$MM_OVERRIDE")"/projects.sh'
 input_separator = "\\0"
 output = "{=id}"

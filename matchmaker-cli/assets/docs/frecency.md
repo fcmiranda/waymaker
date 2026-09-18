@@ -19,15 +19,15 @@ Matchmaker (`mm`) includes a built-in, high-performance **Frecency** (Frequency 
 Each path record maintains an access count, last access timestamp, and a sliding window of up to 50 recent access timestamps.
 
 ### Continuous Half-Life Exponential Decay (Default)
-Scores are computed using a **continuous exponential half-life decay** model (default: `frecency_half_life_days = 7`):
+Scores are computed using a **continuous exponential half-life decay** model (default: `frecency.half_life_days = 7`):
 
 $$\text{Score} = \sum_{i=1}^{N} 100 \times 2^{-\frac{\text{now} - t_i}{t_{\text{half-life}}}}$$
 
 - **Smooth Monotonic Decay**: Eliminates cliff-edge discontinuities (where crossing a 24-hour boundary suddenly dropped 50% of the score at once).
-- **Configurable Half-Life**: Controlled by `matcher.worker.frecency_half_life_days` (default: `7` days, alias `--hl`).
+- **Configurable Half-Life**: Controlled by `matcher.frecency.half_life_days` (or `[worker.frecency] half_life_days = 7`, alias `--hl`).
 
 ### Legacy Discrete Bucket Fallback
-Setting `frecency_half_life_days = 0` re-enables the legacy discrete 5-bucket weighting model:
+Setting `frecency.half_life_days = 0` re-enables the legacy discrete 5-bucket weighting model:
 
 | Access Recency | Time Window | Bonus Score per Access |
 | :--- | :--- | :--- |
@@ -56,7 +56,7 @@ To prevent database disk reads during active TUI fuzzy filtering, Matchmaker loa
 
 - **Zero-Allocation Lookups**: Uses `rustc_hash::FxHashMap` for absolute paths and CWD-relative resolution without heap allocations during search.
 - **Strict Exact Path Resolution**: Matches absolute paths, tilde-expanded paths (`~/...`), and paths relative to the current working directory (`self.cwd`). Generic basename boosting is omitted to avoid phantom frecency pollution across sibling repositories.
-- **Contextual Location Bias**: When searching, items located within or relative to the current working directory receive a configurable percentage bonus boost (`matcher.worker.location_bias = 30`, alias `--lb`). This gives local project files natural priority over distant filesystem paths.
+- **Contextual Location Bias**: When searching, items located within or relative to the current working directory receive a configurable percentage bonus boost (`matcher.location_bias = 30` or `worker.location_bias = 30`, alias `--lb`). This gives local project files natural priority over distant filesystem paths.
 - **Sub-Millisecond Scoring**: During active search or sorting (`frecency = true`), the snapshot evaluates score boosts in **~5 nanoseconds per item** in RAM.
 
 ---

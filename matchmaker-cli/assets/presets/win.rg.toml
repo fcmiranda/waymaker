@@ -4,6 +4,7 @@
 ansi = true
 
 [start]
+[start.command]
 command = '''rg --column --line-number --no-heading --color=always --smart-case "$env:FZF_QUERY"'''
 output = "{=1}:{=2}"
 

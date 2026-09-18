@@ -25,7 +25,7 @@
 /// | `header-label`   | `render.header.border.title_fg`               |
 /// | `header-title`   | `render.header.border.title_fg`               |
 /// | `group-header`   | `render.results.group_header_style.fg`        |
-/// | `nav`            | `render.ui.nav_color`                         |
+/// | `nav`            | `render.ui.nav.color`                         |
 /// | `selected-fg`    | `render.results.selected_style.fg`            |
 /// | `selected-bg`    | `render.results.selected_style.bg`            |
 /// | `selected-prefix`| `render.results.selected_prefix_style.fg`     |
@@ -33,8 +33,8 @@
 /// | `spinner`        | `render.results.spinner_style.fg`             |
 /// | `yank`           | `render.results.yank_prefix_style.fg`         |
 /// | `cut`            | `render.results.cut_prefix_style.fg`          |
-/// | `symlink`        | `render.results.symlink_target_style.fg`      |
-/// | `tier-separator` | `render.results.tier_separator_style.fg`      |
+/// | `symlink`        | `render.results.symlink.style.fg`             |
+/// | `tier-separator` | `render.results.tier.style.fg`                |
 use std::str::FromStr;
 
 use ratatui::style::Color;

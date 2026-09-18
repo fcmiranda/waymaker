@@ -1,6 +1,6 @@
 # ssh host selector
 
-[start]
+[start.command]
 # Not a perfect parse if host definitions are fragmented
 command = '''
 {

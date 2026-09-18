@@ -5,6 +5,7 @@ source = "base.toml"
 trim = true
 
 [start]
+[start.command]
 command = 'kubectl get pods --all-namespaces'
 input_separator = "\n"
 

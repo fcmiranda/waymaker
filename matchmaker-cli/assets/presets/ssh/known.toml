@@ -1,6 +1,6 @@
 # Browse known hosts
 
-[start]
+[start.command]
 command = "grep -v '^[[:space:]]*$' ~/.ssh/known_hosts | sort"
 
 [columns]

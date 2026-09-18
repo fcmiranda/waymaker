@@ -1,6 +1,7 @@
 # Pi agent sessions browser
 
 [start]
+[start.command]
 command = '''
 if stat --version 2>/dev/null | grep -q GNU; then
     get_mtime() { stat -c %y -- "$1" | cut -d. -f1; }

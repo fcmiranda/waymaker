@@ -5,6 +5,7 @@ source = "base.toml"
 trim = true
 
 [start]
+[start.command]
 command = '$DOCKERcmd network ls --format "table {{.ID}}\t{{.Name}}\t{{.Driver}}\t{{.Scope}}"'
 input_separator = "\n"
 

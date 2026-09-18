@@ -146,6 +146,12 @@ impl ConfigMatchmaker {
             Split::None => Worker::new_indexable([""], None),
         };
 
+        for (i, name_setting) in cc.names.iter().enumerate().take(cc.max_cols()) {
+            if !name_setting.options.is_empty() {
+                worker.set_column_options(i, name_setting.options);
+            }
+        }
+
         worker.group_header = Some(Box::new(|item| item.inner.group.clone()));
 
         worker.reverse_items(worker_config.reverse);
@@ -1165,6 +1171,9 @@ pub fn make_previewer<T: SSS, S: Selection + 'static>(
         mm.render_config.preview.trim_commands();
     }
     let mut previewer_config = previewer_config;
+    if let Some(size) = mm.render_config.preview.media.size {
+        previewer_config.media_size = size;
+    }
     previewer_config.media = mm.render_config.preview.media.active;
     previewer_config.markdown_diagrams = mm.render_config.preview.diagrams.active;
     previewer_config.inline_diagrams = mm.render_config.preview.diagrams.inline;

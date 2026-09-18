@@ -2,6 +2,7 @@
 source = 'base.toml'
 
 [start]
+[start.command]
 command = '''
 git status --no-rename --ignore-submodules=dirty -sz |
 while IFS= read -r -d '' entry; do

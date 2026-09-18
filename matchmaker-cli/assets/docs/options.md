@@ -195,19 +195,12 @@ All colors and modifiers come from ratatui:
 - `current_icon_style`: [Style Settings](#style-settings) Custom style override for the icon glyph on the focused row.
 - `current_nav_bar`: `Plain` (│), `Thick` (█), `Double` (║), `Rounded` (│), `QuadrantOutside` (▌), `QuadrantInside` (▐). Independent border thickness/character override for the navigation bar cell on the focused row.
 - `current_nav_bar_style`: [Style Settings](#style-settings) Custom style (fg, bg, modifier) override for the navigation bar cell on the focused row.
-- `symlink_target`: (bool) Append symlink target text (`-> destination`) to the first column.
-- `symlink_target_style`: [Style Settings](#style-settings) for the appended symlink target text.
-- `scroll_wrap`: (bool) Wrap selection when reaching the end of the list.
-- `scroll_padding`: (number) Number of items to keep visible above/below the selection.
-- `r`, `reverse`: (When) When to reverse the list order (`Always`, `Never`, `Auto`).
-- `w`, `wrap`: (bool) Enable line wrapping for result items.
-- `min_width`: (number) Minimum column width.
-- `column_spacing`: (number) Spacing between columns.
-- `right_align_last`: (bool) Right-align the last column.
-- `v`, `vertical`, `stacked_columns`: (bool) Display columns stacked vertically instead of across.
-- `hr`, `horizontal_separator`: (none, empty, light, normal, heavy, dashed, top, bottom): Show a seperator between rows (Currently only limited to one column).
-- `tier_separator`: (none, empty, light, normal, heavy, dashed, top, bottom, underline): Show a separator divider line between the 3 tiers (direct dirs, direct files, deep items) when `dir_first` is enabled (default `Top`).
-- `tier_separator_style`: [Style Settings](#style-settings) Custom style override for the tier separator line (set via `--color tier-separator:<color>`).
+- `symlink`: Symlink target display settings.
+  - `active` / `target`: (bool) Append symlink target text (`-> destination`) to the first column.
+  - `style`: [Style Settings](#style-settings) for the appended symlink target text.
+- `tier`: 3-Tier ranking separator settings (when `dir_first` is enabled).
+  - `separator`: (none, empty, light, normal, heavy, dashed, top, bottom, underline) Show a separator divider line between the 3 tiers (direct dirs, direct files, deep items; default `Top`).
+  - `style`: [Style Settings](#style-settings) Custom style override for the tier separator line (set via `--color tier-separator:<color>`).
 - `autoscroll`: Control how the results table scrolls horizontally to keep matches in view.
   - Alias: `a`.
   - `enabled`: (bool) Enable/disable horizontal autoscroll.
@@ -254,6 +247,18 @@ All colors and modifiers come from ratatui:
   - `h`, `header_lines` (number) – Keep the top N lines as a fixed header so that they are always visible.
   - `t`, `tail` (bool) – Start with the scroll at the bottom of the preview window.
 - `drag`: (Optional<bool>) Width along the divider strip between the preview and results pane enabled for mouse detection dragging. 0 to disable. (default is the [border](#border-settings) width).
+- `media`: Media preview configuration.
+  - `active`: (bool) Whether native terminal image/media previewing is enabled (default `false`).
+  - `fit`: (string) `fit`, `crop`, or `scale`.
+  - `size`: (number) Pixel resolution for media previews (images, videos, PDFs; default `1280`, 0 for original).
+  - `zoom`: (float) Scaling factor for media previews (default `1.0`).
+  - `protocol`: (string) Image transmission protocol (`kitty`, `sixel`, `halfblocks`, `iterm2`).
+- `markdown`: (bool) Whether to enable native markdown rendering (default `true`).
+- `diagrams`: Diagram rendering configuration.
+  - `active`: (bool) Whether embedded Mermaid diagrams are rendered (default `true`).
+  - `inline`: (bool) Whether diagrams are rendered inline using Kitty Unicode Placeholders (default `true`).
+  - `theme`: (string) Mermaid theme (`auto`, `dark`, `light`, `forest`, `neutral`, `base`).
+  - `background`: (string) Background style (`transparent`, `theme`, `black`, `white`).
 
 ### Previewer (`previewer.`)
 
@@ -315,16 +320,19 @@ Most UI components have a `border` block:
 
 See `mm --doc binds`.
 
-### Frecency & Search Ranking (`matcher.worker.`)
+### Frecency & Search Ranking (`matcher.` / `worker.`)
 
-- `frecency`: (bool) Enable frecency (frequency + recency) score boosting for match ranking.
-- `frecency_weight`: (number) Multiplier for frecency bonus score (default: 1).
+- `sort`: Sorting stability and performance settings.
+  - `threshold` / `S`: (`smart`, `auto`, `stable`, `exact`, number) Sorting stability threshold.
+  - `cap` / `sc`: (number) Maximum number of matched items to re-sort (default: 1000, 0 for unlimited).
+- `frecency`: Frecency score boosting configuration.
+  - `active` / `frecency`: (bool) Enable frecency (frequency + recency) score boosting for match ranking.
+  - `weight`: (number) Multiplier for frecency bonus score (default: 1).
+  - `half_life_days` / `hl`: (number) Half-life in days for continuous exponential frecency decay (default: 7). Set 0 to use legacy discrete time buckets.
 - `location_bias` / `lb`: (number) Percentage bonus boost for items located inside or relative to current working directory (default: 30, i.e. +30%). Set 0 to disable.
-- `frecency_half_life_days` / `hl`: (number) Half-life in days for continuous exponential frecency decay (default: 7). Set 0 to use legacy discrete time buckets.
 - `depth_penalty` / `dp`: (number) Score penalty per path depth level ('/' or '\'). 0 disables.
 - `typo_tolerance` / `tt`: (bool) Allow character substitutions/typo matching for queries >= 3 chars.
 - `dir_first` / `df`: (bool) Prioritize direct child directories over files and deeper paths (Tier 0: direct dirs, Tier 1: direct files, Tier 2: deeper items).
-- `sort_cap` / `sc`: (number) Maximum number of matched items to re-sort (default: 1000, 0 for unlimited).
 
 
 ### Frecency Subcommands

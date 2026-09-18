@@ -11,7 +11,7 @@ CHECK_API = '[[ -z "$TABBY_API_KEY" ]] && { echo -e "\033[31mError: TABBY_API_KE
 [matcher]
 ansi = true
 
-[start]
+[start.command]
 command = '''
     eval "$CHECK_API"
 

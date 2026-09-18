@@ -19,6 +19,7 @@ done
 '''
 
 [start]
+[start.command]
 command = '"$(dirname -- "$MM_OVERRIDE")"/list'
 input_separator = "\\0"
 

@@ -5,7 +5,7 @@
 [matcher]
 trim = true
 
-[start]
+[start.command]
 command = "mutagen sync list --template '{{range $i, $e := .}}{{if $i}}{{\"\\n\"}}{{end}}{{if .Name}}{{.Name}}{{else}}{{.Identifier}}{{end}}{{end}}'"
 
 [exit]
@@ -52,7 +52,7 @@ percentage = 100
 [binds]
 "@show" = [
     "#show detailed info",
-    'ShowPreview(mutagen sync list -l {name})',
+    'RunPreview(mutagen sync list -l {name})',
 ]
 
 "@copy_all" = [

@@ -1,7 +1,7 @@
 # Linux Preference Panes (XDG Desktop Entries)
 # Discovers settings panels by searching .desktop files with "Settings" category.
 
-[start]
+[start.command]
 command = '''
     # Determine current desktop for filtering
     current_de="${XDG_CURRENT_DESKTOP:-}"

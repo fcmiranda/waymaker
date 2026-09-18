@@ -43,8 +43,8 @@ pub struct Config {
     pub previewer: PreviewerConfig,
 
     // configure the matcher (columns + matching settings)
-    #[partial(attr, alias = "m")]
-    #[serde(default)]
+    #[partial(attr, alias = "m", alias = "worker")]
+    #[serde(default, alias = "worker")]
     pub matcher: MatcherConfig,
 
     // configure startup settings (options for how input/output is processed)
@@ -201,9 +201,11 @@ mod tests {
     #[test]
     fn test_awt_type_deserialization() {
         use matchmaker_partial::Apply;
-        let toml_str =
-            std::fs::read_to_string("/home/fecavmi/.config/matchmaker/presets/awt-type.toml")
-                .unwrap();
+        let p = std::path::Path::new("/home/fecavmi/.config/matchmaker/presets/awt-type.toml");
+        if !p.exists() {
+            return;
+        }
+        let toml_str = std::fs::read_to_string(p).unwrap();
         let partial: PartialConfig = toml::from_str(&toml_str).unwrap();
         let mut config = Config::default();
         config.apply(partial);
@@ -224,17 +226,97 @@ mod tests {
             panic!("Error parsing asset jump.toml: {e}");
         }
 
-        let dotfiles_str = std::fs::read_to_string(
+        let dotfiles_path = std::path::Path::new(
             "/home/fecavmi/.dotfiles/main/matchmaker/.config/matchmaker/presets/jump.toml",
-        )
-        .unwrap();
-        let res_dotfiles: Result<PartialConfig, _> = toml::from_str(&dotfiles_str);
-        if let Err(e) = &res_dotfiles {
-            eprintln!(
-                "=== TOML ERROR ON DOTFILES JUMP ===\n{}\n================",
-                e
-            );
-            panic!("Error parsing dotfiles jump.toml: {e}");
+        );
+        if dotfiles_path.exists() {
+            let dotfiles_str = std::fs::read_to_string(dotfiles_path).unwrap();
+            let res_dotfiles: Result<PartialConfig, _> = toml::from_str(&dotfiles_str);
+            if let Err(e) = &res_dotfiles {
+                eprintln!(
+                    "=== TOML ERROR ON DOTFILES JUMP ===\n{}\n================",
+                    e
+                );
+                panic!("Error parsing dotfiles jump.toml: {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_worker_and_matcher_table_equivalence() {
+        use matchmaker_partial::Apply;
+
+        let toml_matcher = r#"
+            [matcher.sort]
+            threshold = "smart"
+            cap = 500
+
+            [matcher.frecency]
+            active = true
+            weight = 3
+        "#;
+        let p_matcher: PartialConfig = toml::from_str(toml_matcher).unwrap();
+        let mut cfg_matcher = Config::default();
+        cfg_matcher.apply(p_matcher);
+
+        let toml_worker = r#"
+            [worker.sort]
+            threshold = "smart"
+            cap = 500
+
+            [worker.frecency]
+            active = true
+            weight = 3
+        "#;
+        let p_worker: PartialConfig = toml::from_str(toml_worker).unwrap();
+        let mut cfg_worker = Config::default();
+        cfg_worker.apply(p_worker);
+
+        assert_eq!(
+            cfg_matcher.matcher.worker.sort.threshold,
+            cfg_worker.matcher.worker.sort.threshold
+        );
+        assert_eq!(
+            cfg_matcher.matcher.worker.sort.cap,
+            cfg_worker.matcher.worker.sort.cap
+        );
+        assert_eq!(
+            cfg_matcher.matcher.worker.frecency.active,
+            cfg_worker.matcher.worker.frecency.active
+        );
+        assert_eq!(
+            cfg_matcher.matcher.worker.frecency.weight,
+            cfg_worker.matcher.worker.frecency.weight
+        );
+    }
+
+    #[test]
+    fn test_all_asset_presets_deserialization() {
+        let presets_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/presets");
+        let mut failures = Vec::new();
+        fn check_dir(dir: &std::path::Path, failures: &mut Vec<(std::path::PathBuf, String)>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if path.is_dir() {
+                    check_dir(&path, failures);
+                } else if path.extension().and_then(|s| s.to_str()) == Some("toml") {
+                    let content = std::fs::read_to_string(&path).unwrap();
+                    let res: Result<PartialConfig, _> = toml::from_str(&content);
+                    if let Err(e) = res {
+                        failures.push((path, e.to_string()));
+                    }
+                }
+            }
+        }
+        check_dir(&presets_dir, &mut failures);
+        if !failures.is_empty() {
+            eprintln!("Failed to deserialize {} presets:", failures.len());
+            for (p, err) in &failures {
+                eprintln!("  {:?}: {}", p, err);
+            }
+            panic!("{} presets failed deserialization", failures.len());
         }
     }
 

@@ -4,7 +4,7 @@ source = "base.toml"
 [matcher]
 trim = true
 
-[start]
+[start.command]
 command = '"$(dirname -- "$MM_OVERRIDE")"/containers.sh $@'
 
 [columns]

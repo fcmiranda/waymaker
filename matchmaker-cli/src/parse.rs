@@ -16,7 +16,7 @@ static ALIASES: &[(&str, &str)] = &[
     ("cmd", "start.command.default"),
     ("a", "start.ansi"),
     ("t", "start.trim"),
-    ("S", "matcher.worker.sort.threshold"),
+    ("S", "matcher.sort.threshold"),
     //
     ("d", "columns.split"),
     //
@@ -230,4 +230,53 @@ mod tests {
         // vec should remain unchanged
         assert_eq!(v4, vec_!["key=value", "NotKey=value", "another_key=123"]);
     }
+
+    #[test]
+    fn test_all_aliases_resolve_and_set() {
+        use crate::config::PartialConfig;
+        use matchmaker_partial::Set;
+
+        let sample_values: &[(&str, &str)] = &[
+            ("i", " "),
+            ("o", "{}"),
+            ("x", "ls"),
+            ("cmd", "ls"),
+            ("a", "true"),
+            ("t", "true"),
+            ("S", "auto"),
+            ("d", ","),
+            ("px", "cat {}"),
+            ("h", "test header"),
+            ("nav", "true"),
+            ("nav-color", "Yellow"),
+            ("nav-bar", "Thick"),
+            ("nav-marker", ">"),
+            ("nav-prompt", "nav: "),
+            ("nav-hints", "true"),
+            ("nav-hints-columns", "4"),
+            ("parent-peek", "true"),
+            ("parent-peek-pct", "20"),
+            ("parent-peek-color", "Blue"),
+            ("parent-peek-highlight", "true"),
+            ("parent-peek-highlight-color", "Yellow"),
+            ("parent-peek-border", "true"),
+            ("status-inline", "true"),
+            ("prompt", "> "),
+            ("initial", "init"),
+            ("fm", "true"),
+            ("ui-fm-color", "Cyan"),
+        ];
+
+        for (alias, sample_val) in sample_values {
+            let pairs = get_pairs(vec![format!("{}={}", alias, sample_val)])
+                .unwrap_or_else(|e| panic!("get_pairs failed for alias {alias}: {e}"));
+            assert_eq!(pairs.len(), 1, "alias {alias} should yield 1 pair");
+            let (path, val) = &pairs[0];
+            let mut partial = PartialConfig::default();
+            partial
+                .set(path, std::slice::from_ref(val))
+                .unwrap_or_else(|e| panic!("partial.set failed for alias {alias} (path {path:?}): {e:?}"));
+        }
+    }
 }
+

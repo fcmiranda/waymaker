@@ -1,4 +1,4 @@
-[start]
+[start.command]
 command = '''
 set -- *.csv
 [ -e "$1" ] || set -- *.tsv

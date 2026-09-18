@@ -1,7 +1,7 @@
 # macOS Services (launchctl)
 # Manage background services via launchctl
 
-[start]
+[start.command]
 command = '''
     launchctl list | awk -v color="$COLOR" '
         BEGIN { printf "PID\tSTATUS\tLABEL\n" }

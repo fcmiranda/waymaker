@@ -307,7 +307,9 @@ impl<'de> Deserialize<'de> for Padding {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Side {
+    #[serde(alias = "up")]
     Top,
+    #[serde(alias = "down")]
     Bottom,
     Left,
     #[default]
@@ -364,6 +366,8 @@ pub struct ColumnSetting {
     #[serde(default)]
     pub hidden: bool,
     pub name: ColumnName,
+    #[serde(default)]
+    pub options: crate::nucleo::ColumnOptions,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -471,6 +475,8 @@ impl<'de> Deserialize<'de> for ColumnSetting {
             #[serde(default)]
             hidden: bool,
             name: ColumnName,
+            #[serde(default)]
+            options: crate::nucleo::ColumnOptions,
         }
 
         #[derive(Deserialize)]
@@ -485,11 +491,13 @@ impl<'de> Deserialize<'de> for ColumnSetting {
                 ignore: true,
                 hidden: false,
                 name,
+                options: crate::nucleo::ColumnOptions::default(),
             }),
             Input::Obj(obj) => Ok(ColumnSetting {
                 ignore: obj.ignore,
                 hidden: obj.hidden,
                 name: obj.name,
+                options: obj.options,
             }),
         }
     }

@@ -221,7 +221,7 @@ struct NotifyFn(Box<dyn Fn() + Send + Sync>);
 // }
 
 bitflags! {
-    #[derive(Default, Clone, Debug)]
+    #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     pub struct ColumnOptions: u8 {
         const Optional = 1 << 0;
         const OrUseDefault = 1 << 2;
@@ -2202,21 +2202,25 @@ mod tests {
                 name: ColumnName("type".to_string()),
                 hidden: false,
                 ignore: false,
+                options: ColumnOptions::default(),
             },
             ColumnSetting {
                 name: ColumnName("description".to_string()),
                 hidden: false,
                 ignore: false,
+                options: ColumnOptions::default(),
             },
             ColumnSetting {
                 name: ColumnName("icon".to_string()),
                 hidden: true,
                 ignore: false,
+                options: ColumnOptions::default(),
             },
             ColumnSetting {
                 name: ColumnName("prefix".to_string()),
                 hidden: true,
                 ignore: false,
+                options: ColumnOptions::default(),
             },
         ];
 

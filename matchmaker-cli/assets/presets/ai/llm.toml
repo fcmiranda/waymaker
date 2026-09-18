@@ -1,6 +1,7 @@
 # LLM models browser
 
 [start]
+[start.command]
 command = '''
 llm models --options | perl -ne '
   BEGIN {

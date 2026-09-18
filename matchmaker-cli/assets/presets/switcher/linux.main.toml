@@ -4,6 +4,7 @@
 trim = true
 
 [start]
+[start.command]
 command = '"$(dirname -- "$MM_OVERRIDE")"/list.sh'
 input_separator = "\\0"
 

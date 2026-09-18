@@ -76,6 +76,10 @@ pub enum MMAction {
     ExecuteAndQuit(String),
     /// [`matchmaker::Action::Execute`], quit on success, confirm on error
     BecomeOr(String),
+    /// Alias for BecomeOr: execute, quit on success, confirm on error
+    BecomeOrConfirm(String),
+    /// Alias for BecomeOr: execute, quit on success, resume on interrupt
+    BecomeOrResume(String),
     /// Execute command and parse output as actions
     Transform(String),
     /// Execute command and parse output as configuration
@@ -653,7 +657,7 @@ pub fn action_handler(
             state.discriminant_payload = Some(1);
             state.set_interrupt(Interrupt::Execute, s);
         }
-        MMAction::BecomeOr(s) => {
+        MMAction::BecomeOr(s) | MMAction::BecomeOrConfirm(s) | MMAction::BecomeOrResume(s) => {
             state.discriminant_payload = Some(2);
             state.set_interrupt(Interrupt::Execute, s);
         }
@@ -1522,7 +1526,7 @@ enum_from_str_display! {
 
 
     tuples:
-    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, SetModeIndex, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, FmSetPinPaths, FmSetFlashCopy, FmSetFlashCut, Confirm, Prompt;
+    Bind, Unbind, PushBind, PopBind, ExecuteOrConfirm, ExecuteAndQuit, BecomeOr, BecomeOrConfirm, BecomeOrResume, Transform, TransformConfig, SetStyledPrompt, SetStyledStatus, SetModeIndex, PushHeader, PushFooter, RunPreview, FmSetYankPaths, FmRemoveYankPaths, FmSetCutPaths, FmRemoveCutPaths, FmSetPinPaths, FmSetFlashCopy, FmSetFlashCut, Confirm, Prompt;
 
     defaults:
     ;

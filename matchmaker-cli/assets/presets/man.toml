@@ -1,7 +1,7 @@
 [matcher]
 ansi = true
 
-[start]
+[start.command]
 command = 'man -k "$@"'
 
 [envs]

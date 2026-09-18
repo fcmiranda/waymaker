@@ -19,6 +19,7 @@
 
 [start]
 shell = ['python', '-c']
+[start.command]
 command = '''
 import json, os, subprocess, sys
 

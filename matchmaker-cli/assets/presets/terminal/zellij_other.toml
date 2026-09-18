@@ -3,7 +3,7 @@
 [matcher]
 trim = true
 
-[start]
+[start.command]
 command = "@./zellij.sh other"
 
 [exit]

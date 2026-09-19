@@ -2118,6 +2118,128 @@ fn is_default_file_walker_command(cmd: &str) -> bool {
         || trimmed == "find . -print0"
 }
 
+/// Headless filter execution: reads input lines, feeds them to the matcher,
+/// runs the query, prints matched items in ranked order to stdout, and exits.
+pub async fn start_filter(
+    config: Config,
+    query: &str,
+    no_read: bool,
+    group_prefix: Option<String>,
+) -> i32 {
+    use std::io::Write;
+
+    let Config {
+        render,
+        tui,
+        matcher: MatcherConfig {
+            worker,
+            ..
+        },
+        columns,
+        start:
+            StartConfig {
+                input_separator,
+                command:
+                    StartCommandConfig {
+                        default:
+                            CommandSetting {
+                                command,
+                                ..
+                            },
+                        ..
+                    },
+                directory,
+                ansi,
+                trim,
+                ..
+            },
+        walker: walker_config,
+        exit,
+        envs,
+        ..
+    } = config;
+
+    let envs = process_envs(envs);
+
+    if !directory.value.is_empty() {
+        let path = expand_tilde(directory.value.into());
+        let _ = set_current_dir(&path);
+    }
+
+    let preprocess = (ansi, trim);
+    let (mut mm, injector, OddEnds { has_error, .. }) =
+        Matchmaker::new_from_config(render, tui, worker, columns, exit, preprocess);
+
+    if has_error {
+        return 1;
+    }
+
+    let (render_tx, _render_rx) = tokio::sync::mpsc::unbounded_channel();
+    let push_fn = inject_line(0, render_tx, injector, group_prefix);
+
+    if !std::io::stdin().is_terminal() && !no_read {
+        let stdin = std::io::stdin();
+        let handle = map_reader(stdin, push_fn, input_separator, None);
+        let _ = handle.await;
+    } else if is_default_file_walker_command(&command) {
+        let walker_opts = walker_config.to_options(".");
+        let walker = matchmaker::walker::AsyncWalker::new(walker_opts);
+        let handle = walker.spawn_walk(push_fn);
+        let _ = handle.await;
+    } else if !command.is_empty() {
+        let mut cmd_builder = Command::from_script(&command);
+        if let Some((_child, stdout)) = cmd_builder
+            .envs(envs)
+            .args(&*COMMAND_ARGS.lock().unwrap())
+            .spawn_piped()
+            ._elog()
+        {
+            let handle = map_reader(stdout, push_fn, input_separator, None);
+            let _ = handle.await;
+        }
+    }
+
+    // Wait until background injection completes into nucleo
+    while mm.worker.nucleo.tick(10).running {
+        tokio::task::yield_now().await;
+    }
+
+    mm.worker.find(query);
+
+    // Tick until matching is complete
+    loop {
+        let status = mm.worker.nucleo.tick(10);
+        if !status.running {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    let items = mm.worker.get_all_sorted();
+    if items.is_empty() {
+        return 1;
+    }
+
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::new(stdout.lock());
+    for item in items {
+        let raw = if mm.worker.columns.len() == 1 {
+            mm.worker.columns[0].raw(item).to_string()
+        } else {
+            mm.worker
+                .columns
+                .iter()
+                .map(|col| col.raw(item))
+                .collect::<Vec<_>>()
+                .join("\t")
+        };
+        let _ = writeln!(out, "{}", raw);
+    }
+    let _ = out.flush();
+
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2141,5 +2263,18 @@ mod tests {
         apply_media_props(&["size:1280".to_string()], &mut config);
         assert_eq!(config.previewer.media_size, 1280);
         assert_eq!(config.render.preview.media.size, Some(1280));
+    }
+
+    #[tokio::test]
+    async fn test_start_filter_headless() {
+        let mut config = Config::default();
+        config.start.command.default.command = "printf 'apple\\nbanana\\ncherry\\n'".to_string();
+        let code = start_filter(config, "ban", false, None).await;
+        assert_eq!(code, 0);
+
+        let mut config_nomatch = Config::default();
+        config_nomatch.start.command.default.command = "printf 'apple\\nbanana\\ncherry\\n'".to_string();
+        let code_nomatch = start_filter(config_nomatch, "xyz", false, None).await;
+        assert_eq!(code_nomatch, 1);
     }
 }

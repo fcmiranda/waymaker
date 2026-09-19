@@ -19,6 +19,8 @@ _mm() {
 '*-o+[]:PATH:_files' \
 '*--override=[]:PATH:_files' \
 '--group-prefix=[Specify a prefix that indicates a line is a group header]:PREFIX:_default' \
+'-f+[Filter input headlessly matching query, print results to stdout, and exit without entering the TUI]:QUERY:_default' \
+'--filter=[Filter input headlessly matching query, print results to stdout, and exit without entering the TUI]:QUERY:_default' \
 '--download=[Download presets from GitHub. Optionally specify a subfolder]::FOLDER:_default' \
 '-d+[Display documentation]:DOC:(options binds template performance frecency jump other)' \
 '--doc=[Display documentation]:DOC:(options binds template performance frecency jump other)' \

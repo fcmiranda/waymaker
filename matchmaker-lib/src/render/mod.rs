@@ -861,8 +861,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
         }
     }
 
-    if let Ok(cwd) = std::env::current_dir() {
-        let sort_order = ui.config.resolve_sort_for_dir(&cwd);
+    state.refresh_parent_peek_cache();
+    if let Some(ref cwd) = state.cached_cwd {
+        let sort_order = ui.config.resolve_sort_for_dir(cwd);
         picker_ui.worker.set_sort_order(sort_order);
     }
 
@@ -2162,8 +2163,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                 }
 
                 if matches!(interrupt, Interrupt::ChDir) {
-                    if let Ok(cwd) = std::env::current_dir() {
-                        let sort_order = ui.config.resolve_sort_for_dir(&cwd);
+                    state.refresh_parent_peek_cache();
+                    if let Some(ref cwd) = state.cached_cwd {
+                        let sort_order = ui.config.resolve_sort_for_dir(cwd);
                         picker_ui.worker.set_sort_order(sort_order);
                     }
                 }
@@ -2287,7 +2289,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     let mut global_breadcrumb_rect = Rect::default();
 
                     if picker_ui.breadcrumb_config.show {
-                        if let Ok(cwd) = std::env::current_dir() {
+                        if let Some(ref cwd) = state.cached_cwd {
                             let mut components = Vec::new();
                             let home_dir = std::env::var("HOME").ok().map(std::path::PathBuf::from);
 
@@ -2696,7 +2698,15 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         );
                         render_display(frame, header, &mut picker_ui.header, &picker_ui.results);
                         if parent_peek_rect.width > 0 {
-                            render_parent_peek(frame, parent_peek_rect, &ui.config.parent_peek);
+                            if state.parent_peek_cache.is_none() {
+                                state.refresh_parent_peek_cache();
+                            }
+                            render_parent_peek(
+                                frame,
+                                parent_peek_rect,
+                                &ui.config.parent_peek,
+                                state.parent_peek_cache.as_ref(),
+                            );
                         }
                     }
 
@@ -3446,22 +3456,22 @@ fn render_nav_hints(
     }
 }
 
-fn render_parent_peek(frame: &mut Frame, area: Rect, cfg: &crate::config::ParentPeekConfig) {
+fn render_parent_peek(
+    frame: &mut Frame,
+    area: Rect,
+    cfg: &crate::config::ParentPeekConfig,
+    cache: Option<&crate::render::state::ParentPeekCache>,
+) {
     if area.height <= 2 || area.width <= 2 {
         return;
     }
 
-    let Ok(cwd) = std::env::current_dir() else {
+    let Some(cache) = cache else {
         return;
     };
-    let Some(parent) = cwd.parent() else { return };
 
-    let parent_name = parent
-        .file_name()
-        .map(|n| n.to_string_lossy())
-        .unwrap_or_else(|| "/".into());
-
-    let current_name = cwd.file_name().map(|n| n.to_string_lossy());
+    let parent_name = &cache.parent_name;
+    let current_name = cache.current_name.as_deref();
 
     let parent_color = cfg.parent_color.unwrap_or(Color::Cyan);
 
@@ -3494,20 +3504,11 @@ fn render_parent_peek(frame: &mut Frame, area: Rect, cfg: &crate::config::Parent
         return;
     }
 
-    let mut entries = Vec::new();
-    if let Ok(dir_entries) = std::fs::read_dir(parent) {
-        for entry in dir_entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let is_dir = entry.file_type().map_or(false, |t| t.is_dir());
-            entries.push((name, is_dir));
-        }
-    }
-
-    entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let entries = &cache.entries;
 
     let mut selected_idx = 0;
-    if let Some(ref cur) = current_name {
-        if let Some(pos) = entries.iter().position(|e| e.0 == *cur) {
+    if let Some(cur) = current_name {
+        if let Some(pos) = entries.iter().position(|e| e.0 == cur) {
             selected_idx = pos;
         }
     }

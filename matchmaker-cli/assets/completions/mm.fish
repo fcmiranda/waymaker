@@ -1,6 +1,7 @@
 complete -c mm -l config -r -F
 complete -c mm -s o -l override -r -F
 complete -c mm -l group-prefix -d 'Specify a prefix that indicates a line is a group header' -r
+complete -c mm -s f -l filter -d 'Filter input headlessly matching query, print results to stdout, and exit without entering the TUI' -r
 complete -c mm -l download -d 'Download presets from GitHub. Optionally specify a subfolder' -r
 complete -c mm -s d -l doc -d 'Display documentation' -r -f -a "options\t''
 binds\t''

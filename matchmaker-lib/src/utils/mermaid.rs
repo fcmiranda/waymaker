@@ -606,6 +606,19 @@ static FONT_DB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
     Arc::new(db)
 });
 
+/// Trigger background warmup of the system font database.
+///
+/// Moving the 50-650ms `load_system_fonts()` scan to a background thread during
+/// startup ensures that the first diagram or SVG preview renders without cold-start UI freeze.
+pub fn warmup_font_db() {
+    std::thread::Builder::new()
+        .name("mm-font-warmup".to_string())
+        .spawn(|| {
+            let _ = &*FONT_DB;
+        })
+        .ok();
+}
+
 /// In-memory LRU cache for rendered diagram bitmaps, keyed by (FxHash(source), scale_key, theme_fingerprint).
 static DIAGRAM_CACHE: LazyLock<
     Mutex<IndexMap<(u64, u32, u64), image::DynamicImage, FxBuildHasher>>,

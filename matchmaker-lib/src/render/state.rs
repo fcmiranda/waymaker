@@ -39,6 +39,13 @@ pub enum Focus {
     Results,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ParentPeekCache {
+    pub parent_name: String,
+    pub current_name: Option<String>,
+    pub entries: Vec<(String, bool)>,
+}
+
 /// In the "standard implementation", None represents unset, String: command, Text: display
 pub type PreviewSetPayload = Option<Result<String, Text<'static>>>;
 
@@ -46,6 +53,9 @@ pub struct State {
     last_id: Option<u32>,
     interrupt: Interrupt,
     interrupt_payload: String,
+
+    pub parent_peek_cache: Option<ParentPeekCache>,
+    pub cached_cwd: Option<std::path::PathBuf>,
 
     // Stores "last" state to emit events on change
     pub(crate) input: String,
@@ -158,6 +168,9 @@ impl State {
             reloading: false,
             needs_redraw: true,
 
+            parent_peek_cache: None,
+            cached_cwd: None,
+
             events: Event::empty(),
             should_quit: false,
             should_quit_nomatch: false,
@@ -166,6 +179,48 @@ impl State {
             discriminant_payload: None,
             async_actions: std::array::from_fn(|_| None),
         }
+    }
+
+    /// Refresh cached current working directory and parent peek entries.
+    ///
+    /// Performing filesystem read_dir and sorting inside the per-frame render
+    /// loop causes frame drops and high latency. This method refreshes the
+    /// snapshot only when the working directory actually changes (e.g. on ChDir).
+    pub fn refresh_parent_peek_cache(&mut self) {
+        let Ok(cwd) = std::env::current_dir() else {
+            self.cached_cwd = None;
+            self.parent_peek_cache = None;
+            return;
+        };
+        self.cached_cwd = Some(cwd.clone());
+
+        let Some(parent) = cwd.parent() else {
+            self.parent_peek_cache = None;
+            return;
+        };
+
+        let parent_name = parent
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "/".to_string());
+
+        let current_name = cwd.file_name().map(|n| n.to_string_lossy().to_string());
+
+        let mut entries = Vec::new();
+        if let Ok(dir_entries) = std::fs::read_dir(parent) {
+            for entry in dir_entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let is_dir = entry.file_type().map_or(false, |t| t.is_dir());
+                entries.push((name, is_dir));
+            }
+        }
+        entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+        self.parent_peek_cache = Some(ParentPeekCache {
+            parent_name,
+            current_name,
+            entries,
+        });
     }
     // ------ properties -----------
 

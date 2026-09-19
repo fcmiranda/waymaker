@@ -52,6 +52,11 @@ async fn main() {
     display_doc(&cli);
     handle_download(&cli);
 
+    // Warm up the SVG/Mermaid system font database asynchronously in the background.
+    // This moves the 50-650ms `load_system_fonts()` filesystem scan completely off the
+    // interactive path, preventing any cold-start latency freeze when previewing diagrams.
+    matchmaker::utils::mermaid::warmup_font_db();
+
     if let Some(code) = handle_frecency_cli(&config_args).await {
         exit(code);
     }
@@ -62,8 +67,14 @@ async fn main() {
 
     let no_read = cli.no_read;
     let group_prefix = cli.group_prefix.clone();
+    let filter_query = cli.filter.clone();
     // get config
     let config = enter(cli, partial).__ebog();
+
+    if let Some(query) = filter_query {
+        let code = start_filter(config, &query, no_read, group_prefix).await;
+        exit(code);
+    }
 
     // begin
     match start(config, no_read, group_prefix).await {

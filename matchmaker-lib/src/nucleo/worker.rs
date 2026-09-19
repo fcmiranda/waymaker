@@ -733,6 +733,52 @@ impl<T: SSS> Worker<T> {
         }
     }
 
+    /// Retrieve all currently matched items in exact ranked (sorted) order.
+    pub fn get_all_sorted<'a>(&'a self) -> Vec<&'a T> {
+        let snapshot = self.nucleo.snapshot();
+        let total = snapshot.matched_item_count();
+        if total == 0 {
+            return Vec::new();
+        }
+
+        let query_str = self.query.primary_column_query().unwrap_or_default();
+        let is_query_empty = query_str.is_empty();
+
+        let mut res = Vec::with_capacity(total as usize);
+        if let Some(decorated) = self.get_sorted_decorated(&snapshot) {
+            for d in decorated {
+                res.push(d.item.data);
+            }
+            if is_query_empty && self.mode_index != 0 {
+                let item_count = snapshot.item_count() as usize;
+                for idx in res.len()..item_count {
+                    if let Some(item) = snapshot.get_item(idx as u32) {
+                        res.push(item.data);
+                    }
+                }
+            } else {
+                for idx in res.len()..total as usize {
+                    if let Some(item) = snapshot.get_matched_item(idx as u32) {
+                        res.push(item.data);
+                    }
+                }
+            }
+        } else if is_query_empty && self.mode_index != 0 {
+            for idx in 0..snapshot.item_count() {
+                if let Some(item) = snapshot.get_item(idx) {
+                    res.push(item.data);
+                }
+            }
+        } else {
+            for idx in 0..total {
+                if let Some(item) = snapshot.get_matched_item(idx) {
+                    res.push(item.data);
+                }
+            }
+        }
+        res
+    }
+
     pub fn new_snapshot(nucleo: &mut nucleo::Nucleo<T>) -> (&nucleo::Snapshot<T>, Status) {
         let nucleo::Status { changed, running } = nucleo.tick(10);
         let snapshot = nucleo.snapshot();
@@ -2448,5 +2494,12 @@ mod tests {
             let nth = worker.get_nth(idx as u32).unwrap();
             assert_eq!(nth, target);
         }
+
+        // Verify get_all_sorted returns the exact ranked list
+        let all_sorted: Vec<&String> = worker.get_all_sorted();
+        assert_eq!(
+            all_sorted,
+            vec!["docs/", "src/", "Cargo.toml", "README.md", "src/sub/deep.rs"]
+        );
     }
 }

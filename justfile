@@ -13,6 +13,14 @@ install:
 run *args:
 	cargo run -p matchmaker-cli -F experimental -- {{args}}
 
+# Run Criterion benchmarks for matching engine
+bench *args:
+	cargo bench -p matchmaker-lib --bench matcher -- {{args}}
+
+# Run CLI headless filter comparison benchmarks (mm -f vs fzf -f)
+bench-filter *args:
+	./scripts/bench_filter.sh {{args}}
+
 # Build static x86_64 binary for Linux (musl)
 build-x86:
 	cargo zigbuild --release --target x86_64-unknown-linux-musl

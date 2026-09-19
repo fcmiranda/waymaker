@@ -64,6 +64,8 @@ resvg = { version = "0.47", default-features = false }
 usvg = { version = "0.47", default-features = false }
 
 
+frizbee = { version = "0.13.0", optional = true }
+
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31.1", features = ["poll", "signal"] }
 
@@ -76,6 +78,7 @@ bracketed-paste = ["crossterm/bracketed-paste"]
 parallelism = []
 experimental = []
 partial = ["matchmaker-partial", "matchmaker-partial-macros/partial"]
+frizbee = ["dep:frizbee"]
 
 [lib]
 name = "matchmaker"
@@ -99,6 +102,7 @@ path = "examples/ripgrep.rs"
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+frizbee = "0.13.0"
 
 [[bench]]
 name = "matcher"

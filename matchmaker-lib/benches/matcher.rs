@@ -5,6 +5,7 @@ use std::time::Duration;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use matchmaker::action::SortOrder;
 use matchmaker::frecency::FrecencySnapshot;
+use matchmaker::matcher::{MatcherEngine, NucleoEngine};
 use matchmaker::nucleo::Worker;
 use rustc_hash::FxHashMap;
 
@@ -364,12 +365,86 @@ fn bench_find_item_index(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_head_to_head(c: &mut Criterion) {
+    let dataset = generate_dataset(50_000);
+    let worker = RefCell::new(populate_worker(&dataset));
+    let mut nucleo_engine = NucleoEngine::new();
+
+    let mut group = c.benchmark_group("head_to_head_50k");
+    group.measurement_time(Duration::from_secs(2));
+    group.sample_size(15);
+
+    let test_cases = [
+        ("fuzzy_short", "rnst"),
+        ("unicode", "relatório"),
+        ("prefix_dir", "src/"),
+        ("deep_path", "crates/parser/view"),
+    ];
+
+    for (case_name, query) in test_cases {
+        // 1. Nucleo Worker (Async pipeline in Matchmaker)
+        group.bench_with_input(BenchmarkId::new("nucleo_worker", case_name), &query, |b, &q| {
+            b.iter_batched(
+                || {
+                    let mut w = worker.borrow_mut();
+                    w.find("");
+                    while w.nucleo.tick(10).running {}
+                },
+                |_| {
+                    let mut w = worker.borrow_mut();
+                    w.find(black_box(q));
+                    while w.nucleo.tick(10).running {}
+                    black_box(w.nucleo.snapshot().matched_item_count());
+                },
+                BatchSize::SmallInput,
+            );
+        });
+
+        // 2. Nucleo Raw Matcher (Single thread)
+        group.bench_with_input(BenchmarkId::new("nucleo_raw", case_name), &query, |b, &q| {
+            b.iter(|| {
+                black_box(nucleo_engine.search(black_box(q), &dataset));
+            });
+        });
+
+        // 3. Frizbee SIMD (Single thread, typo=0)
+        let frizbee_config = frizbee::Config::default();
+        group.bench_with_input(BenchmarkId::new("frizbee_simd", case_name), &query, |b, &q| {
+            b.iter(|| {
+                let mut matcher = frizbee::Matcher::new(black_box(q), &frizbee_config);
+                black_box(matcher.match_list(&dataset));
+            });
+        });
+
+        // 4. Frizbee Parallel (Multi-threaded SIMD)
+        group.bench_with_input(BenchmarkId::new("frizbee_parallel", case_name), &query, |b, &q| {
+            b.iter(|| {
+                let mut matcher = frizbee::Matcher::new(black_box(q), &frizbee_config);
+                black_box(matcher.match_list_parallel(&dataset, 0));
+            });
+        });
+
+        // 5. Frizbee with Typo Tolerance (typo=1)
+        let mut typo_config = frizbee::Config::default();
+        typo_config.max_typos = Some(1);
+        group.bench_with_input(BenchmarkId::new("frizbee_typo_1", case_name), &query, |b, &q| {
+            b.iter(|| {
+                let mut matcher = frizbee::Matcher::new(black_box(q), &typo_config);
+                black_box(matcher.match_list(&dataset));
+            });
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_ingestion,
     bench_query_matching,
     bench_incremental_refinement,
     bench_ranking_and_sorting,
-    bench_find_item_index
+    bench_find_item_index,
+    bench_head_to_head
 );
 criterion_main!(benches);

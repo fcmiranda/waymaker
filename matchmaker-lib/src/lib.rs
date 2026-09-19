@@ -15,6 +15,7 @@ pub mod render;
 pub mod spinner;
 pub mod ui;
 // picker
+pub mod matcher;
 pub mod nucleo;
 pub mod preview;
 mod selector;

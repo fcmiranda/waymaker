@@ -253,9 +253,12 @@ pub fn action_handler(
         }
         MMAction::Filtering(s) => {
             if let Some(s) = s {
-                state.filtering = s
+                state.filtering = s;
             } else {
-                state.filtering = !state.filtering
+                state.filtering = !state.filtering;
+            }
+            if !state.filtering {
+                state.picker_ui.worker.find("");
             }
         }
 
@@ -487,7 +490,11 @@ pub fn action_handler(
         MMAction::ReloadReady(_) => {
             state.reloading = false;
             state.picker_ui.worker.nucleo.tick(20);
-            state.picker_ui.update();
+            if state.filtering {
+                state.picker_ui.update();
+            } else {
+                state.picker_ui.worker.find("");
+            }
 
             let target_opt = crate::start::TARGET_ITEM
                 .lock()

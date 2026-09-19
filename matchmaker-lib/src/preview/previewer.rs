@@ -62,6 +62,8 @@ pub struct Previewer {
     procs: Vec<Child>,
     /// The currently executing child process
     current: Option<(Child, JoinHandle<bool>)>,
+    /// The currently executing media/markdown background task
+    current_media_task: Option<JoinHandle<()>>,
 
     pub config: PreviewerConfig,
     last: String,
@@ -128,6 +130,7 @@ impl Previewer {
 
             procs: Vec::new(),
             current: None,
+            current_media_task: None,
             config,
             last: Default::default(),
             event_controller_tx: None,
@@ -202,6 +205,9 @@ impl Previewer {
 
     pub async fn run(mut self) -> Result<(), Vec<Child>> {
         while self.rx.changed().await.is_ok() {
+            if let Some(task) = self.current_media_task.take() {
+                task.abort();
+            }
             let m = self.rx.borrow_and_update().clone();
             let task_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -281,6 +287,7 @@ impl Previewer {
                         continue;
                     }
                     PreviewMessage::Unset => {
+                        self.dispatch_kill();
                         self.clear_string();
                         self.clear_image();
                         self.clear_diagrams();
@@ -295,7 +302,6 @@ impl Previewer {
                             self.clear_string();
                             self.lines.clear();
                         }
-                        self.dispatch_kill();
                         self.last = path.clone();
                         let path = path.clone();
                         let image_state = self.image.clone();
@@ -307,10 +313,14 @@ impl Previewer {
 
                         let media_size = self.config.media_size;
                         let rx = self.rx.clone();
-                        tokio::task::spawn_blocking(move || {
-                            let is_stale = || {
-                                rx.has_changed().unwrap_or(false)
-                                    || current_generation.load(Ordering::Acquire) != task_gen
+                        let handle = tokio::spawn(async move {
+                            let is_stale = {
+                                let rx = rx.clone();
+                                let current_generation = current_generation.clone();
+                                move || {
+                                    rx.has_changed().unwrap_or(false)
+                                        || current_generation.load(Ordering::Acquire) != task_gen
+                                }
                             };
                             if is_stale() {
                                 return;
@@ -323,21 +333,24 @@ impl Previewer {
                                 } else {
                                     "1200".to_string()
                                 };
-                                let output = std::process::Command::new("pdftoppm")
-                                    .args([
-                                        "-jpeg",
-                                        "-r",
-                                        "150",
-                                        "-scale-to",
-                                        &pdf_scale,
-                                        "-f",
-                                        "1",
-                                        "-l",
-                                        "1",
-                                        &path,
-                                    ])
-                                    .output();
-                                if let Ok(_out) = output {
+                                let mut cmd = tokio::process::Command::new("pdftoppm");
+                                cmd.kill_on_drop(true);
+                                cmd.args([
+                                    "-jpeg",
+                                    "-r",
+                                    "150",
+                                    "-scale-to",
+                                    &pdf_scale,
+                                    "-f",
+                                    "1",
+                                    "-l",
+                                    "1",
+                                    &path,
+                                ]);
+                                if let Ok(_out) = cmd.output().await {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     let p = std::path::PathBuf::from(&path);
                                     let stem = p
                                         .file_stem()
@@ -369,23 +382,26 @@ impl Previewer {
                                 } else {
                                     "512".to_string()
                                 };
-                                let output = std::process::Command::new("ffmpegthumbnailer")
-                                    .args([
-                                        "-i",
-                                        &path,
-                                        "-s",
-                                        &media_size_str,
-                                        "-t",
-                                        "00:00:01",
-                                        "-c",
-                                        "jpeg",
-                                        "-q",
-                                        "10",
-                                        "-o",
-                                        "-",
-                                    ])
-                                    .output();
-                                if let Ok(out) = output {
+                                let mut cmd = tokio::process::Command::new("ffmpegthumbnailer");
+                                cmd.kill_on_drop(true);
+                                cmd.args([
+                                    "-i",
+                                    &path,
+                                    "-s",
+                                    &media_size_str,
+                                    "-t",
+                                    "00:00:01",
+                                    "-c",
+                                    "jpeg",
+                                    "-q",
+                                    "10",
+                                    "-o",
+                                    "-",
+                                ]);
+                                if let Ok(out) = cmd.output().await {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     // ffmpegthumbnailer sometimes pollutes stdout with debug logs.
                                     // We search for the JPEG start of image marker (FF D8 FF) and slice the buffer.
                                     let data = &out.stdout;
@@ -401,19 +417,27 @@ impl Previewer {
                                     None
                                 }
                             } else {
-                                let img = image::open(&path).ok();
-                                if rx.has_changed().unwrap_or(false) {
-                                    return;
-                                }
-                                img.map(|i| {
+                                let path_for_task = path.clone();
+                                let is_stale_task = is_stale.clone();
+                                tokio::task::spawn_blocking(move || {
+                                    if is_stale_task() {
+                                        return None;
+                                    }
+                                    let img = image::open(&path_for_task).ok()?;
+                                    if is_stale_task() {
+                                        return None;
+                                    }
                                     let max_dim = media_size;
-                                    if max_dim > 0 && (i.width() > max_dim || i.height() > max_dim)
+                                    if max_dim > 0 && (img.width() > max_dim || img.height() > max_dim)
                                     {
-                                        i.thumbnail(max_dim, max_dim)
+                                        Some(img.thumbnail(max_dim, max_dim))
                                     } else {
-                                        i
+                                        Some(img)
                                     }
                                 })
+                                .await
+                                .ok()
+                                .flatten()
                             };
 
                             if is_stale() {
@@ -440,6 +464,7 @@ impl Previewer {
                                 }
                             }
                         });
+                        self.current_media_task = Some(handle);
                         continue;
                     }
                     PreviewMessage::Markdown(ref path, width) => {
@@ -477,7 +502,7 @@ impl Previewer {
                         let diagram_theme = self.config.diagram_theme;
                         let diagram_background = self.config.diagram_background;
 
-                        tokio::task::spawn_blocking(move || {
+                        let handle = tokio::task::spawn_blocking(move || {
                             let is_stale = || {
                                 rx.has_changed().unwrap_or(false)
                                     || current_generation.load(Ordering::Acquire) != task_gen
@@ -723,6 +748,7 @@ impl Previewer {
                                 }
                             }
                         });
+                        self.current_media_task = Some(handle);
                         continue;
                     }
                     _ => {}
@@ -961,6 +987,9 @@ impl Previewer {
     }
 
     fn dispatch_kill(&mut self) {
+        if let Some(task) = self.current_media_task.take() {
+            task.abort();
+        }
         if let Some((mut child, old)) = self.current.take() {
             kill_child(&mut child);
             self.procs.push(child);
@@ -1372,5 +1401,72 @@ mod tests {
             !ui.has_markdown(),
             "ui.has_markdown must be false on code file"
         );
+    }
+
+    #[tokio::test]
+    async fn test_media_preview_cooperative_cancellation() {
+        let mut previewer_cfg = crate::config::PreviewerConfig::default();
+        previewer_cfg.media = true;
+        previewer_cfg.debounce_ms = 0;
+
+        let (previewer, tx) = Previewer::new(previewer_cfg);
+        let _view = previewer.view();
+        let image_state = previewer.image.clone();
+
+        let handle = tokio::spawn(previewer.run());
+
+        // Create temporary test images of distinct dimensions
+        let temp_dir = std::env::temp_dir();
+        let p1 = temp_dir.join(format!("test_canc_1_{}.png", std::process::id()));
+        let p2 = temp_dir.join(format!("test_canc_2_{}.png", std::process::id()));
+        let p3 = temp_dir.join(format!("test_canc_3_{}.png", std::process::id()));
+
+        image::RgbImage::new(10, 10).save(&p1).unwrap();
+        image::RgbImage::new(20, 20).save(&p2).unwrap();
+        image::RgbImage::new(30, 30).save(&p3).unwrap();
+
+        // 1. Send p1, p2, p3 in rapid succession simulating rapid keyboard scroll
+        let _ = tx.send(PreviewMessage::Media(p1.to_string_lossy().to_string()));
+        let _ = tx.send(PreviewMessage::Media(p2.to_string_lossy().to_string()));
+        let _ = tx.send(PreviewMessage::Media(p3.to_string_lossy().to_string()));
+
+        // Poll until image is populated (timeout 5s)
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(5) {
+            if let Ok(guard) = image_state.lock() {
+                if let Some(ref img) = *guard {
+                    if img.width() == 30 && img.height() == 30 {
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        // Verify final image corresponds to p3 (width 30), not stale p1 or p2
+        {
+            let guard = image_state.lock().unwrap();
+            let img = guard.as_ref().expect("Image should be loaded for p3");
+            assert_eq!(img.width(), 30);
+            assert_eq!(img.height(), 30);
+        }
+
+        // 2. Now send Media followed immediately by Unset: should cooperatively cancel and clear
+        let _ = tx.send(PreviewMessage::Media(p1.to_string_lossy().to_string()));
+        let _ = tx.send(PreviewMessage::Unset);
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        {
+            let guard = image_state.lock().unwrap();
+            assert!(
+                guard.is_none(),
+                "Unset must cancel in-flight media and clear image_state"
+            );
+        }
+
+        handle.abort();
+        let _ = std::fs::remove_file(&p1);
+        let _ = std::fs::remove_file(&p2);
+        let _ = std::fs::remove_file(&p3);
     }
 }

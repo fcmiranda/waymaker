@@ -271,6 +271,119 @@ pub struct StartConfig {
     #[partial(alias = "sh")]
     #[serde(default)]
     pub shell: Option<Vec<String>>,
+
+    /// (cli only) Native directory walker configuration.
+    #[partial(recurse, alias = "w")]
+    #[serde(default)]
+    pub walker: Option<WalkerConfig>,
+}
+
+/// Configuration for native directory walker.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
+pub struct WalkerConfig {
+    /// Directory/file names to ignore during directory traversal.
+    #[serde(alias = "ignore_dirs", alias = "exclude")]
+    #[partial(alias = "ignore", alias = "ignore_dirs")]
+    pub ignore: Vec<String>,
+
+    /// Additional directory/file names to ignore alongside `ignore`.
+    #[serde(alias = "extra_ignore_dirs", alias = "add_ignore")]
+    #[partial(alias = "extra_ignore", alias = "add_ignore")]
+    pub extra_ignore: Vec<String>,
+
+    /// Whether to walk hidden files/directories (except ignored directories). Default is true.
+    #[partial(alias = "h")]
+    pub hidden: bool,
+
+    /// Whether to honor .gitignore rules. Default is true.
+    #[partial(alias = "gi")]
+    pub git_ignore: bool,
+
+    /// Whether to honor git exclude rules (.git/info/exclude). Default is true.
+    #[partial(alias = "ge")]
+    pub git_exclude: bool,
+
+    /// Whether to honor global gitignore rules. Default is true.
+    #[partial(alias = "gg")]
+    pub git_global: bool,
+
+    /// Maximum directory depth to traverse. None = unlimited.
+    #[partial(alias = "d", alias = "depth")]
+    pub max_depth: Option<usize>,
+}
+
+impl Default for WalkerConfig {
+    fn default() -> Self {
+        Self {
+            ignore: crate::walker::default_ignored_dirs(),
+            extra_ignore: Vec::new(),
+            hidden: true,
+            git_ignore: true,
+            git_exclude: true,
+            git_global: true,
+            max_depth: None,
+        }
+    }
+}
+
+impl WalkerConfig {
+    pub fn effective_ignore(&self) -> Vec<String> {
+        let mut set = std::collections::BTreeSet::new();
+        for item in &self.ignore {
+            let trimmed = item.trim_end_matches('/');
+            if !trimmed.is_empty() {
+                set.insert(trimmed.to_string());
+            }
+        }
+        for item in &self.extra_ignore {
+            let trimmed = item.trim_end_matches('/');
+            if !trimmed.is_empty() {
+                set.insert(trimmed.to_string());
+            }
+        }
+        set.into_iter().collect()
+    }
+
+    pub fn to_options(&self, root: impl AsRef<std::path::Path>) -> crate::walker::WalkerOptions {
+        crate::walker::WalkerOptions {
+            root: root.as_ref().to_path_buf(),
+            hidden: self.hidden,
+            ignore: self.git_ignore,
+            git_exclude: self.git_exclude,
+            git_global: self.git_global,
+            max_depth: self.max_depth,
+            threads: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4),
+            entry_type: crate::walker::EntryType::Any,
+            strip_cwd_prefix: true,
+            ignore_dirs: self.effective_ignore(),
+        }
+    }
+
+    pub fn merge(&mut self, other: &WalkerConfig) {
+        if other.ignore != crate::walker::default_ignored_dirs() {
+            self.ignore = other.ignore.clone();
+        }
+        self.extra_ignore.extend(other.extra_ignore.clone());
+        if !other.hidden {
+            self.hidden = false;
+        }
+        if !other.git_ignore {
+            self.git_ignore = false;
+        }
+        if !other.git_exclude {
+            self.git_exclude = false;
+        }
+        if !other.git_global {
+            self.git_global = false;
+        }
+        if other.max_depth.is_some() {
+            self.max_depth = other.max_depth;
+        }
+    }
 }
 
 /// Exit conditions of the render loop.

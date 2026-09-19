@@ -46,6 +46,7 @@ static ALIASES: &[(&str, &str)] = &[
     ("ui-fm-color", "ui.nav.color"),
     ("start.cmd", "start.command.default"),
     ("start.command", "start.command.default"),
+    ("start.walker", "walker"),
     ("matcher.sort", "matcher.sort.threshold"),
     ("matcher.frecency", "matcher.frecency.active"),
     ("worker.sort", "matcher.sort.threshold"),

@@ -14,6 +14,26 @@ pub enum EntryType {
     Any,
 }
 
+pub fn default_ignored_dirs() -> Vec<String> {
+    vec![
+        ".git".to_string(),
+        ".cache".to_string(),
+        ".local".to_string(),
+        ".cargo".to_string(),
+        ".rustup".to_string(),
+        ".npm".to_string(),
+        ".npm-global".to_string(),
+        "node_modules".to_string(),
+        "target".to_string(),
+        ".venv".to_string(),
+        "venv".to_string(),
+        ".wine".to_string(),
+        ".android".to_string(),
+        ".gradle".to_string(),
+        ".m2".to_string(),
+    ]
+}
+
 #[derive(Debug, Clone)]
 pub struct WalkerOptions {
     pub root: PathBuf,
@@ -25,6 +45,7 @@ pub struct WalkerOptions {
     pub threads: usize,
     pub entry_type: EntryType,
     pub strip_cwd_prefix: bool,
+    pub ignore_dirs: Vec<String>,
 }
 
 impl Default for WalkerOptions {
@@ -41,6 +62,7 @@ impl Default for WalkerOptions {
                 .unwrap_or(4),
             entry_type: EntryType::Any,
             strip_cwd_prefix: true,
+            ignore_dirs: default_ignored_dirs(),
         }
     }
 }
@@ -68,7 +90,20 @@ impl AsyncWalker {
         builder.git_exclude(self.options.git_exclude);
         builder.git_global(self.options.git_global);
         builder.ignore(self.options.ignore);
-        builder.filter_entry(|entry| entry.file_name() != ".git");
+        let ignored: std::sync::Arc<std::collections::HashSet<String>> = std::sync::Arc::new(
+            self.options
+                .ignore_dirs
+                .iter()
+                .map(|s| s.trim_end_matches('/').to_string())
+                .collect(),
+        );
+        builder.filter_entry(move |entry| {
+            if entry.depth() == 0 {
+                return true;
+            }
+            let file_name = entry.file_name().to_string_lossy();
+            !ignored.contains(file_name.as_ref())
+        });
         if let Some(depth) = self.options.max_depth {
             builder.max_depth(Some(depth));
         }
@@ -362,6 +397,87 @@ mod tests {
             unique_items.len(),
             "Items should be unique without duplicates"
         );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+
+    #[test]
+    fn test_walker_default_ignored_dirs() -> anyhow::Result<()> {
+        let temp_dir = std::env::temp_dir().join("mm_test_walker_default_ignored");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(temp_dir.join(".cache").join("fontconfig"))?;
+        fs::write(temp_dir.join(".cache").join("test.bin"), "data")?;
+        fs::create_dir_all(temp_dir.join(".cargo").join("registry"))?;
+        fs::create_dir_all(temp_dir.join(".local").join("share"))?;
+        fs::create_dir_all(temp_dir.join("node_modules").join("pkg"))?;
+        fs::create_dir_all(temp_dir.join("target").join("debug"))?;
+        fs::create_dir_all(temp_dir.join(".venv").join("lib"))?;
+        fs::create_dir_all(temp_dir.join(".git"))?;
+        fs::write(temp_dir.join(".git").join("config"), "git")?;
+
+        // Normal files and directories that should be included
+        fs::create_dir_all(temp_dir.join(".config").join("matchmaker"))?;
+        fs::write(temp_dir.join(".config").join("matchmaker").join("config.toml"), "a=1")?;
+        fs::create_dir_all(temp_dir.join("src"))?;
+        fs::write(temp_dir.join("src").join("main.rs"), "fn main() {}")?;
+        fs::write(temp_dir.join(".bashrc"), "# bashrc")?;
+
+        let options = WalkerOptions {
+            root: temp_dir.clone(),
+            strip_cwd_prefix: true,
+            ..Default::default()
+        };
+
+        let walker = AsyncWalker::new(options);
+        let items = walker.collect_sync();
+
+        // Normal directories and files MUST be present
+        assert!(items.iter().any(|i| i == ".config/" || i == ".config"));
+        assert!(items.iter().any(|i| i == ".config/matchmaker/config.toml"));
+        assert!(items.iter().any(|i| i == "src/" || i == "src"));
+        assert!(items.iter().any(|i| i == "src/main.rs"));
+        assert!(items.iter().any(|i| i == ".bashrc"));
+
+        // Noise/cache directories MUST be pruned natively
+        assert!(!items.iter().any(|i| i == ".cache/" || i == ".cache" || i.starts_with(".cache/")));
+        assert!(!items.iter().any(|i| i == ".cargo/" || i == ".cargo" || i.starts_with(".cargo/")));
+        assert!(!items.iter().any(|i| i == ".local/" || i == ".local" || i.starts_with(".local/")));
+        assert!(!items.iter().any(|i| i == "node_modules/" || i == "node_modules" || i.starts_with("node_modules/")));
+        assert!(!items.iter().any(|i| i == "target/" || i == "target" || i.starts_with("target/")));
+        assert!(!items.iter().any(|i| i == ".venv/" || i == ".venv" || i.starts_with(".venv/")));
+        assert!(!items.iter().any(|i| i == ".git/" || i == ".git" || i.starts_with(".git/")));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+
+    #[test]
+    fn test_walker_custom_ignore_dirs() -> anyhow::Result<()> {
+        let temp_dir = std::env::temp_dir().join("mm_test_walker_custom_ignored");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(temp_dir.join("custom_noise"))?;
+        fs::write(temp_dir.join("custom_noise").join("data.txt"), "noise")?;
+        fs::create_dir_all(temp_dir.join("target"))?;
+        fs::write(temp_dir.join("target").join("build.txt"), "build")?;
+
+        // Allow target by removing it from custom ignore_dirs
+        let options = WalkerOptions {
+            root: temp_dir.clone(),
+            strip_cwd_prefix: true,
+            ignore_dirs: vec!["custom_noise".to_string()],
+            ..Default::default()
+        };
+
+        let walker = AsyncWalker::new(options);
+        let items = walker.collect_sync();
+
+        // custom_noise should be ignored
+        assert!(!items.iter().any(|i| i.contains("custom_noise")));
+
+        // target should now be included because it's not in ignore_dirs
+        assert!(items.iter().any(|i| i == "target/" || i == "target"));
+        assert!(items.iter().any(|i| i == "target/build.txt"));
 
         let _ = fs::remove_dir_all(&temp_dir);
         Ok(())

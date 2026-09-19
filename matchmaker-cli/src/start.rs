@@ -168,6 +168,7 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
         config.tui.clear_on_exit = false;
     }
     config.apply(partial); // resolve config.exit first
+    config.resolve();
 
     if !cli.args.is_empty() {
         if !std::io::stdin().is_terminal() && !cli.no_read {
@@ -804,13 +805,18 @@ pub async fn start(
                 sort,
                 reload_interval,
                 shell,
+                ..
             },
+        walker: walker_config,
         mut exit,
         mut envs,
         source: _,
         rule: all_rules,
         ..
     } = config;
+
+    let walker_config_chdir = walker_config.clone();
+    let walker_config_reload = walker_config.clone();
 
     let default_base_cmd = base_command
         .filter(|s| !s.is_empty())
@@ -1194,44 +1200,18 @@ pub async fn start(
             if count == 0 {
                 return;
             }
-            let mut found = false;
-            let target_trimmed = target.trim_end_matches('/');
-            for i in 0..count {
-                if let Some(raw) = state.picker_ui.worker.get_nth(i) {
-                    let val = state.picker_ui.worker.columns[0].raw(raw);
-                    let val_trimmed = val.trim_end_matches('/');
-                    let val_is_abs = val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
-                    let target_is_abs =
-                        target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
-                    let is_match = if val_trimmed == target_trimmed {
-                        true
-                    } else if val_trimmed.trim_start_matches("./")
-                        == target_trimmed.trim_start_matches("./")
-                    {
-                        true
-                    } else if val_is_abs && target_is_abs {
-                        false
-                    } else if !val_is_abs && target_is_abs {
-                        target_trimmed.ends_with(&format!("/{}", val_trimmed))
-                    } else if val_is_abs && !target_is_abs {
-                        state.picker_ui.worker.mode_index == 0
-                            && val_trimmed.ends_with(&format!("/{}", target_trimmed))
-                    } else {
-                        val_trimmed.ends_with(&format!("/{}", target_trimmed))
-                            || target_trimmed.ends_with(&format!("/{}", val_trimmed))
-                    };
-                    if is_match {
-                        state.picker_ui.results.cursor_jump(i);
-                        let _ = sync_render_tx.send(matchmaker::message::RenderCommand::Action(
-                            matchmaker::action::Action::Pos(i as i32),
-                        ));
-                        state.needs_redraw = true;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if found {
+            let is_local = state.picker_ui.worker.mode_index == 0;
+            let col0 = &state.picker_ui.worker.columns[0];
+            let found_idx = state.picker_ui.worker.find_item_index(|raw| {
+                let val = col0.raw(raw);
+                is_target_item_match(&val, &target, is_local)
+            });
+            if let Some(i) = found_idx {
+                state.picker_ui.results.cursor_jump(i as u32);
+                let _ = sync_render_tx.send(matchmaker::message::RenderCommand::Action(
+                    matchmaker::action::Action::Pos(i as i32),
+                ));
+                state.needs_redraw = true;
                 TARGET_ITEM.lock().unwrap().take();
                 unsafe {
                     std::env::remove_var("MM_TARGET_ITEM");
@@ -1306,10 +1286,11 @@ pub async fn start(
                 let cmd_to_run = spec_get_cmd(&target_path);
                 let target_dir = target_path.clone();
                 let env_vars = state.make_env_vars();
+                let walker_opts = walker_config_chdir.to_options(&target_dir);
                 tokio::task::spawn_blocking(move || {
                     let lines: Option<Vec<String>> = if is_default_file_walker_command(&cmd_to_run)
                     {
-                        let walker = matchmaker::walker::AsyncWalker::from_root(&target_dir);
+                        let walker = matchmaker::walker::AsyncWalker::new(walker_opts);
                         Some(walker.collect_sync())
                     } else if let Some(out) = Command::from_script(&cmd_to_run)
                         .current_dir(&target_dir)
@@ -1492,6 +1473,18 @@ pub async fn start(
                 }
             }
 
+            let ignored_set: std::collections::HashSet<String> = walker_config_reload
+                .effective_ignore()
+                .into_iter()
+                .collect();
+            let is_ignored_item = |item: &str| -> bool {
+                let s = item.strip_prefix("./").unwrap_or(item);
+                let s = s.strip_prefix('/').unwrap_or(s);
+                let first = s.split(['/', '\\']).next().unwrap_or("");
+                let clean_first = first.trim_end_matches(['/', '\\']);
+                !clean_first.is_empty() && ignored_set.contains(clean_first)
+            };
+
             let cache_store = matchmaker::cache::DirCacheStore::open();
 
             if let Some(cached_rec) = cache_store.get_valid(&cwd_str)
@@ -1515,6 +1508,9 @@ pub async fn start(
 
                 state.picker_ui.selector.clear();
                 for item in cached_rec.items {
+                    if is_ignored_item(&item) {
+                        continue;
+                    }
                     let _ = push_fn(item);
                 }
 
@@ -1526,9 +1522,10 @@ pub async fn start(
 
                 // Background async walk to refresh disk cache if needed
                 let cwd_clone = cwd_str.clone();
+                let walker_opts = walker_config_reload.to_options(&cwd_clone);
                 tokio::spawn(async move {
                     let (collect_tx, collect_rx) = std::sync::mpsc::channel();
-                    let walker = matchmaker::walker::AsyncWalker::from_root(&cwd_clone);
+                    let walker = matchmaker::walker::AsyncWalker::new(walker_opts);
                     let handle = walker.spawn_walk(move |line| {
                         let _ = collect_tx.send(line);
                         Ok(())
@@ -1570,9 +1567,10 @@ pub async fn start(
             state.picker_ui.selector.clear();
             let reload_render_tx = reload_render_tx.clone();
             let reload_render_tx_ready = reload_render_tx.clone();
+            let walker_opts = walker_config_reload.to_options(".");
             tokio::task::spawn_blocking(move || {
                 let (collect_tx, collect_rx) = std::sync::mpsc::channel();
-                let walker = matchmaker::walker::AsyncWalker::from_root(".");
+                let walker = matchmaker::walker::AsyncWalker::new(walker_opts);
                 let mut first = true;
                 let handle = walker.spawn_walk(move |line| {
                     let _ = collect_tx.send(line.clone());
@@ -1852,7 +1850,7 @@ pub async fn start(
             std::io::stdin().read_to_end(&mut buf).ok();
             buf
         } else if is_default_file_walker_command(&command) {
-            let walker = matchmaker::walker::AsyncWalker::from_root(".");
+            let walker = matchmaker::walker::AsyncWalker::new(walker_config.to_options("."));
             let items = walker.collect_sync();
             items.join("\n").into_bytes()
         } else if !command.is_empty() {
@@ -1896,19 +1894,35 @@ pub async fn start(
             .unwrap_or_default();
         let cache_store = matchmaker::cache::DirCacheStore::open();
 
+        let ignored_set: std::collections::HashSet<String> = walker_config
+            .effective_ignore()
+            .into_iter()
+            .collect();
+        let is_ignored_item = |item: &str| -> bool {
+            let s = item.strip_prefix("./").unwrap_or(item);
+            let s = s.strip_prefix('/').unwrap_or(s);
+            let first = s.split(['/', '\\']).next().unwrap_or("");
+            let clean_first = first.trim_end_matches(['/', '\\']);
+            !clean_first.is_empty() && ignored_set.contains(clean_first)
+        };
+
         if let Some(cached_rec) = cache_store.get_valid(&cwd_str)
             && !cached_rec.items.is_empty()
         {
             let mut push_fn = push_fn;
             for item in cached_rec.items {
+                if is_ignored_item(&item) {
+                    continue;
+                }
                 if push_fn(item).is_err() {
                     break;
                 }
             }
 
+            let walker_opts = walker_config.to_options(".");
             tokio::spawn(async move {
                 let (collect_tx, collect_rx) = std::sync::mpsc::channel();
-                let walker = matchmaker::walker::AsyncWalker::from_root(".");
+                let walker = matchmaker::walker::AsyncWalker::new(walker_opts);
                 let handle = walker.spawn_walk(move |line| {
                     let _ = collect_tx.send(line);
                     Ok(())
@@ -1926,9 +1940,10 @@ pub async fn start(
                 Ok(0)
             })
         } else {
+            let walker_opts = walker_config.to_options(".");
             tokio::spawn(async move {
                 let (collect_tx, collect_rx) = std::sync::mpsc::channel();
-                let walker = matchmaker::walker::AsyncWalker::from_root(".");
+                let walker = matchmaker::walker::AsyncWalker::new(walker_opts);
                 let mut push_fn = push_fn;
 
                 let handle = walker.spawn_walk(move |line| {
@@ -2072,6 +2087,27 @@ fn to_static(line: Line<'_>) -> Line<'static> {
             })
             .collect::<Vec<_>>(),
     )
+}
+
+pub fn is_target_item_match(val: &str, target: &str, is_local_mode: bool) -> bool {
+    let target_trimmed = target.trim_end_matches('/');
+    let val_trimmed = val.trim_end_matches('/');
+    let val_is_abs = val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
+    let target_is_abs = target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
+    if val_trimmed == target_trimmed {
+        true
+    } else if val_trimmed.trim_start_matches("./") == target_trimmed.trim_start_matches("./") {
+        true
+    } else if val_is_abs && target_is_abs {
+        false
+    } else if !val_is_abs && target_is_abs {
+        target_trimmed.ends_with(&format!("/{}", val_trimmed))
+    } else if val_is_abs && !target_is_abs {
+        is_local_mode && val_trimmed.ends_with(&format!("/{}", target_trimmed))
+    } else {
+        val_trimmed.ends_with(&format!("/{}", target_trimmed))
+            || target_trimmed.ends_with(&format!("/{}", val_trimmed))
+    }
 }
 
 fn is_default_file_walker_command(cmd: &str) -> bool {

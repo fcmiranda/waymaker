@@ -72,6 +72,18 @@ separator = "\\0"
 [start]
 ansi = false # don't set to true here
 
+# --- Walker ---
+# Native directory traversal configuration.
+# Directories listed here are ignored during directory scanning and jumps.
+# [walker]
+# ignore = [".git", ".cache", ".local", ".cargo", ".rustup", ".npm", ".npm-global", "node_modules", "target", ".venv", "venv", ".wine", ".android", ".gradle", ".m2"]
+# extra_ignore = []
+# hidden = true
+# git_ignore = true
+# git_exclude = true
+# git_global = true
+# max_depth = 10
+
 [exit]
 
 [envs]

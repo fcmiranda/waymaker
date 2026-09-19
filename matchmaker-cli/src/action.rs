@@ -498,43 +498,19 @@ pub fn action_handler(
             let mut target_found = false;
 
             if let Some(ref target) = target_opt {
-                let count = state.picker_ui.worker.counts().0;
-                let target_trimmed = target.trim_end_matches('/');
-                for i in 0..count {
-                    if let Some(raw) = state.picker_ui.worker.get_nth(i) {
-                        let val = state.picker_ui.worker.columns[0].raw(raw);
-                        let val_trimmed = val.trim_end_matches('/');
-                        let val_is_abs =
-                            val_trimmed.starts_with('/') || val_trimmed.starts_with('\\');
-                        let target_is_abs =
-                            target_trimmed.starts_with('/') || target_trimmed.starts_with('\\');
-                        let is_match = if val_trimmed == target_trimmed {
-                            true
-                        } else if val_trimmed.trim_start_matches("./")
-                            == target_trimmed.trim_start_matches("./")
-                        {
-                            true
-                        } else if val_is_abs && target_is_abs {
-                            false
-                        } else if !val_is_abs && target_is_abs {
-                            target_trimmed.ends_with(&format!("/{}", val_trimmed))
-                        } else if val_is_abs && !target_is_abs {
-                            state.picker_ui.worker.mode_index == 0
-                                && val_trimmed.ends_with(&format!("/{}", target_trimmed))
-                        } else {
-                            val_trimmed.ends_with(&format!("/{}", target_trimmed))
-                                || target_trimmed.ends_with(&format!("/{}", val_trimmed))
-                        };
-                        if is_match {
-                            state.picker_ui.results.cursor_jump(i);
-                            let _ = render_tx.send(RenderCommand::Action(Action::Pos(i as i32)));
-                            target_found = true;
-                            crate::start::TARGET_ITEM.lock().unwrap().take();
-                            unsafe {
-                                std::env::remove_var("MM_TARGET_ITEM");
-                            }
-                            break;
-                        }
+                let is_local = state.picker_ui.worker.mode_index == 0;
+                let col0 = &state.picker_ui.worker.columns[0];
+                let found_idx = state.picker_ui.worker.find_item_index(|raw| {
+                    let val = col0.raw(raw);
+                    crate::start::is_target_item_match(&val, target, is_local)
+                });
+                if let Some(i) = found_idx {
+                    state.picker_ui.results.cursor_jump(i as u32);
+                    let _ = render_tx.send(RenderCommand::Action(Action::Pos(i as i32)));
+                    target_found = true;
+                    crate::start::TARGET_ITEM.lock().unwrap().take();
+                    unsafe {
+                        std::env::remove_var("MM_TARGET_ITEM");
                     }
                 }
             }
@@ -549,16 +525,13 @@ pub fn action_handler(
                         let count = state.picker_ui.worker.counts().0;
                         if count > 0 {
                             if let Some(ref item_str) = prev_item {
-                                for i in 0..count {
-                                    if let Some(raw) = state.picker_ui.worker.get_nth(i) {
-                                        let val = state.picker_ui.worker.columns[0].raw(raw);
-                                        if val == item_str.as_str() {
-                                            state.picker_ui.results.cursor_jump(i);
-                                            let _ = render_tx.send(RenderCommand::Action(Action::Pos(i as i32)));
-                                            restored = true;
-                                            break;
-                                        }
-                                    }
+                                let col0 = &state.picker_ui.worker.columns[0];
+                                if let Some(i) = state.picker_ui.worker.find_item_index(|raw| {
+                                    col0.raw(raw) == item_str.as_str()
+                                }) {
+                                    state.picker_ui.results.cursor_jump(i as u32);
+                                    let _ = render_tx.send(RenderCommand::Action(Action::Pos(i as i32)));
+                                    restored = true;
                                 }
                             }
                             if !restored {

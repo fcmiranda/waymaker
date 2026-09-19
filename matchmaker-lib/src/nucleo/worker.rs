@@ -228,6 +228,34 @@ bitflags! {
     }
 }
 
+struct DecoratedItem<'a, T> {
+    item: nucleo::Item<'a, T>,
+    tier: u8,
+    raw_path: Cow<'a, str>,
+    clean_range: (usize, usize),
+    score: u64,
+    mtime: Option<std::time::SystemTime>,
+    btime: Option<std::time::SystemTime>,
+    size: Option<u64>,
+    ext_range: Option<(usize, usize)>,
+}
+
+impl<'a, T> DecoratedItem<'a, T> {
+    #[inline]
+    fn clean(&self) -> &str {
+        &self.raw_path[self.clean_range.0..self.clean_range.1]
+    }
+
+    #[inline]
+    fn ext(&self) -> &str {
+        if let Some((start, end)) = self.ext_range {
+            &self.raw_path[start..end]
+        } else {
+            ""
+        }
+    }
+}
+
 impl<T: SSS> Worker<T> {
     /// Column names must be distinct!
     pub fn new(columns: impl IntoIterator<Item = Column<T>>, default_column: usize) -> Self {
@@ -378,10 +406,12 @@ impl<T: SSS> Worker<T> {
         }
     }
 
-    pub fn get_nth(&self, n: u32) -> Option<&T> {
-        let snapshot = self.nucleo.snapshot();
+    fn get_sorted_decorated<'a>(
+        &'a self,
+        snapshot: &'a nucleo::Snapshot<T>,
+    ) -> Option<Vec<DecoratedItem<'a, T>>> {
         let total = snapshot.matched_item_count();
-        if n >= total {
+        if total == 0 {
             return None;
         }
 
@@ -401,244 +431,234 @@ impl<T: SSS> Worker<T> {
                     || (self.depth_penalty > 0 && self.mode_index == 0)))
             || effective_dir_first;
 
-        if should_sort {
-            let total_sort = if effective_sort_order.is_some() {
-                total
-            } else if self.sort_cap > 0 {
-                total.min(self.sort_cap as u32)
-            } else {
-                total
-            };
-            let mut items: Vec<_> = snapshot.matched_items(0..total_sort).enumerate().collect();
-            let penalty = if is_query_empty || self.mode_index != 0 {
-                0
-            } else {
-                self.depth_penalty
-            };
-            let frec_weight = self.frecency_weight;
-            let snapshot_ref = if self.frecency {
-                self.frecency_snapshot.as_ref()
-            } else {
-                None
-            };
-            let col0 = &self.columns[0];
-            let scan_end = total.min(total_sort + 5000);
-            if scan_end > total_sort {
-                for (idx, item) in snapshot.matched_items(total_sort..scan_end).enumerate() {
-                    let raw_path = col0.raw(item.data);
-                    let has_frecency =
-                        snapshot_ref.map_or(false, |snap| snap.has_bonus_fast(raw_path.as_ref()));
-                    let is_direct = if effective_dir_first {
-                        let (tier, _) = get_item_tier_and_clean_path(raw_path.as_ref(), true);
-                        tier < 2
-                    } else {
-                        false
-                    };
-                    if has_frecency || is_direct {
-                        items.push((total_sort as usize + idx, item));
-                    }
+        if !should_sort {
+            return None;
+        }
+
+        let total_sort = if effective_sort_order.is_some() {
+            total
+        } else if self.sort_cap > 0 {
+            total.min(self.sort_cap as u32)
+        } else {
+            total
+        };
+        let mut items: Vec<_> = snapshot.matched_items(0..total_sort).enumerate().collect();
+        let penalty = if is_query_empty || self.mode_index != 0 {
+            0
+        } else {
+            self.depth_penalty
+        };
+        let frec_weight = self.frecency_weight;
+        let snapshot_ref = if self.frecency {
+            self.frecency_snapshot.as_ref()
+        } else {
+            None
+        };
+        let col0 = &self.columns[0];
+        let scan_end = total.min(total_sort + 5000);
+        if scan_end > total_sort {
+            for (idx, item) in snapshot.matched_items(total_sort..scan_end).enumerate() {
+                let raw_path = col0.raw(item.data);
+                let has_frecency =
+                    snapshot_ref.map_or(false, |snap| snap.has_bonus_fast(raw_path.as_ref()));
+                let is_direct = if effective_dir_first {
+                    let (tier, _) = get_item_tier_and_clean_path(raw_path.as_ref(), true);
+                    tier < 2
+                } else {
+                    false
+                };
+                if has_frecency || is_direct {
+                    items.push((total_sort as usize + idx, item));
                 }
             }
-            struct DecoratedItem<'a, T> {
-                item: nucleo::Item<'a, T>,
-                tier: u8,
-                raw_path: Cow<'a, str>,
-                clean_range: (usize, usize),
-                score: u64,
-                mtime: Option<std::time::SystemTime>,
-                btime: Option<std::time::SystemTime>,
-                size: Option<u64>,
-                ext_range: Option<(usize, usize)>,
-            }
+        }
 
-            impl<'a, T> DecoratedItem<'a, T> {
-                #[inline]
-                fn clean(&self) -> &str {
-                    &self.raw_path[self.clean_range.0..self.clean_range.1]
+        let mut decorated: Vec<DecoratedItem<'_, T>> = items
+            .into_iter()
+            .map(|(idx, item)| {
+                let raw_path = col0.raw(item.data);
+                let score = compute_item_score(
+                    total,
+                    idx,
+                    raw_path.as_ref(),
+                    is_query_empty,
+                    query_len,
+                    snapshot_ref,
+                    frec_weight,
+                    self.location_bias,
+                    penalty,
+                );
+                let (tier, clean) =
+                    get_item_tier_and_clean_path(raw_path.as_ref(), effective_dir_first);
+                let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
+                let clean_range = (clean_start, clean_start + clean.len());
+                let (mtime, btime, size, ext_range) = match effective_sort_order {
+                    Some(
+                        crate::action::SortOrder::Modified
+                        | crate::action::SortOrder::ModifiedReverse,
+                    ) => {
+                        let m = std::fs::metadata(clean)
+                            .or_else(|_| std::fs::symlink_metadata(clean))
+                            .and_then(|meta| meta.modified())
+                            .ok();
+                        (m, None, None, None)
+                    }
+                    Some(
+                        crate::action::SortOrder::Created
+                        | crate::action::SortOrder::CreatedReverse,
+                    ) => {
+                        let meta = std::fs::metadata(clean)
+                            .or_else(|_| std::fs::symlink_metadata(clean))
+                            .ok();
+                        let b = meta
+                            .as_ref()
+                            .and_then(|m| m.created().ok())
+                            .or_else(|| meta.as_ref().and_then(|m| m.modified().ok()));
+                        (None, b, None, None)
+                    }
+                    Some(
+                        crate::action::SortOrder::Size | crate::action::SortOrder::SizeReverse,
+                    ) => {
+                        let s = std::fs::metadata(clean)
+                            .or_else(|_| std::fs::symlink_metadata(clean))
+                            .map(|meta| meta.len())
+                            .ok();
+                        (None, None, s, None)
+                    }
+                    Some(
+                        crate::action::SortOrder::Extension
+                        | crate::action::SortOrder::ExtensionReverse,
+                    ) => {
+                        let ext = std::path::Path::new(clean)
+                            .extension()
+                            .and_then(|e| e.to_str());
+                        let range = ext.map(|e| {
+                            let start =
+                                e.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
+                            (start, start + e.len())
+                        });
+                        (None, None, None, range)
+                    }
+                    _ => (None, None, None, None),
+                };
+                DecoratedItem {
+                    item,
+                    tier,
+                    raw_path,
+                    clean_range,
+                    score,
+                    mtime,
+                    btime,
+                    size,
+                    ext_range,
                 }
+            })
+            .collect();
 
-                #[inline]
-                fn ext(&self) -> &str {
-                    if let Some((start, end)) = self.ext_range {
-                        &self.raw_path[start..end]
-                    } else {
-                        ""
-                    }
-                }
-            }
-
-            let mut decorated: Vec<DecoratedItem<'_, T>> = items
-                .into_iter()
-                .map(|(idx, item)| {
-                    let raw_path = col0.raw(item.data);
-                    let score = compute_item_score(
-                        total,
-                        idx,
-                        raw_path.as_ref(),
-                        is_query_empty,
-                        query_len,
-                        snapshot_ref,
-                        frec_weight,
-                        self.location_bias,
-                        penalty,
-                    );
-                    let (tier, clean) =
-                        get_item_tier_and_clean_path(raw_path.as_ref(), effective_dir_first);
-                    let clean_start = clean.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
-                    let clean_range = (clean_start, clean_start + clean.len());
-                    let (mtime, btime, size, ext_range) = match effective_sort_order {
-                        Some(
-                            crate::action::SortOrder::Modified
-                            | crate::action::SortOrder::ModifiedReverse,
-                        ) => {
-                            let m = std::fs::metadata(clean)
-                                .or_else(|_| std::fs::symlink_metadata(clean))
-                                .and_then(|meta| meta.modified())
-                                .ok();
-                            (m, None, None, None)
-                        }
-                        Some(
-                            crate::action::SortOrder::Created
-                            | crate::action::SortOrder::CreatedReverse,
-                        ) => {
-                            let meta = std::fs::metadata(clean)
-                                .or_else(|_| std::fs::symlink_metadata(clean))
-                                .ok();
-                            let b = meta
-                                .as_ref()
-                                .and_then(|m| m.created().ok())
-                                .or_else(|| meta.as_ref().and_then(|m| m.modified().ok()));
-                            (None, b, None, None)
-                        }
-                        Some(
-                            crate::action::SortOrder::Size | crate::action::SortOrder::SizeReverse,
-                        ) => {
-                            let s = std::fs::metadata(clean)
-                                .or_else(|_| std::fs::symlink_metadata(clean))
-                                .map(|meta| meta.len())
-                                .ok();
-                            (None, None, s, None)
-                        }
-                        Some(
-                            crate::action::SortOrder::Extension
-                            | crate::action::SortOrder::ExtensionReverse,
-                        ) => {
-                            let ext = std::path::Path::new(clean)
-                                .extension()
-                                .and_then(|e| e.to_str());
-                            let range = ext.map(|e| {
-                                let start =
-                                    e.as_ptr() as usize - raw_path.as_ref().as_ptr() as usize;
-                                (start, start + e.len())
-                            });
-                            (None, None, None, range)
-                        }
-                        _ => (None, None, None, None),
-                    };
-                    DecoratedItem {
-                        item,
-                        tier,
-                        raw_path,
-                        clean_range,
-                        score,
-                        mtime,
-                        btime,
-                        size,
-                        ext_range,
-                    }
-                })
-                .collect();
-
-            decorated.sort_unstable_by(|a, b| {
-                if let Some(sort_order) = effective_sort_order {
-                    use crate::action::SortOrder;
-                    if effective_dir_first && a.tier != b.tier {
-                        return a.tier.cmp(&b.tier);
-                    }
-
-                    let ord = match sort_order {
-                        SortOrder::Alphabetical => cmp_ascii_case_insensitive(a.clean(), b.clean())
-                            .then_with(|| a.clean().cmp(b.clean())),
-                        SortOrder::AlphabeticalReverse => {
-                            cmp_ascii_case_insensitive(b.clean(), a.clean())
-                                .then_with(|| b.clean().cmp(a.clean()))
-                        }
-                        SortOrder::Natural => {
-                            crate::utils::string::natural_cmp(a.clean(), b.clean())
-                                .then_with(|| a.clean().cmp(b.clean()))
-                        }
-                        SortOrder::NaturalReverse => {
-                            crate::utils::string::natural_cmp(b.clean(), a.clean())
-                                .then_with(|| b.clean().cmp(a.clean()))
-                        }
-                        SortOrder::Modified => {
-                            let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            a_time.cmp(&b_time).then_with(|| {
-                                crate::utils::string::natural_cmp(a.clean(), b.clean())
-                            })
-                        }
-                        SortOrder::ModifiedReverse => {
-                            let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            b_time.cmp(&a_time).then_with(|| {
-                                crate::utils::string::natural_cmp(a.clean(), b.clean())
-                            })
-                        }
-                        SortOrder::Created => {
-                            let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            a_time.cmp(&b_time).then_with(|| {
-                                crate::utils::string::natural_cmp(a.clean(), b.clean())
-                            })
-                        }
-                        SortOrder::CreatedReverse => {
-                            let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            b_time.cmp(&a_time).then_with(|| {
-                                crate::utils::string::natural_cmp(a.clean(), b.clean())
-                            })
-                        }
-                        SortOrder::Size => {
-                            let a_size = a.size.unwrap_or(0);
-                            let b_size = b.size.unwrap_or(0);
-                            a_size.cmp(&b_size).then_with(|| {
-                                crate::utils::string::natural_cmp(a.clean(), b.clean())
-                            })
-                        }
-                        SortOrder::SizeReverse => {
-                            let a_size = a.size.unwrap_or(0);
-                            let b_size = b.size.unwrap_or(0);
-                            b_size.cmp(&a_size).then_with(|| {
-                                crate::utils::string::natural_cmp(a.clean(), b.clean())
-                            })
-                        }
-                        SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
-                            .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
-                        SortOrder::ExtensionReverse => cmp_ascii_case_insensitive(b.ext(), a.ext())
-                            .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
-                    };
-
-                    if ord != std::cmp::Ordering::Equal {
-                        return ord;
-                    }
-                    return b.score.cmp(&a.score);
-                }
-
-                if a.tier != b.tier {
+        decorated.sort_unstable_by(|a, b| {
+            if let Some(sort_order) = effective_sort_order {
+                use crate::action::SortOrder;
+                if effective_dir_first && a.tier != b.tier {
                     return a.tier.cmp(&b.tier);
                 }
 
-                if a.tier < 2 {
-                    let cmp = cmp_ascii_case_insensitive(a.clean(), b.clean());
-                    if cmp != std::cmp::Ordering::Equal {
-                        return cmp;
+                let ord = match sort_order {
+                    SortOrder::Alphabetical => cmp_ascii_case_insensitive(a.clean(), b.clean())
+                        .then_with(|| a.clean().cmp(b.clean())),
+                    SortOrder::AlphabeticalReverse => {
+                        cmp_ascii_case_insensitive(b.clean(), a.clean())
+                            .then_with(|| b.clean().cmp(a.clean()))
                     }
+                    SortOrder::Natural => {
+                        crate::utils::string::natural_cmp(a.clean(), b.clean())
+                            .then_with(|| a.clean().cmp(b.clean()))
+                    }
+                    SortOrder::NaturalReverse => {
+                        crate::utils::string::natural_cmp(b.clean(), a.clean())
+                            .then_with(|| b.clean().cmp(a.clean()))
+                    }
+                    SortOrder::Modified => {
+                        let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        a_time.cmp(&b_time).then_with(|| {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                        })
+                    }
+                    SortOrder::ModifiedReverse => {
+                        let a_time = a.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        let b_time = b.mtime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        b_time.cmp(&a_time).then_with(|| {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                        })
+                    }
+                    SortOrder::Created => {
+                        let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        a_time.cmp(&b_time).then_with(|| {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                        })
+                    }
+                    SortOrder::CreatedReverse => {
+                        let a_time = a.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        let b_time = b.btime.unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                        b_time.cmp(&a_time).then_with(|| {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                        })
+                    }
+                    SortOrder::Size => {
+                        let a_size = a.size.unwrap_or(0);
+                        let b_size = b.size.unwrap_or(0);
+                        a_size.cmp(&b_size).then_with(|| {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                        })
+                    }
+                    SortOrder::SizeReverse => {
+                        let a_size = a.size.unwrap_or(0);
+                        let b_size = b.size.unwrap_or(0);
+                        b_size.cmp(&a_size).then_with(|| {
+                            crate::utils::string::natural_cmp(a.clean(), b.clean())
+                        })
+                    }
+                    SortOrder::Extension => cmp_ascii_case_insensitive(a.ext(), b.ext())
+                        .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
+                    SortOrder::ExtensionReverse => cmp_ascii_case_insensitive(b.ext(), a.ext())
+                        .then_with(|| crate::utils::string::natural_cmp(a.clean(), b.clean())),
+                };
+
+                if ord != std::cmp::Ordering::Equal {
+                    return ord;
                 }
+                return b.score.cmp(&a.score);
+            }
 
-                b.score.cmp(&a.score)
-            });
+            if a.tier != b.tier {
+                return a.tier.cmp(&b.tier);
+            }
 
+            if a.tier < 2 {
+                let cmp = cmp_ascii_case_insensitive(a.clean(), b.clean());
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
+            }
+
+            b.score.cmp(&a.score)
+        });
+
+        Some(decorated)
+    }
+
+    pub fn get_nth(&self, n: u32) -> Option<&T> {
+        let snapshot = self.nucleo.snapshot();
+        let total = snapshot.matched_item_count();
+        if n >= total {
+            return None;
+        }
+
+        let query_str = self.query.primary_column_query().unwrap_or_default();
+        let is_query_empty = query_str.is_empty();
+
+        if let Some(decorated) = self.get_sorted_decorated(&snapshot) {
             decorated.get(n as usize).map(|d| d.item.data).or_else(|| {
                 if is_query_empty && self.mode_index != 0 {
                     snapshot.get_item(n).map(|item| item.data)
@@ -650,6 +670,66 @@ impl<T: SSS> Worker<T> {
             snapshot.get_item(n).map(|item| item.data)
         } else {
             snapshot.get_matched_item(n).map(|item| item.data)
+        }
+    }
+
+    pub fn find_item_index<F>(&self, mut predicate: F) -> Option<usize>
+    where
+        F: FnMut(&T) -> bool,
+    {
+        let snapshot = self.nucleo.snapshot();
+        let total = snapshot.matched_item_count();
+        if total == 0 {
+            return None;
+        }
+
+        let query_str = self.query.primary_column_query().unwrap_or_default();
+        let is_query_empty = query_str.is_empty();
+
+        if let Some(decorated) = self.get_sorted_decorated(&snapshot) {
+            for (idx, d) in decorated.iter().enumerate() {
+                if predicate(d.item.data) {
+                    return Some(idx);
+                }
+            }
+            if is_query_empty && self.mode_index != 0 {
+                let item_count = snapshot.item_count() as usize;
+                for idx in decorated.len()..item_count {
+                    if let Some(item) = snapshot.get_item(idx as u32) {
+                        if predicate(item.data) {
+                            return Some(idx);
+                        }
+                    }
+                }
+            } else {
+                for idx in decorated.len()..total as usize {
+                    if let Some(item) = snapshot.get_matched_item(idx as u32) {
+                        if predicate(item.data) {
+                            return Some(idx);
+                        }
+                    }
+                }
+            }
+            None
+        } else if is_query_empty && self.mode_index != 0 {
+            let item_count = snapshot.item_count() as usize;
+            for idx in 0..item_count {
+                if let Some(item) = snapshot.get_item(idx as u32) {
+                    if predicate(item.data) {
+                        return Some(idx);
+                    }
+                }
+            }
+            None
+        } else {
+            for idx in 0..total as usize {
+                if let Some(item) = snapshot.get_matched_item(idx as u32) {
+                    if predicate(item.data) {
+                        return Some(idx);
+                    }
+                }
+            }
+            None
         }
     }
 
@@ -812,33 +892,6 @@ impl<T: SSS> Worker<T> {
                     };
                     if has_frecency || is_direct {
                         items.push((total_sort as usize + idx, item));
-                    }
-                }
-            }
-            struct DecoratedItem<'a, T> {
-                item: nucleo::Item<'a, T>,
-                tier: u8,
-                raw_path: Cow<'a, str>,
-                clean_range: (usize, usize),
-                score: u64,
-                mtime: Option<std::time::SystemTime>,
-                btime: Option<std::time::SystemTime>,
-                size: Option<u64>,
-                ext_range: Option<(usize, usize)>,
-            }
-
-            impl<'a, T> DecoratedItem<'a, T> {
-                #[inline]
-                fn clean(&self) -> &str {
-                    &self.raw_path[self.clean_range.0..self.clean_range.1]
-                }
-
-                #[inline]
-                fn ext(&self) -> &str {
-                    if let Some((start, end)) = self.ext_range {
-                        &self.raw_path[start..end]
-                    } else {
-                        ""
                     }
                 }
             }
@@ -2350,6 +2403,50 @@ mod tests {
         for (idx, (header, _, item_data)) in results.iter().enumerate() {
             assert_eq!(*header, None, "Expected no tier separator in mode 1");
             assert_eq!(*item_data, &paths[idx], "Mismatch at position {idx}");
+        }
+    }
+
+    #[test]
+    fn test_find_item_index() {
+        let mut worker = Worker::<String>::new_single_column();
+        worker.dir_first = true;
+        worker.depth_penalty = 15;
+
+        let items = vec![
+            "src/sub/deep.rs".to_string(),
+            "docs/".to_string(),
+            "Cargo.toml".to_string(),
+            "src/".to_string(),
+            "README.md".to_string(),
+        ];
+
+        let injector = worker.nucleo.injector();
+        for item in &items {
+            injector.push(item.clone(), |val, cols| {
+                cols[0] = val.clone().into();
+            });
+        }
+
+        while worker.nucleo.snapshot().item_count() < items.len() as u32 {
+            worker.nucleo.tick(10);
+        }
+
+        // With dir_first = true:
+        // Tier 0 (direct dirs): docs/, src/ (alphabetical: docs/, src/)
+        // Tier 1 (direct files): Cargo.toml, README.md (alphabetical)
+        // Tier 2 (deep items): src/sub/deep.rs
+        assert_eq!(worker.find_item_index(|s| s == "docs/"), Some(0));
+        assert_eq!(worker.find_item_index(|s| s == "src/"), Some(1));
+        assert_eq!(worker.find_item_index(|s| s == "Cargo.toml"), Some(2));
+        assert_eq!(worker.find_item_index(|s| s == "README.md"), Some(3));
+        assert_eq!(worker.find_item_index(|s| s == "src/sub/deep.rs"), Some(4));
+        assert_eq!(worker.find_item_index(|s| s == "nonexistent"), None);
+
+        // Verify get_nth matches find_item_index
+        for target in &items {
+            let idx = worker.find_item_index(|s| s == target).unwrap();
+            let nth = worker.get_nth(idx as u32).unwrap();
+            assert_eq!(nth, target);
         }
     }
 }

@@ -79,10 +79,23 @@ pub struct Config {
     #[partial(no_recurse)]
     pub default_sort: Option<SortOrder>,
 
+    // configure native directory walker
+    #[partial(attr, alias = "w")]
+    #[serde(default)]
+    pub walker: WalkerConfig,
+
     /// imports: only supported on overrides and with one nesting level
     #[serde(default)]
     #[partial(no_recurse)]
     pub source: Option<std::path::PathBuf>,
+}
+
+impl Config {
+    pub fn resolve(&mut self) {
+        if let Some(ref sw) = self.start.walker {
+            self.walker.merge(sw);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -365,5 +378,70 @@ mod tests {
             .iter()
             .any(|a| matches!(a, Action::Custom(crate::action::MMAction::ReloadNext(None))));
         assert!(has_reloadnext, "tab binding should resolve to ReloadNext");
+    }
+
+    #[test]
+    fn test_walker_and_start_walker_table_equivalence() {
+        use matchmaker_partial::Apply;
+
+        let toml_walker = r#"
+            [walker]
+            ignore = [".git", ".cache", "custom"]
+            hidden = false
+        "#;
+        let p_walker: PartialConfig = toml::from_str(toml_walker).unwrap();
+        let mut cfg_walker = Config::default();
+        cfg_walker.apply(p_walker);
+        cfg_walker.resolve();
+
+        let toml_start_walker = r#"
+            [start.walker]
+            ignore = [".git", ".cache", "custom"]
+            hidden = false
+        "#;
+        let p_start_walker: PartialConfig = toml::from_str(toml_start_walker).unwrap();
+        let mut cfg_start_walker = Config::default();
+        cfg_start_walker.apply(p_start_walker);
+        cfg_start_walker.resolve();
+
+        assert_eq!(cfg_walker.walker.ignore, cfg_start_walker.walker.ignore);
+        assert_eq!(cfg_walker.walker.hidden, cfg_start_walker.walker.hidden);
+        assert_eq!(
+            cfg_walker.walker.effective_ignore(),
+            cfg_start_walker.walker.effective_ignore()
+        );
+    }
+
+    #[test]
+    fn test_walker_native_defaults_and_override() {
+        use matchmaker_partial::Apply;
+
+        // Base config has native ignored directories by default
+        let cfg = Config::default();
+        let eff = cfg.walker.effective_ignore();
+        assert!(eff.contains(&".git".to_string()));
+        assert!(eff.contains(&".cache".to_string()));
+        assert!(eff.contains(&".local".to_string()));
+        assert!(eff.contains(&".cargo".to_string()));
+        assert!(eff.contains(&".rustup".to_string()));
+        assert!(eff.contains(&".npm".to_string()));
+        assert!(eff.contains(&"node_modules".to_string()));
+        assert!(eff.contains(&"target".to_string()));
+        assert!(eff.contains(&".venv".to_string()));
+
+        // Override via TOML
+        let toml_override = r#"
+            [walker]
+            extra_ignore = ["my_cache", "build/"]
+        "#;
+        let partial: PartialConfig = toml::from_str(toml_override).unwrap();
+        let mut cfg2 = Config::default();
+        cfg2.apply(partial);
+        cfg2.resolve();
+
+        let eff2 = cfg2.walker.effective_ignore();
+        assert!(eff2.contains(&"my_cache".to_string()));
+        assert!(eff2.contains(&"build".to_string()));
+        assert!(eff2.contains(&".cache".to_string()));
     }
 }

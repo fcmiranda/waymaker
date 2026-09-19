@@ -1,4 +1,3 @@
-use std::hash::{Hash, Hasher};
 use log::error;
 use ratatui::{
     Frame,
@@ -7,6 +6,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
+use std::hash::{Hash, Hasher};
 
 use crate::{
     config::{
@@ -53,6 +53,7 @@ pub struct PreviewUI {
     last_pan_instant: Option<std::time::Instant>,
     diagram_png_cache: Option<(usize, u64, Vec<u8>, u32, u32)>,
     last_placeholder_transmission: Option<(usize, u32, u32, u32)>,
+    pub was_image: bool,
 }
 
 impl PreviewUI {
@@ -127,7 +128,9 @@ impl PreviewUI {
         let mut picker = None;
         if config.media.active {
             if std::env::var("TMUX").is_ok()
-                && std::env::var("TERM_PROGRAM").map(|v| v != "tmux").unwrap_or(true)
+                && std::env::var("TERM_PROGRAM")
+                    .map(|v| v != "tmux")
+                    .unwrap_or(true)
             {
                 #[allow(unused_unsafe)]
                 unsafe {
@@ -204,6 +207,7 @@ impl PreviewUI {
             last_pan_instant: None,
             diagram_png_cache: None,
             last_placeholder_transmission: None,
+            was_image: false,
         };
         ret.set_layout(idx);
         ret
@@ -272,7 +276,11 @@ impl PreviewUI {
             self.last_crop_params = None;
             self.last_pan_instant = None;
             self.diagram_png_cache = None;
-            self.last_placeholder_transmission = None;
+            if let Some((_, _, _, last_id)) = self.last_placeholder_transmission.take() {
+                crate::utils::mermaid::delete_kitty_image(last_id);
+            }
+            self.image_state = None;
+            self.last_image_area = Rect::default();
         }
         self.title = title;
     }
@@ -395,7 +403,11 @@ impl PreviewUI {
                             (1u8, cur_scroll.saturating_sub(diag_line), 0usize)
                         } else {
                             // Priority 1: below viewport
-                            (1u8, diag_line.saturating_sub(cur_scroll + height) + 1, 0usize)
+                            (
+                                1u8,
+                                diag_line.saturating_sub(cur_scroll + height) + 1,
+                                0usize,
+                            )
                         };
                         if score < best_score {
                             best_score = score;
@@ -482,7 +494,9 @@ impl PreviewUI {
             let height = self.area.height as usize;
             let n_usize = n as usize;
             let header_count = self.initial().header_lines.min(height);
-            let max_offset = total_lines.saturating_sub(height).saturating_sub(header_count);
+            let max_offset = total_lines
+                .saturating_sub(height)
+                .saturating_sub(header_count);
 
             if self.offset >= n_usize {
                 self.offset -= n_usize;
@@ -509,7 +523,9 @@ impl PreviewUI {
             let height = self.area.height as usize;
             let n_usize = n as usize;
             let header_count = self.initial().header_lines.min(height);
-            let max_offset = total_lines.saturating_sub(height).saturating_sub(header_count);
+            let max_offset = total_lines
+                .saturating_sub(height)
+                .saturating_sub(header_count);
 
             if self.config.scroll_wrap {
                 if self.offset >= max_offset {
@@ -940,29 +956,33 @@ impl PreviewUI {
         let raw_virt_rows = (natural_rows * total_scale).round() as u32;
 
         const MAX_DIACRITIC: u32 = 255;
-        let (virt_cols, virt_rows) = if raw_virt_cols > MAX_DIACRITIC || raw_virt_rows > MAX_DIACRITIC {
+        let (virt_cols, virt_rows) = if raw_virt_cols > MAX_DIACRITIC
+            || raw_virt_rows > MAX_DIACRITIC
+        {
             let clamp_scale = (MAX_DIACRITIC as f32 / raw_virt_cols.max(1) as f32)
                 .min(MAX_DIACRITIC as f32 / raw_virt_rows.max(1) as f32);
             let c = ((raw_virt_cols as f32 * clamp_scale).round() as u32).clamp(1, MAX_DIACRITIC);
             let r = ((raw_virt_rows as f32 * clamp_scale).round() as u32).clamp(1, MAX_DIACRITIC);
             (c, r)
         } else {
-            (raw_virt_cols.clamp(1, MAX_DIACRITIC), raw_virt_rows.clamp(1, MAX_DIACRITIC))
+            (
+                raw_virt_cols.clamp(1, MAX_DIACRITIC),
+                raw_virt_rows.clamp(1, MAX_DIACRITIC),
+            )
         };
 
         // 4. Transmit image to terminal if zoom level or diagram changed (cached idempotently)
         // Zero byte cloning: borrows &bytes from cache only on cache miss / transmission change.
-        let image_id = if let Some((last_idx, last_cols, last_rows, last_id)) = self.last_placeholder_transmission {
+        let image_id = if let Some((last_idx, last_cols, last_rows, last_id)) =
+            self.last_placeholder_transmission
+        {
             if last_idx == cur_idx && last_cols == virt_cols && last_rows == virt_rows {
                 last_id
             } else {
                 let new_id = crate::utils::mermaid::next_diagram_image_id();
                 let png_bytes = &self.diagram_png_cache.as_ref()?.2;
                 let transmission = crate::utils::mermaid::encode_kitty_unicode_transmission(
-                    png_bytes,
-                    new_id,
-                    virt_cols,
-                    virt_rows,
+                    png_bytes, new_id, virt_cols, virt_rows,
                 );
                 crate::utils::mermaid::transmit_kitty_image_idempotent(new_id, &transmission);
                 crate::utils::mermaid::delete_kitty_image(last_id);
@@ -973,10 +993,7 @@ impl PreviewUI {
             let new_id = crate::utils::mermaid::next_diagram_image_id();
             let png_bytes = &self.diagram_png_cache.as_ref()?.2;
             let transmission = crate::utils::mermaid::encode_kitty_unicode_transmission(
-                png_bytes,
-                new_id,
-                virt_cols,
-                virt_rows,
+                png_bytes, new_id, virt_cols, virt_rows,
             );
             crate::utils::mermaid::transmit_kitty_image_idempotent(new_id, &transmission);
             self.last_placeholder_transmission = Some((cur_idx, virt_cols, virt_rows, new_id));
@@ -1051,7 +1068,9 @@ impl PreviewUI {
                 }
             }
 
-            lines.push(ratatui::text::Line::from(ratatui::text::Span::styled(row_str, style)));
+            lines.push(ratatui::text::Line::from(ratatui::text::Span::styled(
+                row_str, style,
+            )));
         }
 
         let remaining = (vp_h as usize).saturating_sub(lines.len());
@@ -1063,6 +1082,18 @@ impl PreviewUI {
     }
 
     pub fn get_image_state(&mut self) -> Option<&mut ratatui_image::protocol::StatefulProtocol> {
+        let has_image = if let Ok(guard) = self.view.image.lock() {
+            guard.is_some()
+        } else {
+            false
+        };
+
+        if !has_image {
+            self.image_state = None;
+            self.last_crop_params = None;
+            return None;
+        }
+
         let live_image_id = self
             .view
             .image_id
@@ -1070,7 +1101,7 @@ impl PreviewUI {
 
         let area_changed = self.area != self.last_image_area;
 
-        if live_image_id != self.current_image_id || area_changed {
+        if live_image_id != self.current_image_id || area_changed || self.image_state.is_none() {
             self.current_image_id = live_image_id;
             self.last_image_area = self.area;
 
@@ -1120,10 +1151,14 @@ impl PreviewUI {
                     self.pan_y = (pan_px_y / font_h).round() as i32;
 
                     // Compute source rectangle inside img coordinates
-                    let src_x = ((pan_px_x / scale).round() as u32).min(img.width().saturating_sub(1));
-                    let src_y = ((pan_px_y / scale).round() as u32).min(img.height().saturating_sub(1));
-                    let src_w = ((display_w as f32 / scale).round() as u32).clamp(1, img.width() - src_x);
-                    let src_h = ((display_h as f32 / scale).round() as u32).clamp(1, img.height() - src_y);
+                    let src_x =
+                        ((pan_px_x / scale).round() as u32).min(img.width().saturating_sub(1));
+                    let src_y =
+                        ((pan_px_y / scale).round() as u32).min(img.height().saturating_sub(1));
+                    let src_w =
+                        ((display_w as f32 / scale).round() as u32).clamp(1, img.width() - src_x);
+                    let src_h =
+                        ((display_h as f32 / scale).round() as u32).clamp(1, img.height() - src_y);
 
                     let crop_params = (src_x, src_y, src_w, src_h, display_w, display_h);
                     if self.last_crop_params == Some(crop_params) && self.image_state.is_some() {
@@ -1142,17 +1177,16 @@ impl PreviewUI {
                     };
 
                     let cropped = img.crop_imm(src_x, src_y, src_w, src_h);
-                    let display_img = cropped.resize_exact(
-                        display_w,
-                        display_h,
-                        filter,
-                    );
+                    let display_img = cropped.resize_exact(display_w, display_h, filter);
                     let state = picker.new_resize_protocol(display_img);
                     self.image_state = Some(state);
                 } else {
                     let state = picker.new_resize_protocol(img);
                     self.image_state = Some(state);
                 }
+            } else {
+                self.image_state = None;
+                self.last_crop_params = None;
             }
         }
 
@@ -1271,9 +1305,7 @@ impl PreviewUI {
             Some("{item}") => dynamic.to_string(),
             Some(t) if t.contains("{item}") => t.replace("{item}", dynamic),
             Some("$currentItemName") => dynamic.to_string(),
-            Some(t) if t.contains("$currentItemName") => {
-                t.replace("$currentItemName", dynamic)
-            }
+            Some(t) if t.contains("$currentItemName") => t.replace("$currentItemName", dynamic),
             Some(t) => t.to_string(),
         };
 
@@ -1306,8 +1338,7 @@ impl PreviewUI {
             }
             if let Some(counter) = self.diagram_counter_spans() {
                 block = block.title(
-                    ratatui::text::Line::from(counter)
-                        .alignment(ratatui::layout::Alignment::Right),
+                    ratatui::text::Line::from(counter).alignment(ratatui::layout::Alignment::Right),
                 );
             }
             Some(block)
@@ -1448,7 +1479,11 @@ impl PreviewUI {
 
         let (total_lines, visible_height, offset) = if self.is_diagram_mode() {
             if let Some((_, _, rows, _)) = self.last_placeholder_transmission {
-                (rows as usize, self.area.height as usize, self.pan_y.max(0) as usize)
+                (
+                    rows as usize,
+                    self.area.height as usize,
+                    self.pan_y.max(0) as usize,
+                )
             } else {
                 (self.view.len(), self.area.height as usize, self.offset)
             }
@@ -1567,7 +1602,8 @@ fn query_tty_picker(timeout: std::time::Duration) -> anyhow::Result<ratatui_imag
     if full_buf.is_empty() {
         if is_tmux || std::env::var("GHOSTTY_RESOURCES_DIR").is_ok() {
             #[allow(deprecated)]
-            let mut picker = ratatui_image::picker::Picker::from_fontsize(ratatui_image::FontSize::new(10, 20));
+            let mut picker =
+                ratatui_image::picker::Picker::from_fontsize(ratatui_image::FontSize::new(10, 20));
             picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
             let _ = std::process::Command::new("tmux")
                 .args(["set", "-p", "allow-passthrough", "all"])
@@ -1838,40 +1874,59 @@ mod tests {
         };
         let (previewer, _tx) = Previewer::new(Default::default());
         let img = image::DynamicImage::new_rgb8(100, 100);
-        previewer.set_image(img);
+        previewer.set_image(img.clone());
 
         let mut ui = PreviewUI::new(previewer.view(), config, [40, 10]);
         let state = ui.get_image_state();
-        assert!(state.is_some(), "State must be immediately available synchronously");
+        assert!(
+            state.is_some(),
+            "State must be immediately available synchronously"
+        );
 
         // Test Zoom In (2.0x magnification)
         ui.zoom = 2.0;
-        ui.view.image_id.fetch_add(1, std::sync::atomic::Ordering::Release);
+        ui.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
         let state_zoomed_in = ui.get_image_state();
         assert!(state_zoomed_in.is_some(), "State must be valid for zoom in");
 
         // Test Zoom Out (0.5x scaling)
         ui.zoom = 0.5;
-        ui.view.image_id.fetch_add(1, std::sync::atomic::Ordering::Release);
+        ui.view
+            .image_id
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
         let state_zoomed_out = ui.get_image_state();
-        assert!(state_zoomed_out.is_some(), "State must be valid for zoom out");
+        assert!(
+            state_zoomed_out.is_some(),
+            "State must be valid for zoom out"
+        );
 
         // Test dimension update (e.g. entering fullscreen preview)
         ui.update_dimensions(&Rect::new(0, 0, 80, 24));
         let state_resized = ui.get_image_state();
-        assert!(state_resized.is_some(), "State must be updated for new area");
+        assert!(
+            state_resized.is_some(),
+            "State must be updated for new area"
+        );
 
         // Test Panning when zoomed in
         ui.zoom = 5.0;
         ui.down(5);
         assert_eq!(ui.pan_y, 5);
         let state_panned_down = ui.get_image_state();
-        assert!(state_panned_down.is_some(), "State must update on vertical pan down");
+        assert!(
+            state_panned_down.is_some(),
+            "State must update on vertical pan down"
+        );
 
         ui.scroll(true, 10);
         assert_eq!(ui.pan_x, 10);
         let state_panned_right = ui.get_image_state();
-        assert!(state_panned_right.is_some(), "State must update on horizontal pan right");
+        assert!(
+            state_panned_right.is_some(),
+            "State must update on horizontal pan right"
+        );
 
         ui.up(2);
         assert_eq!(ui.pan_y, 3);
@@ -1881,6 +1936,22 @@ mod tests {
         ui.reset_scroll();
         assert_eq!(ui.pan_x, 0);
         assert_eq!(ui.pan_y, 0);
+
+        // Test clearing image: get_image_state must become None immediately
+        previewer.clear_image();
+        assert!(
+            ui.get_image_state().is_none(),
+            "Image state must become None when image is cleared"
+        );
+
+        // Test title change resets image state
+        previewer.set_image(img);
+        assert!(ui.get_image_state().is_some());
+        ui.set_title(Some("other_file.rs".to_string()));
+        assert!(
+            ui.image_state.is_none(),
+            "Title change must clear image_state"
+        );
     }
 
     #[test]
@@ -1907,25 +1978,41 @@ mod tests {
 
         let area = Rect::new(0, 0, 60, 20);
         let lines_opt = ui.get_diagram_placeholder_lines(area);
-        assert!(lines_opt.is_some(), "Diagram placeholder lines should be generated");
+        assert!(
+            lines_opt.is_some(),
+            "Diagram placeholder lines should be generated"
+        );
         let lines = lines_opt.unwrap();
         assert_eq!(lines.len(), 20, "Lines count must match viewport height");
 
         // Inspect that lines contain Kitty Unicode Placeholder
         let has_placeholder = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains(crate::utils::mermaid::PLACEHOLDER))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains(crate::utils::mermaid::PLACEHOLDER))
         });
-        assert!(has_placeholder, "Rendered lines must contain Kitty Unicode Placeholders");
+        assert!(
+            has_placeholder,
+            "Rendered lines must contain Kitty Unicode Placeholders"
+        );
 
         let initial_trans = ui.last_placeholder_transmission;
-        assert!(initial_trans.is_some(), "Transmission parameters must be recorded");
+        assert!(
+            initial_trans.is_some(),
+            "Transmission parameters must be recorded"
+        );
         let (_, _init_cols, _init_rows, init_id) = initial_trans.unwrap();
 
         // 1. Pan vertically and horizontally: verify ZERO re-transmissions (same image_id)
         ui.zoom = 2.0; // Zoom in to allow panning
-        let _lines_zoomed = ui.get_diagram_placeholder_lines(area).expect("Zoomed lines");
+        let _lines_zoomed = ui
+            .get_diagram_placeholder_lines(area)
+            .expect("Zoomed lines");
         let zoomed_trans = ui.last_placeholder_transmission.unwrap();
-        assert_ne!(zoomed_trans.3, init_id, "Zoom change must allocate a new transmission ID");
+        assert_ne!(
+            zoomed_trans.3, init_id,
+            "Zoom change must allocate a new transmission ID"
+        );
 
         let zoom_id = zoomed_trans.3;
 
@@ -1934,7 +2021,9 @@ mod tests {
         ui.pan_diagram_x(8);
         assert_eq!(ui.diagram_pan(), (8, 5));
 
-        let lines_panned = ui.get_diagram_placeholder_lines(area).expect("Panned lines");
+        let lines_panned = ui
+            .get_diagram_placeholder_lines(area)
+            .expect("Panned lines");
         assert_eq!(lines_panned.len(), 20);
 
         let panned_trans = ui.last_placeholder_transmission.unwrap();
@@ -1942,8 +2031,14 @@ mod tests {
             panned_trans.3, zoom_id,
             "CRITICAL: Panning must NEVER retransmit image across PTY — image_id must remain identical"
         );
-        assert_eq!(panned_trans.1, zoomed_trans.1, "Columns must remain unchanged on pan");
-        assert_eq!(panned_trans.2, zoomed_trans.2, "Rows must remain unchanged on pan");
+        assert_eq!(
+            panned_trans.1, zoomed_trans.1,
+            "Columns must remain unchanged on pan"
+        );
+        assert_eq!(
+            panned_trans.2, zoomed_trans.2,
+            "Rows must remain unchanged on pan"
+        );
 
         // 2. Reset diagram pan
         ui.reset_diagram_pan();
@@ -1990,7 +2085,10 @@ mod tests {
         assert!(!ui.is_diagram_mode());
         ui.offset = 10;
         ui.up(3);
-        assert_eq!(ui.offset, 7, "Normal mode up action must adjust text offset");
+        assert_eq!(
+            ui.offset, 7,
+            "Normal mode up action must adjust text offset"
+        );
     }
 
     #[test]
@@ -2020,7 +2118,9 @@ mod tests {
         ui.toggle_diagram();
         assert!(ui.show_diagram);
         assert_eq!(
-            ui.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed),
+            ui.view
+                .current_diagram_idx
+                .load(std::sync::atomic::Ordering::Relaxed),
             1,
             "Diagram 1 at line 60 is inside viewport 55..80 and must be focused"
         );
@@ -2037,7 +2137,9 @@ mod tests {
         ui.toggle_diagram();
         assert!(ui.show_diagram);
         assert_eq!(
-            ui.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed),
+            ui.view
+                .current_diagram_idx
+                .load(std::sync::atomic::Ordering::Relaxed),
             2,
             "Diagram 2 at line 150 must be focused when reading around line 140"
         );
@@ -2049,7 +2151,9 @@ mod tests {
         ui.toggle_diagram();
         assert!(ui.show_diagram);
         assert_eq!(
-            ui.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed),
+            ui.view
+                .current_diagram_idx
+                .load(std::sync::atomic::Ordering::Relaxed),
             0,
             "Diagram 0 at line 10 must be focused when reading at line 0"
         );
@@ -2063,7 +2167,9 @@ mod tests {
         ui.toggle_diagram();
         assert!(ui.show_diagram);
         assert_eq!(
-            ui.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed),
+            ui.view
+                .current_diagram_idx
+                .load(std::sync::atomic::Ordering::Relaxed),
             1,
             "Visible diagram at line 60 must beat off-screen diagram at line 48 even though 48 is close to viewport top"
         );
@@ -2082,7 +2188,9 @@ mod tests {
         ui.toggle_diagram();
         assert!(ui.show_diagram);
         assert_eq!(
-            ui.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed),
+            ui.view
+                .current_diagram_idx
+                .load(std::sync::atomic::Ordering::Relaxed),
             1,
             "When multiple diagrams are visible, the top one (line 55) must be chosen"
         );
@@ -2103,15 +2211,21 @@ mod tests {
             "graph TD\n  E --> F".to_string(),
         ];
         ui.show_diagram = true;
-        ui.view.current_diagram_idx.store(1, std::sync::atomic::Ordering::Relaxed);
+        ui.view
+            .current_diagram_idx
+            .store(1, std::sync::atomic::Ordering::Relaxed);
 
-        let spans = ui.diagram_counter_spans().expect("Counter spans in diagram mode");
+        let spans = ui
+            .diagram_counter_spans()
+            .expect("Counter spans in diagram mode");
         let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(full_text, " [2/3] ");
 
         // With zoom at 1.5
         ui.zoom = 1.5;
-        let spans_zoomed = ui.diagram_counter_spans().expect("Counter spans when zoomed");
+        let spans_zoomed = ui
+            .diagram_counter_spans()
+            .expect("Counter spans when zoomed");
         let zoomed_text: String = spans_zoomed.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(zoomed_text, " [2/3 · 150%] ");
     }

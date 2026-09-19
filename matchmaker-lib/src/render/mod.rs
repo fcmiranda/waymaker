@@ -424,9 +424,7 @@ fn process_results_nav_key<A: ActionExt>(
             out.push(RenderCommand::Action(Action::PreviewHalfPageDown));
             return;
         }
-        if key == "s"
-            && !focus_binds.contains_key("s")
-        {
+        if key == "s" && !focus_binds.contains_key("s") {
             out.push(RenderCommand::Action(Action::ToggleDiagram));
             return;
         }
@@ -437,27 +435,19 @@ fn process_results_nav_key<A: ActionExt>(
             out.push(RenderCommand::Action(Action::DiagramZoomIn));
             return;
         }
-        if key == "-"
-            && !focus_binds.contains_key("-")
-        {
+        if key == "-" && !focus_binds.contains_key("-") {
             out.push(RenderCommand::Action(Action::DiagramZoomOut));
             return;
         }
-        if key == "0"
-            && !focus_binds.contains_key("0")
-        {
+        if key == "0" && !focus_binds.contains_key("0") {
             out.push(RenderCommand::Action(Action::DiagramResetZoom));
             return;
         }
-        if (key == "]" || key == "n")
-            && !focus_binds.contains_key(key)
-        {
+        if (key == "]" || key == "n") && !focus_binds.contains_key(key) {
             out.push(RenderCommand::Action(Action::NextDiagram));
             return;
         }
-        if (key == "[" || key == "N")
-            && !focus_binds.contains_key(key)
-        {
+        if (key == "[" || key == "N") && !focus_binds.contains_key(key) {
             out.push(RenderCommand::Action(Action::PrevDiagram));
             return;
         }
@@ -771,9 +761,7 @@ fn apply_focus_binds_mode<A: ActionExt>(
                     preview_diagram_mode,
                 );
             }
-            RenderCommand::Action(Action::Up(n))
-                if preview_fullscreen || preview_diagram_mode =>
-            {
+            RenderCommand::Action(Action::Up(n)) if preview_fullscreen || preview_diagram_mode => {
                 last_consumed_nav_key = None;
                 process_results_nav_key(
                     "up",
@@ -1528,34 +1516,45 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                     .unwrap_or_default();
                                 if !offsets.is_empty() {
                                     let current = p.current_offset();
-                                    let (target, next_idx) = if matches!(action, Action::NextDiagram) {
-                                        // Find first offset strictly greater than current scroll
-                                        let found = offsets.iter().copied().enumerate().find(|(_, o)| *o > current);
-                                        if let Some((idx, o)) = found {
-                                            (o, idx)
+                                    let (target, next_idx) =
+                                        if matches!(action, Action::NextDiagram) {
+                                            // Find first offset strictly greater than current scroll
+                                            let found = offsets
+                                                .iter()
+                                                .copied()
+                                                .enumerate()
+                                                .find(|(_, o)| *o > current);
+                                            if let Some((idx, o)) = found {
+                                                (o, idx)
+                                            } else {
+                                                (*offsets.first().unwrap(), 0)
+                                            }
                                         } else {
-                                            (*offsets.first().unwrap(), 0)
-                                        }
-                                    } else {
-                                        // Find last offset strictly less than current scroll
-                                        let found = offsets.iter().copied().enumerate().rfind(|(_, o)| *o < current);
-                                        if let Some((idx, o)) = found {
-                                            (o, idx)
-                                        } else {
-                                            (*offsets.last().unwrap(), offsets.len() - 1)
-                                        }
-                                    };
+                                            // Find last offset strictly less than current scroll
+                                            let found = offsets
+                                                .iter()
+                                                .copied()
+                                                .enumerate()
+                                                .rfind(|(_, o)| *o < current);
+                                            if let Some((idx, o)) = found {
+                                                (o, idx)
+                                            } else {
+                                                (*offsets.last().unwrap(), offsets.len() - 1)
+                                            }
+                                        };
                                     p.scroll_to(target);
 
                                     // Update active diagram image from sources if available
-                                    let src_opt = p.view.diagram_sources.lock().ok().and_then(|sources| {
-                                        sources.get(next_idx).cloned()
-                                    });
+                                    let src_opt = p
+                                        .view
+                                        .diagram_sources
+                                        .lock()
+                                        .ok()
+                                        .and_then(|sources| sources.get(next_idx).cloned());
                                     if let Some(src) = src_opt {
-                                        p.view.current_diagram_idx.store(
-                                            next_idx,
-                                            std::sync::atomic::Ordering::Release,
-                                        );
+                                        p.view
+                                            .current_diagram_idx
+                                            .store(next_idx, std::sync::atomic::Ordering::Release);
                                         if let Some(img) =
                                             crate::utils::mermaid::render_mermaid_to_image_with_options(
                                                 &src,
@@ -1579,23 +1578,28 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         }
                                     }
                                 } else {
-                                    let src_opt = p.view.diagram_sources.lock().ok().and_then(|sources| {
-                                        if sources.is_empty() {
-                                            return None;
-                                        }
-                                        let total = sources.len();
-                                        let cur = p.view.current_diagram_idx.load(std::sync::atomic::Ordering::Relaxed);
-                                        let next_idx = if matches!(action, Action::NextDiagram) {
-                                            (cur + 1) % total
-                                        } else {
-                                            (cur + total.saturating_sub(1)) % total
-                                        };
-                                        p.view.current_diagram_idx.store(
-                                            next_idx,
-                                            std::sync::atomic::Ordering::Release,
-                                        );
-                                        sources.get(next_idx).cloned()
-                                    });
+                                    let src_opt =
+                                        p.view.diagram_sources.lock().ok().and_then(|sources| {
+                                            if sources.is_empty() {
+                                                return None;
+                                            }
+                                            let total = sources.len();
+                                            let cur = p
+                                                .view
+                                                .current_diagram_idx
+                                                .load(std::sync::atomic::Ordering::Relaxed);
+                                            let next_idx = if matches!(action, Action::NextDiagram)
+                                            {
+                                                (cur + 1) % total
+                                            } else {
+                                                (cur + total.saturating_sub(1)) % total
+                                            };
+                                            p.view.current_diagram_idx.store(
+                                                next_idx,
+                                                std::sync::atomic::Ordering::Release,
+                                            );
+                                            sources.get(next_idx).cloned()
+                                        });
                                     if let Some(src) = src_opt {
                                         if let Some(img) = crate::utils::mermaid::render_mermaid_to_image_with_options(
                                             &src,
@@ -1626,8 +1630,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             if let Some(p) = preview_ui.as_mut() {
                                 p.cycle_layout();
                                 p.current_dimension = None;
-                                p.view.image_id.fetch_add(1, std::sync::atomic::Ordering::Release);
-                                p.view.changed.store(true, std::sync::atomic::Ordering::Release);
+                                p.view
+                                    .image_id
+                                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+                                p.view
+                                    .changed
+                                    .store(true, std::sync::atomic::Ordering::Release);
                                 state.insert(crate::message::Event::PreviewChange);
                                 if !p.command().is_empty() {
                                     state.update_preview_payload(p.command());
@@ -2445,17 +2453,14 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 (_area, footer)
                             } else {
                                 let mut full_area = _area;
-                                let f = split(
-                                    &mut full_area,
-                                    effective_footer_height,
-                                    false,
-                                );
+                                let f = split(&mut full_area, effective_footer_height, false);
                                 (full_area, f)
                             };
                             [preview, Rect::default(), footer, Rect::default()]
                         } else {
                             // Temporarily widen the gap so the counter fits horizontally.
-                            let original_gap = preview_ui.setting().map(|s| s.layout.gap).unwrap_or(0);
+                            let original_gap =
+                                preview_ui.setting().map(|s| s.layout.gap).unwrap_or(0);
                             let effective_gap = original_gap.max(if _counter_gap_width > 0 {
                                 _counter_gap_width + 2
                             } else {
@@ -2657,9 +2662,9 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             };
 
                             if target_rect.height > 0 {
-                                let p = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(
-                                    breadcrumb_spans,
-                                ));
+                                let p = ratatui::widgets::Paragraph::new(
+                                    ratatui::text::Line::from(breadcrumb_spans),
+                                );
                                 frame.render_widget(p, target_rect);
                             }
                         }
@@ -2695,7 +2700,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                     if state.preview_fullscreen {
                         if footer.height > 0 {
-                            let zoom_pct = preview_ui.as_ref().map(|p| (p.zoom * 100.0).round() as u32);
+                            let zoom_pct =
+                                preview_ui.as_ref().map(|p| (p.zoom * 100.0).round() as u32);
                             render_nav_hints(
                                 frame,
                                 footer,
@@ -3014,6 +3020,7 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
             frame.render_widget(ratatui::widgets::Paragraph::new(lines), inner_area);
             render_badge_if_needed(frame, area, ui);
             ui.render_scrollbar(frame, area);
+            ui.was_image = true;
             return;
         }
     }
@@ -3025,6 +3032,7 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
         image_state_ready
     };
     if is_image {
+        ui.was_image = true;
         let block = if ui.is_fullscreen() {
             None
         } else {
@@ -3052,6 +3060,12 @@ fn render_preview(frame: &mut Frame, area: Rect, ui: &mut PreviewUI) {
         }
         render_badge_if_needed(frame, area, ui);
     } else {
+        if ui.was_image {
+            ui.was_image = false;
+            if crate::utils::mermaid::is_kitty_supported() {
+                crate::utils::mermaid::delete_kitty_all();
+            }
+        }
         let widget = ui.make_preview();
         frame.render_widget(widget, area);
         render_badge_if_needed(frame, area, ui);
@@ -3360,7 +3374,10 @@ fn render_nav_hints(
         let max_w = area.width as usize;
 
         for (key, label, color) in hints {
-            let label_owned = if preview_fullscreen && *key == "[+/-]" && let Some(pct) = zoom_pct {
+            let label_owned = if preview_fullscreen
+                && *key == "[+/-]"
+                && let Some(pct) = zoom_pct
+            {
                 format!("Zoom {pct}%")
             } else {
                 label.to_string()
@@ -3369,8 +3386,10 @@ fn render_nav_hints(
                 format!(" {key}"),
                 Style::default().fg(*color).add_modifier(Modifier::BOLD),
             );
-            let label_span =
-                Span::styled(format!(" {label_owned} "), Style::default().fg(Color::DarkGray));
+            let label_span = Span::styled(
+                format!(" {label_owned} "),
+                Style::default().fg(Color::DarkGray),
+            );
             let pair_w = key_span.width() + label_span.width();
             if total_w + pair_w > max_w {
                 break;
@@ -3396,7 +3415,10 @@ fn render_nav_hints(
                 let idx = row * cols + col;
                 if idx < hints.len() {
                     let (key, label, color) = hints[idx];
-                    let label_owned = if preview_fullscreen && key == "[+/-]" && let Some(pct) = zoom_pct {
+                    let label_owned = if preview_fullscreen
+                        && key == "[+/-]"
+                        && let Some(pct) = zoom_pct
+                    {
                         format!("Zoom {pct}%")
                     } else {
                         label.to_string()
@@ -3796,7 +3818,7 @@ mod test {
                 false,
                 &mut pending,
                 &mut sort_menu_active,
-            false,
+                false,
             );
             assert_eq!(buffer.len(), 1);
             assert!(matches!(buffer[0], RenderCommand::Action(Action::Quit(1))));
@@ -3835,7 +3857,7 @@ mod test {
                 false,
                 &mut pending,
                 &mut sort_menu_active,
-            false,
+                false,
             );
             assert_eq!(buffer.len(), 4);
             assert!(matches!(buffer[0], RenderCommand::Action(Action::ChDir(_))));
@@ -3881,7 +3903,7 @@ mod test {
                 false,
                 &mut pending,
                 &mut sort_menu_active,
-            false,
+                false,
             );
             assert_eq!(buffer.len(), 1);
             assert!(matches!(
@@ -4148,7 +4170,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::CyclePreview)
+        ));
 
         // Esc in Input when preview_fullscreen is true -> CyclePreview
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
@@ -4165,7 +4190,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::CyclePreview)
+        ));
 
         // ToggleFocus action directly when preview_fullscreen is true -> CyclePreview
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::ToggleFocus)];
@@ -4179,7 +4207,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::CyclePreview)
+        ));
 
         // j / k when preview_fullscreen is true -> PreviewDown(3) / PreviewUp(3)
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
@@ -4196,7 +4227,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewDown(3))
+        ));
 
         // h / l when preview_fullscreen is true -> PreviewHScroll(-6) / PreviewHScroll(6)
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('h'))];
@@ -4210,7 +4244,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(-6))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewHScroll(-6))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('l'))];
         apply_focus_binds(
@@ -4223,7 +4260,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(6))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewHScroll(6))
+        ));
 
         // d when preview_fullscreen is true -> PreviewHalfPageDown
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('d'))];
@@ -4237,7 +4277,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHalfPageDown)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewHalfPageDown)
+        ));
 
         // ctrl-d when preview_fullscreen is true -> PreviewHalfPageDown
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
@@ -4254,7 +4297,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHalfPageDown)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewHalfPageDown)
+        ));
 
         // u and ctrl-u when preview_fullscreen is true -> PreviewHalfPageUp
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('u'))];
@@ -4268,7 +4314,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHalfPageUp)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewHalfPageUp)
+        ));
 
         // s when preview_fullscreen is true -> ToggleDiagram
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('s'))];
@@ -4282,7 +4331,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::ToggleDiagram)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::ToggleDiagram)
+        ));
 
         // enter when preview_fullscreen is true -> CyclePreview
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
@@ -4299,7 +4351,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::CyclePreview)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::CyclePreview)
+        ));
 
         // y when preview_fullscreen is true -> Accept
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
@@ -4330,7 +4385,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewDown(3))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "k".to_string(),
@@ -4346,7 +4404,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(3))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewUp(3))
+        ));
 
         // Zoom keys when preview_fullscreen is true
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('+'))];
@@ -4360,7 +4421,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::DiagramZoomIn)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::DiagramZoomIn)
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('-'))];
         apply_focus_binds(
@@ -4373,7 +4437,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::DiagramZoomOut)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::DiagramZoomOut)
+        ));
 
         // gg and G scroll jumps when preview_fullscreen is true
         let mut buffer = vec![
@@ -4390,7 +4457,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(0))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewUp(0))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('G'))];
         apply_focus_binds(
@@ -4403,7 +4473,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(0))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewDown(0))
+        ));
     }
 
     #[test]
@@ -4429,7 +4502,10 @@ mod test {
             true, // preview_diagram_mode
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(3))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewUp(3))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "down".to_string(),
@@ -4446,7 +4522,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewDown(3))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "left".to_string(),
@@ -4463,7 +4542,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(-6))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewHScroll(-6))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "right".to_string(),
@@ -4480,7 +4562,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewHScroll(6))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewHScroll(6))
+        ));
 
         // 2. '0' resets zoom
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('0'))];
@@ -4495,7 +4580,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::DiagramResetZoom)));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::DiagramResetZoom)
+        ));
 
         // 3. 'z' does NOT reset zoom
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Char('z'))];
@@ -4509,7 +4597,10 @@ mod test {
             false,
             true,
         );
-        assert!(!matches!(buffer[0], RenderCommand::Action(Action::DiagramResetZoom)));
+        assert!(!matches!(
+            buffer[0],
+            RenderCommand::Action(Action::DiagramResetZoom)
+        ));
 
         // 4. Action::Up(1) and Action::Down(1) without KeyAction wrapper in diagram mode
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Up(1))];
@@ -4524,7 +4615,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(3))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewUp(3))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::Action(Action::Down(1))];
         apply_focus_binds_mode(
@@ -4538,7 +4632,10 @@ mod test {
             true,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(3))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewDown(3))
+        ));
 
         // 5. Fallback ctrl-shift-j and ctrl-shift-k preview scrolling
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
@@ -4556,7 +4653,10 @@ mod test {
             false,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewDown(5))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewDown(5))
+        ));
 
         let mut buffer = vec![RenderCommand::<NullActionExt>::KeyAction {
             key: "ctrl-shift-k".to_string(),
@@ -4573,7 +4673,10 @@ mod test {
             false,
         );
         assert_eq!(buffer.len(), 1);
-        assert!(matches!(buffer[0], RenderCommand::Action(Action::PreviewUp(5))));
+        assert!(matches!(
+            buffer[0],
+            RenderCommand::Action(Action::PreviewUp(5))
+        ));
     }
 }
 

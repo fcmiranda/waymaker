@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use super::AppendOnly;
 
 // Images?
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Preview {
     lines: AppendOnly<Line<'static>>,
     string: Arc<Mutex<Option<Text<'static>>>>,
@@ -60,6 +60,10 @@ impl Preview {
                 .map(|(_, line)| line.clone())
                 .collect()
         }
+    }
+
+    pub fn lines_len(&self) -> usize {
+        self.lines.len()
     }
 
     pub fn len(&self) -> usize {

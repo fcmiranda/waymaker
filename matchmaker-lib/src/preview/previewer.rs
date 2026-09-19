@@ -55,6 +55,7 @@ pub struct Previewer {
     pub diagram_sources: Arc<Mutex<Vec<String>>>,
     /// Index of the currently displayed diagram.
     pub current_diagram_idx: Arc<std::sync::atomic::AtomicUsize>,
+    generation: Arc<AtomicU64>,
 
     paused: bool,
     /// Maintain a queue of child processes to improve cleanup reliability
@@ -122,6 +123,7 @@ impl Previewer {
             diagram_offsets: Default::default(),
             diagram_sources: Default::default(),
             current_diagram_idx: Default::default(),
+            generation: Arc::new(AtomicU64::new(0)),
             paused: false,
 
             procs: Vec::new(),
@@ -154,11 +156,22 @@ impl Previewer {
         }
     }
 
+    pub fn clear_diagrams(&self) {
+        if let Ok(mut guard) = self.diagram_sources.lock() {
+            guard.clear();
+        }
+        if let Ok(mut guard) = self.diagram_offsets.lock() {
+            guard.clear();
+        }
+        self.current_diagram_idx.store(0, Ordering::Release);
+    }
+
     pub fn clear_string(&self) {
         if let Ok(mut guard) = self.string.lock() {
             *guard = None;
             self.changed.store(true, Ordering::Release);
         }
+        self.clear_diagrams();
     }
 
     pub fn has_string(&self) -> bool {
@@ -182,11 +195,15 @@ impl Previewer {
                 self.changed.store(true, Ordering::Release);
             }
         }
+        if crate::utils::mermaid::is_kitty_supported() {
+            crate::utils::mermaid::delete_kitty_all();
+        }
     }
 
     pub async fn run(mut self) -> Result<(), Vec<Child>> {
         while self.rx.changed().await.is_ok() {
             let m = self.rx.borrow_and_update().clone();
+            let task_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
 
             let mut is_debouncable = false;
             let mut key = String::new();
@@ -265,10 +282,14 @@ impl Previewer {
                     }
                     PreviewMessage::Unset => {
                         self.clear_string();
+                        self.clear_image();
+                        self.clear_diagrams();
                         self.last.clear();
                         continue;
                     }
                     PreviewMessage::Media(ref path) => {
+                        self.dispatch_kill();
+                        self.clear_diagrams();
                         if !self.config.delay_clear {
                             self.clear_image();
                             self.clear_string();
@@ -282,11 +303,16 @@ impl Previewer {
                         let image_id = self.image_id.clone();
                         let changed = self.changed.clone();
                         let event_tx = self.event_controller_tx.clone();
+                        let current_generation = self.generation.clone();
 
                         let media_size = self.config.media_size;
                         let rx = self.rx.clone();
                         tokio::task::spawn_blocking(move || {
-                            if rx.has_changed().unwrap_or(false) {
+                            let is_stale = || {
+                                rx.has_changed().unwrap_or(false)
+                                    || current_generation.load(Ordering::Acquire) != task_gen
+                            };
+                            if is_stale() {
                                 return;
                             }
 
@@ -390,17 +416,23 @@ impl Previewer {
                                 })
                             };
 
-                            if rx.has_changed().unwrap_or(false) {
+                            if is_stale() {
                                 return;
                             }
 
                             if let Some(img) = img_result {
                                 if let Ok(mut guard) = image_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *guard = Some(img);
                                     image_id.fetch_add(1, Ordering::Release);
                                     changed.store(true, Ordering::Release);
                                 }
                                 if let Ok(mut str_guard) = string_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *str_guard = None;
                                 }
                                 if let Some(ref tx) = event_tx {
@@ -437,6 +469,7 @@ impl Previewer {
                         let changed = self.changed.clone();
                         let rx = self.rx.clone();
                         let event_tx = self.event_controller_tx.clone();
+                        let current_generation = self.generation.clone();
                         let media_enabled = self.config.media;
                         let markdown_diagrams = self.config.markdown_diagrams;
                         let inline_diagrams = self.config.inline_diagrams;
@@ -445,7 +478,11 @@ impl Previewer {
                         let diagram_background = self.config.diagram_background;
 
                         tokio::task::spawn_blocking(move || {
-                            if rx.has_changed().unwrap_or(false) {
+                            let is_stale = || {
+                                rx.has_changed().unwrap_or(false)
+                                    || current_generation.load(Ordering::Acquire) != task_gen
+                            };
+                            if is_stale() {
                                 return;
                             }
 
@@ -457,17 +494,27 @@ impl Previewer {
 
                             if is_mermaid {
                                 let content = std::fs::read_to_string(p).ok();
+                                if is_stale() {
+                                    return;
+                                }
                                 if let Some(ref c) = content {
                                     if let Ok(mut src_guard) = diagram_sources_state.lock() {
+                                        if is_stale() {
+                                            return;
+                                        }
                                         *src_guard = vec![c.clone()];
                                     }
                                 }
-                                current_diagram_idx_state.store(
-                                    0,
-                                    std::sync::atomic::Ordering::Release,
-                                );
+                                if is_stale() {
+                                    return;
+                                }
+                                current_diagram_idx_state
+                                    .store(0, std::sync::atomic::Ordering::Release);
 
-                                if markdown_diagrams && inline_diagrams && crate::utils::mermaid::is_kitty_supported() {
+                                if markdown_diagrams
+                                    && inline_diagrams
+                                    && crate::utils::mermaid::is_kitty_supported()
+                                {
                                     if let Some(ref c) = content {
                                         if let Some(diag) = crate::utils::mermaid::render_mermaid_to_unicode_placeholders_with_options(
                                             c,
@@ -475,7 +522,7 @@ impl Previewer {
                                             diagram_theme,
                                             diagram_background,
                                         ) {
-                                            if rx.has_changed().unwrap_or(false) {
+                                            if is_stale() {
                                                 return;
                                             }
                                             crate::utils::mermaid::transmit_kitty_image_idempotent(diag.image_id, &diag.transmission);
@@ -484,16 +531,27 @@ impl Previewer {
                                             lines.extend(diag.lines);
                                             lines.push(Line::default());
                                             let rendered_text = Text::from(lines);
+                                            if is_stale() {
+                                                return;
+                                            }
                                             if let Ok(mut guard) = string_state.lock() {
+                                                if is_stale() {
+                                                    return;
+                                                }
                                                 *guard = Some(rendered_text);
                                                 changed.store(true, Ordering::Release);
                                             }
                                             if let Ok(mut img_guard) = image_state.lock() {
+                                                if is_stale() {
+                                                    return;
+                                                }
                                                 *img_guard = None;
                                                 image_id.fetch_add(1, Ordering::Release);
                                             }
                                             if let Some(ref tx) = event_tx {
-                                                let _ = tx.send(crate::message::Event::PreviewChange);
+                                                if !is_stale() {
+                                                    let _ = tx.send(crate::message::Event::PreviewChange);
+                                                }
                                             }
                                             return;
                                         }
@@ -506,21 +564,30 @@ impl Previewer {
                                         p, 2.0, diagram_theme, diagram_background, // Scale 2.0 for high-DPI rendering
                                     );
 
-                                    if rx.has_changed().unwrap_or(false) {
+                                    if is_stale() {
                                         return;
                                     }
 
                                     if let Some(rendered_img) = img {
                                         if let Ok(mut guard) = image_state.lock() {
+                                            if is_stale() {
+                                                return;
+                                            }
                                             *guard = Some(rendered_img);
                                             image_id.fetch_add(1, Ordering::Release);
                                             changed.store(true, Ordering::Release);
                                         }
                                         if let Ok(mut str_guard) = string_state.lock() {
+                                            if is_stale() {
+                                                return;
+                                            }
                                             *str_guard = None;
                                         }
                                         if let Some(ref tx) = event_tx {
-                                            let _ = tx.send(crate::message::Event::PreviewChange);
+                                            if !is_stale() {
+                                                let _ =
+                                                    tx.send(crate::message::Event::PreviewChange);
+                                            }
                                         }
                                         return;
                                     }
@@ -537,24 +604,33 @@ impl Previewer {
                                 };
                                 let rendered_text = match content {
                                     Some(ref c) => crate::utils::mermaid::render_mermaid(c, &opts),
-                                    None => crate::utils::mermaid::render_mermaid_file(p, &opts).unwrap_or_else(|err| {
-                                        Text::from(format!("Error reading Mermaid file: {err}"))
-                                    }),
+                                    None => crate::utils::mermaid::render_mermaid_file(p, &opts)
+                                        .unwrap_or_else(|err| {
+                                            Text::from(format!("Error reading Mermaid file: {err}"))
+                                        }),
                                 };
 
-                                if rx.has_changed().unwrap_or(false) {
+                                if is_stale() {
                                     return;
                                 }
                                 if let Ok(mut guard) = string_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *guard = Some(rendered_text);
                                     changed.store(true, Ordering::Release);
                                 }
                                 if let Ok(mut img_guard) = image_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *img_guard = None;
                                     image_id.fetch_add(1, Ordering::Release);
                                 }
                                 if let Some(ref tx) = event_tx {
-                                    let _ = tx.send(crate::message::Event::PreviewChange);
+                                    if !is_stale() {
+                                        let _ = tx.send(crate::message::Event::PreviewChange);
+                                    }
                                 }
                             } else {
                                 // Markdown file — render with diagram offset tracking
@@ -579,7 +655,7 @@ impl Previewer {
                                         )
                                     });
 
-                                if rx.has_changed().unwrap_or(false) {
+                                if is_stale() {
                                     return;
                                 }
 
@@ -589,9 +665,10 @@ impl Previewer {
                                 if media_enabled {
                                     if let Ok(content) = std::fs::read_to_string(p) {
                                         let diagrams =
-                                            crate::utils::markdown::extract_mermaid_blocks(&content);
-                                        sources =
-                                            diagrams.into_iter().map(|(_, s)| s).collect();
+                                            crate::utils::markdown::extract_mermaid_blocks(
+                                                &content,
+                                            );
+                                        sources = diagrams.into_iter().map(|(_, s)| s).collect();
                                         if let Some(first_diag) = sources.first() {
                                             diag_img =
                                                 crate::utils::mermaid::render_mermaid_to_image_with_options(
@@ -601,33 +678,48 @@ impl Previewer {
                                     }
                                 }
 
-                                if rx.has_changed().unwrap_or(false) {
+                                if is_stale() {
                                     return;
                                 }
 
                                 if let Ok(mut img_guard) = image_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *img_guard = diag_img;
                                     image_id.fetch_add(1, Ordering::Release);
                                 }
                                 if let Ok(mut src_guard) = diagram_sources_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *src_guard = sources;
                                 }
-                                current_diagram_idx_state.store(
-                                    0,
-                                    std::sync::atomic::Ordering::Release,
-                                );
+                                if is_stale() {
+                                    return;
+                                }
+                                current_diagram_idx_state
+                                    .store(0, std::sync::atomic::Ordering::Release);
 
                                 // Store diagram offsets for navigation
                                 if let Ok(mut diag_guard) = diagram_offsets_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *diag_guard = offsets;
                                 }
                                 if let Ok(mut guard) = string_state.lock() {
+                                    if is_stale() {
+                                        return;
+                                    }
                                     *guard = Some(rendered_text);
                                     changed.store(true, Ordering::Release);
                                 }
 
                                 if let Some(ref tx) = event_tx {
-                                    let _ = tx.send(crate::message::Event::PreviewChange);
+                                    if !is_stale() {
+                                        let _ = tx.send(crate::message::Event::PreviewChange);
+                                    }
                                 }
                             }
                         });
@@ -639,9 +731,10 @@ impl Previewer {
 
             if !matches!(m, PreviewMessage::Media(_) | PreviewMessage::Markdown(_, _)) {
                 self.dispatch_kill();
+                self.clear_image();
+                self.clear_diagrams();
                 if !self.config.delay_clear {
                     self.clear_string();
-                    self.clear_image();
                 }
             }
 
@@ -684,6 +777,11 @@ impl Previewer {
                             let cmd_str = cmd.clone();
                             let string_state = self.string.clone();
                             let image_state = self.image.clone();
+                            let image_id = self.image_id.clone();
+                            let diagram_sources_state = self.diagram_sources.clone();
+                            let diagram_offsets_state = self.diagram_offsets.clone();
+                            let current_diagram_idx_state = self.current_diagram_idx.clone();
+                            let current_generation = self.generation.clone();
 
                             // false => needs refresh (i.e. invalid utf-8)
                             let handle = tokio::spawn(async move {
@@ -693,19 +791,34 @@ impl Previewer {
                                 let mut first = true;
 
                                 while let Ok(n) = std::io::Read::read(&mut reader, &mut buf) {
-                                    if n == 0 {
+                                    if n == 0
+                                        || current_generation.load(Ordering::Acquire) != task_gen
+                                    {
                                         break;
                                     }
 
                                     if first {
+                                        if current_generation.load(Ordering::Acquire) != task_gen {
+                                            break;
+                                        }
                                         if self.config.delay_clear {
                                             lines.clear();
                                             if let Ok(mut s) = string_state.lock() {
                                                 *s = None;
                                             }
                                             if let Ok(mut img) = image_state.lock() {
-                                                *img = None;
+                                                if img.is_some() {
+                                                    *img = None;
+                                                    image_id.fetch_add(1, Ordering::Release);
+                                                }
                                             }
+                                            if let Ok(mut d) = diagram_sources_state.lock() {
+                                                d.clear();
+                                            }
+                                            if let Ok(mut d) = diagram_offsets_state.lock() {
+                                                d.clear();
+                                            }
+                                            current_diagram_idx_state.store(0, Ordering::Release);
                                             guard = lines.read(); // get new consistent snapshot
                                             changed.store(true, Ordering::Relaxed);
                                         }
@@ -731,7 +844,10 @@ impl Previewer {
                                         Ok(text) => {
                                             for line in text {
                                                 // re-check before pushing
-                                                if lines.is_expired(&guard) {
+                                                if current_generation.load(Ordering::Acquire)
+                                                    != task_gen
+                                                    || lines.is_expired(&guard)
+                                                {
                                                     return true;
                                                 }
                                                 guard.push(line);
@@ -740,7 +856,10 @@ impl Previewer {
                                         Err(e) => {
                                             if self.config.try_lossy {
                                                 for bytes in valid_bytes.split(|b| *b == b'\n') {
-                                                    if lines.is_expired(&guard) {
+                                                    if current_generation.load(Ordering::Acquire)
+                                                        != task_gen
+                                                        || lines.is_expired(&guard)
+                                                    {
                                                         return true;
                                                     }
                                                     let line =
@@ -759,19 +878,38 @@ impl Previewer {
 
                                 // no lines read, clear
                                 if first && self.config.delay_clear {
+                                    if current_generation.load(Ordering::Acquire) != task_gen {
+                                        return true;
+                                    }
                                     lines.clear();
                                     if let Ok(mut s) = string_state.lock() {
                                         *s = None;
                                     }
                                     if let Ok(mut img) = image_state.lock() {
-                                        *img = None;
+                                        if img.is_some() {
+                                            *img = None;
+                                            image_id.fetch_add(1, Ordering::Release);
+                                        }
                                     }
+                                    if let Ok(mut d) = diagram_sources_state.lock() {
+                                        d.clear();
+                                    }
+                                    if let Ok(mut d) = diagram_offsets_state.lock() {
+                                        d.clear();
+                                    }
+                                    current_diagram_idx_state.store(0, Ordering::Release);
                                     changed.store(true, Ordering::Relaxed);
-                                } else if !leftover.is_empty() && !lines.is_expired(&guard) {
+                                } else if !leftover.is_empty()
+                                    && !lines.is_expired(&guard)
+                                    && current_generation.load(Ordering::Acquire) == task_gen
+                                {
                                     match leftover.into_text() {
                                         Ok(text) => {
                                             for line in text {
-                                                if lines.is_expired(&guard) {
+                                                if current_generation.load(Ordering::Acquire)
+                                                    != task_gen
+                                                    || lines.is_expired(&guard)
+                                                {
                                                     return true;
                                                 }
                                                 guard.push(line);
@@ -804,6 +942,10 @@ impl Previewer {
                     }
                 }
                 PreviewMessage::Stop => {
+                    self.dispatch_kill();
+                    self.clear_string();
+                    self.clear_image();
+                    self.clear_diagrams();
                     self.lines.clear();
                     self.changed.store(true, Ordering::Relaxed);
                     self.last.clear();
@@ -1111,6 +1253,124 @@ mod tests {
             sources.len(),
             1,
             "diagram_sources must be populated for modal diagram toggle"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_preview_transition_from_markdown_diagram_to_code_file() {
+        let mut previewer_cfg = crate::config::PreviewerConfig::default();
+        previewer_cfg.media = true;
+        previewer_cfg.markdown_diagrams = true;
+        previewer_cfg.delay_clear = true;
+
+        previewer_cfg.debounce_ms = 0;
+
+        let (previewer, tx) = Previewer::new(previewer_cfg);
+        let view = previewer.view();
+        let sources_state = previewer.diagram_sources.clone();
+        let image_state = previewer.image.clone();
+
+        let handle = tokio::spawn(previewer.run());
+
+        // 1. Create a markdown file with mermaid diagram
+        let temp_dir = std::env::temp_dir();
+        let md_path = temp_dir.join(format!("test_stuck_{}.md", std::process::id()));
+        std::fs::write(
+            &md_path,
+            "# Doc\n\n```mermaid\ngraph LR\n    A[Start] --> B[End]\n```\n",
+        )
+        .unwrap();
+
+        let preview_cfg = crate::config::PreviewConfig {
+            media: crate::config::PreviewMediaConfig {
+                active: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut ui = crate::ui::PreviewUI::new(view.clone(), preview_cfg, [80, 24]);
+        ui.set_title(Some("test_stuck.md".to_string()));
+
+        // Send PreviewMessage::Markdown
+        let _ = tx.send(PreviewMessage::Markdown(
+            md_path.to_string_lossy().to_string(),
+            Some(80),
+        ));
+
+        // Wait until diagram sources or image is populated (timeout 5s)
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(5) {
+            if let Ok(guard) = sources_state.lock() {
+                if !guard.is_empty() {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        assert!(
+            ui.has_diagram(),
+            "Diagram mode must be available for markdown with diagram"
+        );
+        let img_guard = image_state.lock().unwrap();
+        assert!(
+            img_guard.is_some(),
+            "Diagram image must be generated in image_state when media=true"
+        );
+        drop(img_guard);
+
+        // PreviewUI gets the image state (as would happen when rendering preview)
+        let state = ui.get_image_state();
+        assert!(
+            state.is_some(),
+            "State must be available for markdown diagram"
+        );
+
+        // 2. Now user moves cursor to a code file: title changes and PreviewMessage::Run is dispatched
+        ui.set_title(Some("main.rs".to_string()));
+        assert!(
+            ui.image_state.is_none(),
+            "Changing file selection (set_title) must immediately clear cached image_state"
+        );
+
+        let _ = tx.send(PreviewMessage::Run(
+            "echo 'fn main() { println!(\"hello\"); }'".to_string(),
+            vec![].into(),
+        ));
+
+        // Wait until lines are populated from command (timeout 5s)
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(5) {
+            if view.lines_len() > 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        handle.abort();
+        let _ = std::fs::remove_file(&md_path);
+
+        // 3. Verify ALL image and diagram states are completely cleared
+        assert_eq!(
+            view.diagram_sources.lock().unwrap().len(),
+            0,
+            "diagram_sources must be cleared when switching to a code file"
+        );
+        assert!(
+            !ui.has_diagram(),
+            "ui.has_diagram must be false on code file"
+        );
+        assert!(
+            view.image.lock().unwrap().is_none(),
+            "view.image must be None on code file"
+        );
+        assert!(
+            ui.get_image_state().is_none(),
+            "ui.get_image_state() must return None on code file, never frozen previous image!"
+        );
+        assert!(
+            !ui.has_markdown(),
+            "ui.has_markdown must be false on code file"
         );
     }
 }

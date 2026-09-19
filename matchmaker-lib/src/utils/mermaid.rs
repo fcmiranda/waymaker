@@ -266,10 +266,7 @@ fn resolve_omarchy_mode(omarchy: &Option<OmarchyColors>) -> Option<ColorMode> {
 
 /// Compute a 64-bit theme fingerprint taking into account resolved ColorMode,
 /// background mode, and active palette colors (Omarchy or fallback).
-pub fn compute_theme_fingerprint(
-    theme_opt: DiagramTheme,
-    bg_opt: DiagramBackground,
-) -> u64 {
+pub fn compute_theme_fingerprint(theme_opt: DiagramTheme, bg_opt: DiagramBackground) -> u64 {
     let mode = match theme_opt {
         DiagramTheme::Auto => detect_color_mode(),
         DiagramTheme::Dark => ColorMode::Dark,
@@ -351,15 +348,11 @@ pub fn build_mermaid_theme(
                     o.foreground
                         .clone()
                         .unwrap_or_else(|| "#c0caf5".to_string()),
-                    o.muted
-                        .clone()
-                        .unwrap_or_else(|| "#565f89".to_string()),
+                    o.muted.clone().unwrap_or_else(|| "#565f89".to_string()),
                     o.dark_background
                         .clone()
                         .unwrap_or_else(|| "#13141c".to_string()),
-                    o.yellow
-                        .clone()
-                        .unwrap_or_else(|| "#e0af68".to_string()),
+                    o.yellow.clone().unwrap_or_else(|| "#e0af68".to_string()),
                 )
             } else {
                 (
@@ -425,7 +418,9 @@ pub fn build_mermaid_theme(
                     o.cyan.as_deref().unwrap_or("#449dab"),
                 )
             } else {
-                ("#f7768e", "#7aa2f7", "#9ece6a", "#e0af68", "#ad8ee6", "#449dab")
+                (
+                    "#f7768e", "#7aa2f7", "#9ece6a", "#e0af68", "#ad8ee6", "#449dab",
+                )
             };
 
             t.git_colors = [
@@ -491,15 +486,11 @@ pub fn build_mermaid_theme(
                     o.foreground
                         .clone()
                         .unwrap_or_else(|| "#0f172a".to_string()),
-                    o.muted
-                        .clone()
-                        .unwrap_or_else(|| "#94a3b8".to_string()),
+                    o.muted.clone().unwrap_or_else(|| "#94a3b8".to_string()),
                     o.background
                         .clone()
                         .unwrap_or_else(|| "#ffffff".to_string()),
-                    o.yellow
-                        .clone()
-                        .unwrap_or_else(|| "#d97706".to_string()),
+                    o.yellow.clone().unwrap_or_else(|| "#d97706".to_string()),
                 )
             } else {
                 (
@@ -567,7 +558,9 @@ pub fn build_mermaid_theme(
                     o.cyan.as_deref().unwrap_or("#0891b2"),
                 )
             } else {
-                ("#dc2626", "#2563eb", "#16a34a", "#ca8a04", "#9333ea", "#0891b2")
+                (
+                    "#dc2626", "#2563eb", "#16a34a", "#ca8a04", "#9333ea", "#0891b2",
+                )
             };
 
             t.git_colors = [
@@ -1001,9 +994,7 @@ pub fn encode_kitty_unicode_transmission(
                 "{prefix}a=T,f=100,i={image_id},c={cols},r={rows},U=1,q=2,m={more_chunks};{chunk_data}{suffix}"
             ));
         } else {
-            out.push_str(&format!(
-                "{prefix}m={more_chunks},q=2;{chunk_data}{suffix}"
-            ));
+            out.push_str(&format!("{prefix}m={more_chunks},q=2;{chunk_data}{suffix}"));
         }
 
         start = end;
@@ -1097,6 +1088,27 @@ pub fn delete_kitty_image(image_id: u32) {
     transmit_kitty_raw(&encode_kitty_delete(image_id));
 }
 
+/// Encode a Kitty Graphics Protocol deletion escape sequence for all images (`a=d,d=a`).
+pub fn encode_kitty_delete_all() -> String {
+    let is_tmux = std::env::var("TMUX").is_ok()
+        || std::env::var("TERM_PROGRAM").is_ok_and(|v| v == "tmux")
+        || std::env::var("TERM").is_ok_and(|t| t.starts_with("tmux"));
+    let (prefix, suffix) = if is_tmux {
+        ("\x1bPtmux;\x1b\x1b_G", "\x1b\x1b\\\x1b\\")
+    } else {
+        ("\x1b_G", "\x1b\\")
+    };
+    format!("{prefix}a=d,d=a{suffix}")
+}
+
+/// Delete all Kitty Graphics images from the terminal screen and GPU cache.
+pub fn delete_kitty_all() {
+    if let Ok(mut set) = TRANSMITTED_IMAGES.lock() {
+        set.clear();
+    }
+    transmit_kitty_raw(&encode_kitty_delete_all());
+}
+
 static NEXT_DIAGRAM_IMAGE_ID: AtomicU32 = AtomicU32::new(1001);
 
 /// Generate the next unique image ID for Kitty diagram transmissions.
@@ -1173,10 +1185,7 @@ pub fn create_unicode_placeholder_lines(
 /// Guarantees that the top banner (`╭─ [mermaid: inline diagram] ... ╮`) and the bottom
 /// border (`╰ ... ╯`) have the exact same character width, avoiding visual misalignment.
 #[deprecated(note = "Inline diagrams flow borderlessly with clean blank line spacing")]
-pub fn frame_unicode_placeholder_lines(
-    lines: Vec<Line<'static>>,
-    cols: u32,
-) -> Vec<Line<'static>> {
+pub fn frame_unicode_placeholder_lines(lines: Vec<Line<'static>>, cols: u32) -> Vec<Line<'static>> {
     let border_style = Style::default().fg(Color::Cyan);
     let prefix = "╭─ [mermaid: inline diagram] ";
     let p_len = UnicodeWidthStr::width(prefix);
@@ -1232,9 +1241,10 @@ pub fn render_mermaid_to_unicode_placeholders_with_options(
 
     // 2. Query actual terminal cell pixel dimensions if available
     let (cell_w, cell_h) = match crossterm::terminal::window_size() {
-        Ok(ws) if ws.columns > 0 && ws.rows > 0 && ws.width > 0 && ws.height > 0 => {
-            (ws.width as f32 / ws.columns as f32, ws.height as f32 / ws.rows as f32)
-        }
+        Ok(ws) if ws.columns > 0 && ws.rows > 0 && ws.width > 0 && ws.height > 0 => (
+            ws.width as f32 / ws.columns as f32,
+            ws.height as f32 / ws.rows as f32,
+        ),
         _ => (10.0, 20.0),
     };
 
@@ -1870,15 +1880,24 @@ mod tests {
     WT1 -.->|ISOLATED / NOT STOWED| HOME
     WT2 -.->|ISOLATED / NOT STOWED| HOME"#;
         let img = render_mermaid_to_image(src, 1.0);
-        println!("Render result: {:?}", img.as_ref().map(|i| (i.width(), i.height())));
+        println!(
+            "Render result: {:?}",
+            img.as_ref().map(|i| (i.width(), i.height()))
+        );
         assert!(img.is_some(), "Worktree diagram should render to image");
     }
 
     #[test]
     fn test_diacritics_table_coverage() {
-        assert!(DIACRITICS.len() >= 256, "DIACRITICS table must have at least 256 entries");
+        assert!(
+            DIACRITICS.len() >= 256,
+            "DIACRITICS table must have at least 256 entries"
+        );
         for i in 0..DIACRITICS.len() {
-            assert!(get_diacritic(i).is_some(), "Index {i} must yield a valid diacritic char");
+            assert!(
+                get_diacritic(i).is_some(),
+                "Index {i} must yield a valid diacritic char"
+            );
         }
     }
 
@@ -1904,13 +1923,23 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_kitty_delete_all_format() {
+        let del = encode_kitty_delete_all();
+        assert!(del.contains("a=d"), "Must specify action delete");
+        assert!(del.contains("d=a"), "Must specify delete all images");
+    }
+
+    #[test]
     fn test_create_unicode_placeholder_lines() {
         let lines = create_unicode_placeholder_lines(12345, 10, 5, 2);
         assert_eq!(lines.len(), 5, "Must create exactly 5 lines for rows=5");
         for line in lines {
             let joined: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
             assert!(joined.starts_with("  "), "Must have 2-space indent");
-            assert!(joined.contains(PLACEHOLDER), "Must contain placeholder character");
+            assert!(
+                joined.contains(PLACEHOLDER),
+                "Must contain placeholder character"
+            );
             let count = joined.matches(PLACEHOLDER).count();
             assert_eq!(count, 10, "Must have exactly 10 placeholders for cols=10");
         }
@@ -1920,7 +1949,10 @@ mod tests {
     fn test_render_mermaid_to_unicode_placeholders_success() {
         let src = "graph LR\n  A[Start] --> B[End]";
         let diag = render_mermaid_to_unicode_placeholders(src, Some(60));
-        assert!(diag.is_some(), "Diagram should successfully rasterize to placeholders");
+        assert!(
+            diag.is_some(),
+            "Diagram should successfully rasterize to placeholders"
+        );
         let d = diag.unwrap();
         assert!(d.cols >= 10);
         assert!(d.rows >= 3);
@@ -1975,9 +2007,18 @@ mod tests {
 
         // Subsequent chunks must NOT repeat i= or a=
         for sub in &chunks[1..] {
-            assert!(!sub.contains("i=777"), "Subsequent chunk must not repeat i= id");
-            assert!(!sub.contains("a=T"), "Subsequent chunk must not repeat a= action");
-            assert!(sub.contains("m="), "Subsequent chunk must specify m= chunk marker");
+            assert!(
+                !sub.contains("i=777"),
+                "Subsequent chunk must not repeat i= id"
+            );
+            assert!(
+                !sub.contains("a=T"),
+                "Subsequent chunk must not repeat a= action"
+            );
+            assert!(
+                sub.contains("m="),
+                "Subsequent chunk must specify m= chunk marker"
+            );
         }
     }
 
@@ -1988,7 +2029,11 @@ mod tests {
         let lines_24 = create_unicode_placeholder_lines(id_24bit, 1, 1, 0);
         let cell_24 = lines_24[0].spans[0].content.as_ref();
         let chars_24: Vec<char> = cell_24.chars().collect();
-        assert_eq!(chars_24.len(), 3, "24-bit ID must have exactly 1 base + 2 diacritics (row, col)");
+        assert_eq!(
+            chars_24.len(),
+            3,
+            "24-bit ID must have exactly 1 base + 2 diacritics (row, col)"
+        );
         assert_eq!(chars_24[0], PLACEHOLDER);
 
         // 32-bit ID (MSB > 0): 3 diacritics per cell (row, col, msb)
@@ -1996,7 +2041,11 @@ mod tests {
         let lines_32 = create_unicode_placeholder_lines(id_32bit, 1, 1, 0);
         let cell_32 = lines_32[0].spans[0].content.as_ref();
         let chars_32: Vec<char> = cell_32.chars().collect();
-        assert_eq!(chars_32.len(), 4, "32-bit ID with MSB > 0 must have 1 base + 3 diacritics");
+        assert_eq!(
+            chars_32.len(),
+            4,
+            "32-bit ID with MSB > 0 must have 1 base + 3 diacritics"
+        );
     }
 
     #[test]
@@ -2006,17 +2055,26 @@ mod tests {
         unsafe {
             std::env::set_var("MM_INLINE_DIAGRAMS", "0");
         }
-        assert!(!is_kitty_supported(), "MM_INLINE_DIAGRAMS=0 must disable support regardless of other vars");
+        assert!(
+            !is_kitty_supported(),
+            "MM_INLINE_DIAGRAMS=0 must disable support regardless of other vars"
+        );
 
         unsafe {
             std::env::set_var("MM_INLINE_DIAGRAMS", "false");
         }
-        assert!(!is_kitty_supported(), "MM_INLINE_DIAGRAMS=false must disable support");
+        assert!(
+            !is_kitty_supported(),
+            "MM_INLINE_DIAGRAMS=false must disable support"
+        );
 
         unsafe {
             std::env::set_var("MM_INLINE_DIAGRAMS", "1");
         }
-        assert!(is_kitty_supported(), "MM_INLINE_DIAGRAMS=1 must force enable support");
+        assert!(
+            is_kitty_supported(),
+            "MM_INLINE_DIAGRAMS=1 must force enable support"
+        );
 
         unsafe {
             match prev {
@@ -2045,16 +2103,24 @@ mod tests {
     #[test]
     fn test_build_mermaid_theme_transparency_and_modes() {
         // Transparent dark theme
-        let dark_transparent = build_mermaid_theme(DiagramTheme::Dark, DiagramBackground::Transparent);
-        assert_eq!(dark_transparent.background, "#00000000", "Transparent background must be hex #00000000");
+        let dark_transparent =
+            build_mermaid_theme(DiagramTheme::Dark, DiagramBackground::Transparent);
+        assert_eq!(
+            dark_transparent.background, "#00000000",
+            "Transparent background must be hex #00000000"
+        );
         assert!(!dark_transparent.primary_text_color.is_empty());
 
         // Solid dark theme
         let dark_solid = build_mermaid_theme(DiagramTheme::Dark, DiagramBackground::Solid);
-        assert_ne!(dark_solid.background, "#00000000", "Solid background must not be transparent");
+        assert_ne!(
+            dark_solid.background, "#00000000",
+            "Solid background must not be transparent"
+        );
 
         // Transparent light theme
-        let light_transparent = build_mermaid_theme(DiagramTheme::Light, DiagramBackground::Transparent);
+        let light_transparent =
+            build_mermaid_theme(DiagramTheme::Light, DiagramBackground::Transparent);
         assert_eq!(light_transparent.background, "#00000000");
 
         // Solid light theme
@@ -2086,10 +2152,13 @@ mod tests {
 
     #[test]
     fn test_compute_theme_fingerprint_isolation() {
-        let fp_dark_trans = compute_theme_fingerprint(DiagramTheme::Dark, DiagramBackground::Transparent);
+        let fp_dark_trans =
+            compute_theme_fingerprint(DiagramTheme::Dark, DiagramBackground::Transparent);
         let fp_dark_solid = compute_theme_fingerprint(DiagramTheme::Dark, DiagramBackground::Solid);
-        let fp_light_trans = compute_theme_fingerprint(DiagramTheme::Light, DiagramBackground::Transparent);
-        let fp_light_solid = compute_theme_fingerprint(DiagramTheme::Light, DiagramBackground::Solid);
+        let fp_light_trans =
+            compute_theme_fingerprint(DiagramTheme::Light, DiagramBackground::Transparent);
+        let fp_light_solid =
+            compute_theme_fingerprint(DiagramTheme::Light, DiagramBackground::Solid);
 
         assert_ne!(fp_dark_trans, fp_dark_solid);
         assert_ne!(fp_dark_trans, fp_light_trans);
@@ -2143,13 +2212,15 @@ mod tests {
             1.0,
             DiagramTheme::Dark,
             DiagramBackground::Transparent,
-        ).unwrap();
+        )
+        .unwrap();
         let img_solid = render_mermaid_to_image_with_options(
             src,
             1.0,
             DiagramTheme::Dark,
             DiagramBackground::Solid,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Pixel (0, 0) alpha must differ between transparent and solid
         assert_eq!(img_trans.to_rgba8().get_pixel(0, 0)[3], 0);
@@ -2160,19 +2231,35 @@ mod tests {
     fn test_diagram_theme_and_bg_enums() {
         assert_eq!("auto".parse::<DiagramTheme>().unwrap(), DiagramTheme::Auto);
         assert_eq!("dark".parse::<DiagramTheme>().unwrap(), DiagramTheme::Dark);
-        assert_eq!("light".parse::<DiagramTheme>().unwrap(), DiagramTheme::Light);
-        assert_eq!("system".parse::<DiagramTheme>().unwrap(), DiagramTheme::Auto);
+        assert_eq!(
+            "light".parse::<DiagramTheme>().unwrap(),
+            DiagramTheme::Light
+        );
+        assert_eq!(
+            "system".parse::<DiagramTheme>().unwrap(),
+            DiagramTheme::Auto
+        );
         assert!("invalid".parse::<DiagramTheme>().is_err());
 
-        assert_eq!("transparent".parse::<DiagramBackground>().unwrap(), DiagramBackground::Transparent);
-        assert_eq!("solid".parse::<DiagramBackground>().unwrap(), DiagramBackground::Solid);
-        assert_eq!("none".parse::<DiagramBackground>().unwrap(), DiagramBackground::Transparent);
-        assert_eq!("opaque".parse::<DiagramBackground>().unwrap(), DiagramBackground::Solid);
+        assert_eq!(
+            "transparent".parse::<DiagramBackground>().unwrap(),
+            DiagramBackground::Transparent
+        );
+        assert_eq!(
+            "solid".parse::<DiagramBackground>().unwrap(),
+            DiagramBackground::Solid
+        );
+        assert_eq!(
+            "none".parse::<DiagramBackground>().unwrap(),
+            DiagramBackground::Transparent
+        );
+        assert_eq!(
+            "opaque".parse::<DiagramBackground>().unwrap(),
+            DiagramBackground::Solid
+        );
         assert!("invalid".parse::<DiagramBackground>().is_err());
 
         assert_eq!(DiagramTheme::Dark.to_string(), "dark");
         assert_eq!(DiagramBackground::Transparent.to_string(), "transparent");
     }
 }
-
-

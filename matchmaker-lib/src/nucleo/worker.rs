@@ -181,6 +181,8 @@ impl<T> Column<T> {
 pub struct FrizbeeWorkerCache {
     pub query: String,
     pub snapshot_item_count: u32,
+    pub mode_index: usize,
+    pub sort_order: Option<crate::action::SortOrder>,
     pub ranked_indices: Vec<(u32, u8)>,
 }
 
@@ -838,26 +840,38 @@ impl<T: SSS> Worker<T> {
     }
 
     /// Ensure the Frizbee search cache is fresh for the current query and snapshot.
+    /// Returns true if the cache was updated, false if it was already up to date.
     #[cfg(feature = "frizbee")]
-    pub fn ensure_frizbee_cache(&self) {
+    pub fn ensure_frizbee_cache(&self) -> bool {
         let snapshot = self.nucleo.snapshot();
         let item_count = snapshot.item_count();
         let query_str = self.query.primary_column_query().unwrap_or_default();
 
         let mut cache = self.frizbee_cache.lock().unwrap();
-        if cache.snapshot_item_count == item_count && cache.query == query_str {
-            return;
+        if cache.snapshot_item_count == item_count
+            && cache.query == query_str
+            && cache.mode_index == self.mode_index
+            && cache.sort_order == self.sort_order
+        {
+            return false;
         }
 
         if item_count == 0 {
             cache.query = query_str.to_string();
             cache.snapshot_item_count = 0;
+            cache.mode_index = self.mode_index;
+            cache.sort_order = self.sort_order;
             cache.ranked_indices.clear();
-            return;
+            return true;
         }
 
         let col0 = &self.columns[0];
         let effective_dir_first = self.dir_first && self.mode_index == 0;
+        let effective_sort_order = if self.mode_index == 0 {
+            self.sort_order
+        } else {
+            None
+        };
         let is_query_empty = query_str.is_empty();
         let query_len = query_str.len();
 
@@ -883,7 +897,33 @@ impl<T: SSS> Worker<T> {
                 })
                 .collect();
 
-            if effective_dir_first {
+            if let Some(sort_order) = effective_sort_order {
+                use crate::action::SortOrder;
+                items.sort_unstable_by(|a, b| {
+                    if effective_dir_first && a.1 != b.1 {
+                        return a.1.cmp(&b.1);
+                    }
+                    match sort_order {
+                        SortOrder::Alphabetical => {
+                            cmp_ascii_case_insensitive(a.2.as_ref(), b.2.as_ref())
+                                .then_with(|| a.2.cmp(&b.2))
+                        }
+                        SortOrder::AlphabeticalReverse => {
+                            cmp_ascii_case_insensitive(b.2.as_ref(), a.2.as_ref())
+                                .then_with(|| b.2.cmp(&a.2))
+                        }
+                        SortOrder::Natural => {
+                            crate::utils::string::natural_cmp(a.2.as_ref(), b.2.as_ref())
+                                .then_with(|| a.2.cmp(&b.2))
+                        }
+                        SortOrder::NaturalReverse => {
+                            crate::utils::string::natural_cmp(b.2.as_ref(), a.2.as_ref())
+                                .then_with(|| b.2.cmp(&a.2))
+                        }
+                        _ => a.0.cmp(&b.0),
+                    }
+                });
+            } else if effective_dir_first {
                 items.sort_unstable_by(|a, b| {
                     if a.1 != b.1 {
                         return a.1.cmp(&b.1);
@@ -900,8 +940,10 @@ impl<T: SSS> Worker<T> {
 
             cache.query = query_str.to_string();
             cache.snapshot_item_count = item_count;
+            cache.mode_index = self.mode_index;
+            cache.sort_order = self.sort_order;
             cache.ranked_indices = items.into_iter().map(|(idx, tier, _)| (idx, tier)).collect();
-            return;
+            return true;
         }
 
         let mut strings: Vec<String> = Vec::with_capacity(item_count as usize);
@@ -958,6 +1000,31 @@ impl<T: SSS> Worker<T> {
             .collect();
 
         scored.sort_unstable_by(|a, b| {
+            if let Some(sort_order) = effective_sort_order {
+                use crate::action::SortOrder;
+                if effective_dir_first && a.tier != b.tier {
+                    return a.tier.cmp(&b.tier);
+                }
+                match sort_order {
+                    SortOrder::Alphabetical => {
+                        return cmp_ascii_case_insensitive(&a.raw_path, &b.raw_path)
+                            .then_with(|| a.raw_path.cmp(&b.raw_path));
+                    }
+                    SortOrder::AlphabeticalReverse => {
+                        return cmp_ascii_case_insensitive(&b.raw_path, &a.raw_path)
+                            .then_with(|| b.raw_path.cmp(&a.raw_path));
+                    }
+                    SortOrder::Natural => {
+                        return crate::utils::string::natural_cmp(&a.raw_path, &b.raw_path)
+                            .then_with(|| a.raw_path.cmp(&b.raw_path));
+                    }
+                    SortOrder::NaturalReverse => {
+                        return crate::utils::string::natural_cmp(&b.raw_path, &a.raw_path)
+                            .then_with(|| b.raw_path.cmp(&a.raw_path));
+                    }
+                    _ => {}
+                }
+            }
             if a.tier != b.tier {
                 return a.tier.cmp(&b.tier);
             }
@@ -972,7 +1039,10 @@ impl<T: SSS> Worker<T> {
 
         cache.query = query_str.to_string();
         cache.snapshot_item_count = item_count;
+        cache.mode_index = self.mode_index;
+        cache.sort_order = self.sort_order;
         cache.ranked_indices = scored.into_iter().map(|s| (s.snapshot_idx, s.tier)).collect();
+        true
     }
 
     /// Retrieve all currently matched items using the frizbee engine for scoring,
@@ -1064,6 +1134,12 @@ impl<T: SSS> Worker<T> {
     }
 
     pub fn restart(&mut self, clear_snapshot: bool) {
+        #[cfg(feature = "frizbee")]
+        if clear_snapshot {
+            let mut cache = self.frizbee_cache.lock().unwrap();
+            cache.snapshot_item_count = 0;
+            cache.ranked_indices.clear();
+        }
         self.nucleo.restart(clear_snapshot);
     }
 }
@@ -1116,24 +1192,46 @@ impl<T: SSS> Worker<T> {
         show_skipped: bool,
         freeze_snapshot: bool,
     ) -> (WorkerResults<'_, T>, Vec<u16>, Vec<u16>, Status) {
-        #[cfg(feature = "frizbee")]
-        if self.engine == crate::config::MatcherEngineType::Frizbee {
-            self.ensure_frizbee_cache();
-        }
-
-        let (snapshot, mut status) = if freeze_snapshot || self.engine == crate::config::MatcherEngineType::Frizbee {
-            let snapshot = self.nucleo.snapshot();
-            (
-                snapshot,
-                Status {
-                    item_count: snapshot.item_count(),
-                    matched_count: snapshot.matched_item_count(),
-                    running: false,
-                    changed: false,
-                },
-            )
+        let (nucleo_changed, nucleo_running) = if freeze_snapshot {
+            (false, false)
         } else {
-            Self::new_snapshot(&mut self.nucleo)
+            let nucleo::Status { changed, running } = self.nucleo.tick(10);
+            (changed, running)
+        };
+
+        #[cfg(feature = "frizbee")]
+        let frizbee_cache_updated = if self.engine == crate::config::MatcherEngineType::Frizbee {
+            self.ensure_frizbee_cache()
+        } else {
+            false
+        };
+
+        let snapshot = self.nucleo.snapshot();
+        let status = Status {
+            item_count: snapshot.item_count(),
+            matched_count: if self.engine == crate::config::MatcherEngineType::Frizbee {
+                #[cfg(feature = "frizbee")]
+                {
+                    self.frizbee_cache.lock().unwrap().ranked_indices.len() as u32
+                }
+                #[cfg(not(feature = "frizbee"))]
+                {
+                    snapshot.matched_item_count()
+                }
+            } else {
+                snapshot.matched_item_count()
+            },
+            running: nucleo_running,
+            changed: nucleo_changed || {
+                #[cfg(feature = "frizbee")]
+                {
+                    frizbee_cache_updated
+                }
+                #[cfg(not(feature = "frizbee"))]
+                {
+                    false
+                }
+            },
         };
 
         let mut widths = vec![0u16; self.columns.len()];
@@ -1158,8 +1256,6 @@ impl<T: SSS> Worker<T> {
         #[cfg(feature = "frizbee")]
         let (items_buf, initial_prev_tier) = if self.engine == crate::config::MatcherEngineType::Frizbee {
             let cache = self.frizbee_cache.lock().unwrap();
-            status.matched_count = cache.ranked_indices.len() as u32;
-            status.running = false;
             let total = cache.ranked_indices.len();
             let range_start = (start as usize).min(total);
             let range_end = (end as usize).min(total);
@@ -2825,4 +2921,52 @@ mod tests {
             vec!["docs/", "src/", "Cargo.toml", "README.md", "src/sub/deep.rs"]
         );
     }
+
+    #[test]
+    #[cfg(feature = "frizbee")]
+    fn test_frizbee_worker_startup_drain_and_immediate_results() {
+        let mut worker = Worker::<String>::new_single_column();
+        worker.engine = crate::config::MatcherEngineType::Frizbee;
+        worker.dir_first = true;
+
+        let items = vec![
+            "src/".to_string(),
+            "docs/".to_string(),
+            "Cargo.toml".to_string(),
+        ];
+
+        let injector = worker.nucleo.injector();
+        for item in &items {
+            injector.push(item.clone(), |val, cols| {
+                cols[0] = val.clone().into();
+            });
+        }
+
+        // Without calling tick manually prior to results(), results() must drain
+        // the injector, populate frizbee cache, and immediately return the items!
+        let mut matcher = nucleo::Matcher::new(nucleo::Config::DEFAULT);
+        let (results, _, _, status) = worker.results(
+            0,
+            10,
+            &[100],
+            false,
+            0,
+            Style::default(),
+            &mut matcher,
+            AutoscrollSettings::default(),
+            0,
+            (0, false),
+            true,
+            false,
+        );
+
+        assert_eq!(status.item_count, 3);
+        assert_eq!(status.matched_count, 3);
+        assert_eq!(results.len(), 3);
+        // dir_first ordering: docs/, src/, Cargo.toml
+        assert_eq!(*results[0].2, "docs/");
+        assert_eq!(*results[1].2, "src/");
+        assert_eq!(*results[2].2, "Cargo.toml");
+    }
 }
+

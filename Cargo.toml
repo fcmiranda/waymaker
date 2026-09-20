@@ -20,6 +20,29 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# Granular size optimization for heavy graphic rasterizers, font parsers and markdown engines
+# while preserving maximum opt-level = 3 for the core picker loop and SIMD matching engines.
+[profile.release.package.resvg]
+opt-level = "s"
+
+[profile.release.package.usvg]
+opt-level = "s"
+
+[profile.release.package.tiny-skia]
+opt-level = "s"
+
+[profile.release.package.rustybuzz]
+opt-level = "s"
+
+[profile.release.package.fontdb]
+opt-level = "s"
+
+[profile.release.package.pulldown-cmark]
+opt-level = "s"
+
+[profile.release.package.mermaid-rs-renderer]
+opt-level = "s"
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"

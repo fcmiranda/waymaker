@@ -53,7 +53,7 @@ dirs = "6.0.0"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 thiserror = "2.0.17"
-tokio = { version = "1.48.0", features = ["full"] }
+tokio = { version = "1.48.0", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "process", "signal", "fs", "io-util"] }
 toml = "0.9.8"
 ratatui-image = { version = "11.0.2", default-features = false, features = ["crossterm"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }

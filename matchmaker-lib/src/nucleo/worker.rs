@@ -176,6 +176,14 @@ impl<T> Column<T> {
     }
 }
 
+/// Cached result set for the Frizbee matcher engine.
+#[derive(Default, Debug, Clone)]
+pub struct FrizbeeWorkerCache {
+    pub query: String,
+    pub snapshot_item_count: u32,
+    pub ranked_indices: Vec<(u32, u8)>,
+}
+
 /// Worker: can instantiate, push, and get results. A view into computation.
 ///
 /// Additionally, the worker can affect the computation via find and restart.
@@ -200,6 +208,8 @@ where
     pub sort_cap: usize,
     pub frecency_snapshot: Option<crate::frecency::FrecencySnapshot>,
     pub typo_tolerance: bool,
+    pub engine: crate::config::MatcherEngineType,
+    pub frizbee_cache: std::sync::Mutex<FrizbeeWorkerCache>,
     pub dir_first: bool,
     pub sort_order: Option<crate::action::SortOrder>,
     pub mode_index: usize,
@@ -299,6 +309,8 @@ impl<T: SSS> Worker<T> {
             sort_cap: 1000,
             frecency_snapshot: None,
             typo_tolerance: false,
+            engine: crate::config::MatcherEngineType::default(),
+            frizbee_cache: std::sync::Mutex::new(FrizbeeWorkerCache::default()),
             dir_first: false,
             sort_order: None,
             mode_index: 0,
@@ -356,6 +368,14 @@ impl<T: SSS> Worker<T> {
         }
         let old_query = self.query.parse(line);
         if self.query == old_query {
+            return;
+        }
+        #[cfg(feature = "frizbee")]
+        if self.engine == crate::config::MatcherEngineType::Frizbee {
+            self.matcher_dirty.store(true, Ordering::Release);
+            if let Some(cb) = self.notify_callback.load().as_ref() {
+                (cb.0)();
+            }
             return;
         }
         for (i, column) in self
@@ -649,6 +669,17 @@ impl<T: SSS> Worker<T> {
     }
 
     pub fn get_nth(&self, n: u32) -> Option<&T> {
+        #[cfg(feature = "frizbee")]
+        if self.engine == crate::config::MatcherEngineType::Frizbee {
+            self.ensure_frizbee_cache();
+            let snapshot = self.nucleo.snapshot();
+            let cache = self.frizbee_cache.lock().unwrap();
+            return cache
+                .ranked_indices
+                .get(n as usize)
+                .and_then(|&(idx, _)| snapshot.get_item(idx).map(|item| item.data));
+        }
+
         let snapshot = self.nucleo.snapshot();
         let total = snapshot.matched_item_count();
         if n >= total {
@@ -677,6 +708,21 @@ impl<T: SSS> Worker<T> {
     where
         F: FnMut(&T) -> bool,
     {
+        #[cfg(feature = "frizbee")]
+        if self.engine == crate::config::MatcherEngineType::Frizbee {
+            self.ensure_frizbee_cache();
+            let snapshot = self.nucleo.snapshot();
+            let cache = self.frizbee_cache.lock().unwrap();
+            for (pos, &(idx, _)) in cache.ranked_indices.iter().enumerate() {
+                if let Some(item) = snapshot.get_item(idx) {
+                    if predicate(item.data) {
+                        return Some(pos);
+                    }
+                }
+            }
+            return None;
+        }
+
         let snapshot = self.nucleo.snapshot();
         let total = snapshot.matched_item_count();
         if total == 0 {
@@ -735,6 +781,18 @@ impl<T: SSS> Worker<T> {
 
     /// Retrieve all currently matched items in exact ranked (sorted) order.
     pub fn get_all_sorted<'a>(&'a self) -> Vec<&'a T> {
+        #[cfg(feature = "frizbee")]
+        if self.engine == crate::config::MatcherEngineType::Frizbee {
+            self.ensure_frizbee_cache();
+            let snapshot = self.nucleo.snapshot();
+            let cache = self.frizbee_cache.lock().unwrap();
+            return cache
+                .ranked_indices
+                .iter()
+                .filter_map(|&(idx, _)| snapshot.get_item(idx).map(|item| item.data))
+                .collect();
+        }
+
         let snapshot = self.nucleo.snapshot();
         let total = snapshot.matched_item_count();
         if total == 0 {
@@ -779,6 +837,189 @@ impl<T: SSS> Worker<T> {
         res
     }
 
+    /// Ensure the Frizbee search cache is fresh for the current query and snapshot.
+    #[cfg(feature = "frizbee")]
+    pub fn ensure_frizbee_cache(&self) {
+        let snapshot = self.nucleo.snapshot();
+        let item_count = snapshot.item_count();
+        let query_str = self.query.primary_column_query().unwrap_or_default();
+
+        let mut cache = self.frizbee_cache.lock().unwrap();
+        if cache.snapshot_item_count == item_count && cache.query == query_str {
+            return;
+        }
+
+        if item_count == 0 {
+            cache.query = query_str.to_string();
+            cache.snapshot_item_count = 0;
+            cache.ranked_indices.clear();
+            return;
+        }
+
+        let col0 = &self.columns[0];
+        let effective_dir_first = self.dir_first && self.mode_index == 0;
+        let is_query_empty = query_str.is_empty();
+        let query_len = query_str.len();
+
+        let snapshot_ref = if self.frecency {
+            self.frecency_snapshot.as_ref()
+        } else {
+            None
+        };
+        let penalty = if is_query_empty || self.mode_index != 0 {
+            0
+        } else {
+            self.depth_penalty
+        };
+
+        if is_query_empty {
+            let mut items: Vec<(u32, u8, Cow<'_, str>)> = (0..item_count)
+                .filter_map(|idx| {
+                    snapshot.get_item(idx).map(|item| {
+                        let raw = col0.raw(item.data);
+                        let (tier, _) = get_item_tier_and_clean_path(raw.as_ref(), effective_dir_first);
+                        (idx, tier, raw)
+                    })
+                })
+                .collect();
+
+            if effective_dir_first {
+                items.sort_unstable_by(|a, b| {
+                    if a.1 != b.1 {
+                        return a.1.cmp(&b.1);
+                    }
+                    if a.1 < 2 {
+                        let cmp = cmp_ascii_case_insensitive(a.2.as_ref(), b.2.as_ref());
+                        if cmp != std::cmp::Ordering::Equal {
+                            return cmp;
+                        }
+                    }
+                    a.0.cmp(&b.0)
+                });
+            }
+
+            cache.query = query_str.to_string();
+            cache.snapshot_item_count = item_count;
+            cache.ranked_indices = items.into_iter().map(|(idx, tier, _)| (idx, tier)).collect();
+            return;
+        }
+
+        let mut strings: Vec<String> = Vec::with_capacity(item_count as usize);
+        for idx in 0..item_count {
+            if let Some(item) = snapshot.get_item(idx) {
+                strings.push(col0.raw(item.data).into_owned());
+            } else {
+                strings.push(String::new());
+            }
+        }
+
+        let frizbee_config = frizbee::Config {
+            max_typos: if self.typo_tolerance { Some(1) } else { Some(0) },
+            ..frizbee::Config::default()
+        };
+        let mut matcher = frizbee::Matcher::new(query_str, &frizbee_config);
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let matches = matcher.match_list_parallel(&strings, threads);
+
+        let total = matches.len() as u32;
+        struct ScoredMatch {
+            snapshot_idx: u32,
+            tier: u8,
+            score: u64,
+            raw_path: String,
+        }
+
+        let mut scored: Vec<ScoredMatch> = matches
+            .into_iter()
+            .enumerate()
+            .map(|(rank, m)| {
+                let raw_path = std::mem::take(&mut strings[m.index as usize]);
+                let score = compute_item_score(
+                    total,
+                    rank,
+                    &raw_path,
+                    false,
+                    query_len,
+                    snapshot_ref,
+                    self.frecency_weight,
+                    self.location_bias,
+                    penalty,
+                );
+                let (tier, _) = get_item_tier_and_clean_path(&raw_path, effective_dir_first);
+                ScoredMatch {
+                    snapshot_idx: m.index,
+                    tier,
+                    score,
+                    raw_path,
+                }
+            })
+            .collect();
+
+        scored.sort_unstable_by(|a, b| {
+            if a.tier != b.tier {
+                return a.tier.cmp(&b.tier);
+            }
+            if a.tier < 2 {
+                let cmp = cmp_ascii_case_insensitive(&a.raw_path, &b.raw_path);
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
+            }
+            b.score.cmp(&a.score)
+        });
+
+        cache.query = query_str.to_string();
+        cache.snapshot_item_count = item_count;
+        cache.ranked_indices = scored.into_iter().map(|s| (s.snapshot_idx, s.tier)).collect();
+    }
+
+    /// Retrieve all currently matched items using the frizbee engine for scoring,
+    /// with the same decoration logic (depth_penalty, frecency, dir_first) as nucleo path.
+    #[cfg(feature = "frizbee")]
+    pub fn get_all_sorted_frizbee<'a>(&'a self, _query: &str) -> Vec<&'a T> {
+        self.ensure_frizbee_cache();
+        let snapshot = self.nucleo.snapshot();
+        let cache = self.frizbee_cache.lock().unwrap();
+        cache
+            .ranked_indices
+            .iter()
+            .filter_map(|&(idx, _)| snapshot.get_item(idx).map(|item| item.data))
+            .collect()
+    }
+
+    /// Get frizbee highlight indices for a single item's column text.
+    #[cfg(feature = "frizbee")]
+    pub fn frizbee_highlight_indices(&self, query: &str, haystack: &str) -> Vec<u32> {
+        compute_frizbee_highlights(query, haystack, self.typo_tolerance)
+    }
+}
+
+/// Standalone helper to compute frizbee matching character highlight indices.
+#[cfg(feature = "frizbee")]
+fn compute_frizbee_highlights(query: &str, haystack: &str, typo_tolerance: bool) -> Vec<u32> {
+    if query.is_empty() || haystack.is_empty() {
+        return Vec::new();
+    }
+    let frizbee_config = frizbee::Config {
+        max_typos: if typo_tolerance { Some(1) } else { Some(0) },
+        ..frizbee::Config::default()
+    };
+    let mut matcher = frizbee::Matcher::new(query, &frizbee_config);
+    if let Some(m) = matcher.match_one_indices(haystack, 0) {
+        let mut indices = m.indices;
+        indices.reverse(); // frizbee returns in reverse order
+        indices.sort_unstable();
+        indices.dedup();
+        indices
+    } else {
+        Vec::new()
+    }
+}
+
+impl<T: SSS> Worker<T> {
+
     pub fn new_snapshot(nucleo: &mut nucleo::Nucleo<T>) -> (&nucleo::Snapshot<T>, Status) {
         let nucleo::Status { changed, running } = nucleo.tick(10);
         let snapshot = nucleo.snapshot();
@@ -800,6 +1041,13 @@ impl<T: SSS> Worker<T> {
 
     /// matched item count, total item count
     pub fn counts(&self) -> (u32, u32) {
+        #[cfg(feature = "frizbee")]
+        if self.engine == crate::config::MatcherEngineType::Frizbee {
+            self.ensure_frizbee_cache();
+            let snapshot = self.nucleo.snapshot();
+            let cache = self.frizbee_cache.lock().unwrap();
+            return (cache.ranked_indices.len() as u32, snapshot.item_count());
+        }
         let snapshot = self.nucleo.snapshot();
         (snapshot.matched_item_count(), snapshot.item_count())
     }
@@ -868,7 +1116,12 @@ impl<T: SSS> Worker<T> {
         show_skipped: bool,
         freeze_snapshot: bool,
     ) -> (WorkerResults<'_, T>, Vec<u16>, Vec<u16>, Status) {
-        let (snapshot, status) = if freeze_snapshot {
+        #[cfg(feature = "frizbee")]
+        if self.engine == crate::config::MatcherEngineType::Frizbee {
+            self.ensure_frizbee_cache();
+        }
+
+        let (snapshot, mut status) = if freeze_snapshot || self.engine == crate::config::MatcherEngineType::Frizbee {
             let snapshot = self.nucleo.snapshot();
             (
                 snapshot,
@@ -902,7 +1155,25 @@ impl<T: SSS> Worker<T> {
                     || (self.depth_penalty > 0 && self.mode_index == 0)))
             || effective_dir_first;
 
-        let (items_buf, initial_prev_tier) = if should_sort {
+        #[cfg(feature = "frizbee")]
+        let (items_buf, initial_prev_tier) = if self.engine == crate::config::MatcherEngineType::Frizbee {
+            let cache = self.frizbee_cache.lock().unwrap();
+            status.matched_count = cache.ranked_indices.len() as u32;
+            status.running = false;
+            let total = cache.ranked_indices.len();
+            let range_start = (start as usize).min(total);
+            let range_end = (end as usize).min(total);
+            let prev_tier = if range_start > 0 && range_start <= total {
+                cache.ranked_indices.get(range_start - 1).map(|&(_, tier)| tier)
+            } else {
+                None
+            };
+            let items: Vec<_> = cache.ranked_indices[range_start..range_end]
+                .iter()
+                .filter_map(|&(idx, tier)| snapshot.get_item(idx).map(|item| (item, tier)))
+                .collect();
+            (items, prev_tier)
+        } else if should_sort {
             let total = status.matched_count;
             let total_sort = if effective_sort_order.is_some() {
                 total
@@ -1219,12 +1490,18 @@ impl<T: SSS> Worker<T> {
                 continue;
             }
 
+            let col_indices_buffer = &mut self.col_indices_buffer;
+            let columns = &self.columns;
+            let query = &self.query;
+            let engine = self.engine;
+            let typo_tolerance = self.typo_tolerance;
+
             let row: Vec<Text> = row
                 .into_iter()
                 .enumerate()
                 .zip(width_limits.iter().chain(std::iter::repeat(&u16::MAX)))
                 .map(|((col_idx, cell), &width_limit)| {
-                    let column = &self.columns[col_idx];
+                    let column = &columns[col_idx];
 
                     let effective_limit = if Some(col_idx) == last_nonzero_idx {
                         total_width_limit.saturating_sub(width_limits.iter().take(col_idx).sum())
@@ -1235,7 +1512,17 @@ impl<T: SSS> Worker<T> {
                     let (cell, computed_width) = if effective_limit == 0 {
                         (Default::default(), 0)
                     } else if column.filter {
-                        render_cell(
+                        #[cfg(feature = "frizbee")]
+                        let custom_indices = if engine == crate::config::MatcherEngineType::Frizbee && !query_str.is_empty() {
+                            let query_col = query.get(&column.name).map(|s| &**s).unwrap_or(query_str);
+                            Some(compute_frizbee_highlights(query_col, column.raw(item.data).as_ref(), typo_tolerance))
+                        } else {
+                            None
+                        };
+                        #[cfg(not(feature = "frizbee"))]
+                        let custom_indices: Option<Vec<u32>> = None;
+
+                        render_cell_inner(
                             cell,
                             col_idx,
                             snapshot,
@@ -1244,9 +1531,10 @@ impl<T: SSS> Worker<T> {
                             highlight_style,
                             wrap,
                             effective_limit,
-                            &mut self.col_indices_buffer,
+                            col_indices_buffer,
                             autoscroll.clone(),
                             hscroll_offset,
+                            custom_indices.as_deref(),
                         )
                     } else if wrap {
                         let (cell, wrapped) = wrap_text(cell, effective_limit);
@@ -1346,7 +1634,37 @@ impl<T: SSS> Worker<T> {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn render_cell<T: SSS>(
+    cell: Text<'_>,
+    col_idx: usize,
+    snapshot: &nucleo::Snapshot<T>,
+    item: &nucleo::Item<T>,
+    matcher: &mut nucleo::Matcher,
+    highlight_style: Style,
+    wrap: bool,
+    width_limit: u16,
+    col_indices_buffer: &mut Vec<u32>,
+    autoscroll: AutoscrollSettings,
+    hscroll_offset: i8,
+) -> (Text<'static>, usize) {
+    render_cell_inner(
+        cell,
+        col_idx,
+        snapshot,
+        item,
+        matcher,
+        highlight_style,
+        wrap,
+        width_limit,
+        col_indices_buffer,
+        autoscroll,
+        hscroll_offset,
+        None,
+    )
+}
+
+fn render_cell_inner<T: SSS>(
     cell: Text<'_>,
     col_idx: usize,
     snapshot: &nucleo::Snapshot<T>,
@@ -1358,6 +1676,7 @@ fn render_cell<T: SSS>(
     col_indices_buffer: &mut Vec<u32>,
     mut autoscroll: AutoscrollSettings,
     hscroll_offset: i8,
+    custom_indices: Option<&[u32]>,
 ) -> (Text<'static>, usize) {
     if !autoscroll.always {
         autoscroll.enabled &= !wrap;
@@ -1369,13 +1688,17 @@ fn render_cell<T: SSS>(
     // get indices
     let indices_buffer = col_indices_buffer;
     indices_buffer.clear();
-    snapshot.pattern().column_pattern(col_idx).indices(
-        item.matcher_columns[col_idx].slice(..),
-        matcher,
-        indices_buffer,
-    );
-    indices_buffer.sort_unstable();
-    indices_buffer.dedup();
+    if let Some(custom) = custom_indices {
+        indices_buffer.extend_from_slice(custom);
+    } else {
+        snapshot.pattern().column_pattern(col_idx).indices(
+            item.matcher_columns[col_idx].slice(..),
+            matcher,
+            indices_buffer,
+        );
+        indices_buffer.sort_unstable();
+        indices_buffer.dedup();
+    }
     let mut indices = indices_buffer.drain(..);
 
     let mut lines = vec![];

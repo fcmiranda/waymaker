@@ -2206,16 +2206,25 @@ pub async fn start_filter(
 
     mm.worker.find(query);
 
-    // Tick until matching is complete
-    loop {
-        let status = mm.worker.nucleo.tick(10);
-        if !status.running {
-            break;
+    let items = match mm.worker.engine {
+        #[cfg(feature = "frizbee")]
+        matchmaker::config::MatcherEngineType::Frizbee => {
+            mm.worker.get_all_sorted()
         }
-        tokio::task::yield_now().await;
-    }
+        _ => {
+            // Tick until matching is complete
+            loop {
+                let status = mm.worker.nucleo.tick(10);
+                if !status.running {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
 
-    let items = mm.worker.get_all_sorted();
+            mm.worker.get_all_sorted()
+        }
+    };
+
     if items.is_empty() {
         return 1;
     }

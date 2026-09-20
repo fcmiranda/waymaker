@@ -163,6 +163,7 @@ impl ConfigMatchmaker {
         worker.frecency_half_life_days = worker_config.frecency.half_life_days;
         worker.sort_cap = worker_config.sort.cap;
         worker.typo_tolerance = worker_config.typo_tolerance;
+        worker.engine = worker_config.engine;
         worker.dir_first = worker_config.dir_first;
         if worker_config.frecency.active {
             let store = crate::frecency::FrecencyStore::open();

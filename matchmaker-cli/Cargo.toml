@@ -69,6 +69,8 @@ path = "src/main.rs"
 workspace = true
 
 [features]
+default = ["frizbee"]
+frizbee = ["matchmaker-lib/frizbee"]
 experimental = [
   "matchmaker-lib/experimental",
   # "log/max_level_debug"

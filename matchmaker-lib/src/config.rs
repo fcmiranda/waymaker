@@ -169,6 +169,18 @@ pub struct WorkerConfig {
     /// Percentage bonus boost for items located inside or relative to current working directory (CWD). Default is 30 (i.e. +30%).
     #[partial(alias = "lb")]
     pub location_bias: u32,
+    /// Fuzzy matcher engine backend ("nucleo" or "frizbee").
+    #[partial(alias = "eng")]
+    pub engine: MatcherEngineType,
+}
+
+/// Matcher engine backend used for fuzzy searching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MatcherEngineType {
+    #[default]
+    Nucleo,
+    Frizbee,
 }
 
 impl Default for WorkerConfig {
@@ -183,6 +195,7 @@ impl Default for WorkerConfig {
             track: false,
             reverse: false,
             location_bias: 30,
+            engine: MatcherEngineType::default(),
         }
     }
 }

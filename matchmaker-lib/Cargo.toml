@@ -73,7 +73,7 @@ nix = { version = "0.31.1", features = ["poll", "signal"] }
 windows-sys = "0.61.2"
 
 [features]
-default = []
+default = ["frizbee"]
 bracketed-paste = ["crossterm/bracketed-paste"]
 parallelism = []
 experimental = []

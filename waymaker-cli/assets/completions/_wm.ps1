@@ -52,6 +52,8 @@ Register-ArgumentCompleter -Native -CommandName 'wm' -ScriptBlock {
             [CompletionResult]::new('--status-inline', '--status-inline', [CompletionResultType]::ParameterName, 'Display match status counter inline on the right side of the filter input bar')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('-V', '-V ', [CompletionResultType]::ParameterName, 'Print version')
+            [CompletionResult]::new('--version', '--version', [CompletionResultType]::ParameterName, 'Print version')
             break
         }
     })

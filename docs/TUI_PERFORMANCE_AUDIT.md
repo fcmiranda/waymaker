@@ -3,13 +3,13 @@
 > State-of-the-art review by a Rust TUI performance lens: architecture, hot paths,
 > startup/config cost, scalability, and comparison vs `fzf`, `skim`, `yazi`,
 > `superfile` (`spf`), and `television` (`tv`).
-> Workspace version audited: `0.0.42` (`matchmaker-cli` / `matchmaker-lib` /
-> `matchmaker-partial` / `matchmaker-partial-macros`). Binary: `mm` 15 MB
+> Workspace version audited: `0.0.42` (`waymaker-cli` / `waymaker-lib` /
+> `waymaker-partial` / `waymaker-partial-macros`). Binary: `wm` 15 MB
 > (`fat-LTO`, `codegen-units=1`, `panic=abort`, `strip`, `mimalloc` global).
-> See [ARCHITECTURE.md](../matchmaker-lib/ARCHITECTURE.md),
-> [performance.md](../matchmaker-cli/assets/docs/performance.md),
-> [options.md](../matchmaker-cli/assets/docs/options.md),
-> [binds.md](../matchmaker-cli/assets/docs/binds.md).
+> See [ARCHITECTURE.md](../waymaker-lib/ARCHITECTURE.md),
+> [performance.md](../waymaker-cli/assets/docs/performance.md),
+> [options.md](../waymaker-cli/assets/docs/options.md),
+> [binds.md](../waymaker-cli/assets/docs/binds.md).
 
 ## Executive summary
 

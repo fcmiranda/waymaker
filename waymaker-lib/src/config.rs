@@ -135,7 +135,7 @@ where
     }
 }
 
-/// "Input/output specific". Configures the matchmaker worker.
+/// "Input/output specific". Configures the waymaker worker.
 ///
 /// Does not deny unknown fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

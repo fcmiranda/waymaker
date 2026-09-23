@@ -1,1 +1,1 @@
-matchmaker-cli/README.md
+waymaker-cli/README.md

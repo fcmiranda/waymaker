@@ -13,6 +13,10 @@ install:
 run *args:
 	cargo run -p waymaker-cli -F experimental -- {{args}}
 
+# Alias for run, e.g. `just preview -- --help`
+preview *args:
+	cargo run -p waymaker-cli -F experimental -- {{args}}
+
 # Run Criterion benchmarks for matching engine
 bench *args:
 	cargo bench -p waymaker-lib --bench matcher -- {{args}}

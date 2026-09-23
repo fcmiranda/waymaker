@@ -453,6 +453,8 @@ pub struct MMState<'a, 'b: 'a, T: SSS, S: Selection> {
     pub event_controller: &'a EventSender,
 }
 
+pub type WMState<'a, 'b, T, S> = MMState<'a, 'b, T, S>;
+
 impl<'a, 'b: 'a, T: SSS, S: Selection> MMState<'a, 'b, T, S> {
     pub fn previewer_area(&self) -> Option<&Rect> {
         self.preview_ui.as_ref().map(|ui| &ui.area)

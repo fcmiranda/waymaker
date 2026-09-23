@@ -5,6 +5,7 @@ pub static LIBRARY_FULL: &str = "waymaker";
 pub static BINARY_SHORT: &str = "wm";
 
 #[derive(Debug, Parser, Default, Clone)]
+#[command(name = "wm", version)]
 pub struct Cli {
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
@@ -244,6 +245,9 @@ impl Cli {
                 "--nav",
                 "--nav-hints",
                 "--help",
+                "-h",
+                "--version",
+                "-V",
                 "-F",
             ]
             .contains(&s.as_ref())

@@ -214,7 +214,9 @@ mod tests {
     #[test]
     fn test_awt_type_deserialization() {
         use waymaker_partial::Apply;
-        let p = std::path::Path::new("/home/fecavmi/.config/matchmaker/presets/awt-type.toml");
+        let p_wm = std::path::Path::new("/home/fecavmi/.config/waymaker/presets/awt-type.toml");
+        let p_mm = std::path::Path::new("/home/fecavmi/.config/matchmaker/presets/awt-type.toml");
+        let p = if p_wm.exists() { p_wm } else { p_mm };
         if !p.exists() {
             return;
         }
@@ -239,9 +241,17 @@ mod tests {
             panic!("Error parsing asset jump.toml: {e}");
         }
 
-        let dotfiles_path = std::path::Path::new(
+        let dotfiles_path_wm = std::path::Path::new(
+            "/home/fecavmi/.dotfiles/main/waymaker/.config/waymaker/presets/jump.toml",
+        );
+        let dotfiles_path_mm = std::path::Path::new(
             "/home/fecavmi/.dotfiles/main/matchmaker/.config/matchmaker/presets/jump.toml",
         );
+        let dotfiles_path = if dotfiles_path_wm.exists() {
+            dotfiles_path_wm
+        } else {
+            dotfiles_path_mm
+        };
         if dotfiles_path.exists() {
             let dotfiles_str = std::fs::read_to_string(dotfiles_path).unwrap();
             let res_dotfiles: Result<PartialConfig, _> = toml::from_str(&dotfiles_str);
@@ -344,7 +354,8 @@ mod tests {
 
         let mut config = Config::default();
         if let Ok(user_str) =
-            std::fs::read_to_string("/home/fecavmi/.config/matchmaker/config.toml")
+            std::fs::read_to_string("/home/fecavmi/.config/waymaker/config.toml")
+                .or_else(|_| std::fs::read_to_string("/home/fecavmi/.config/matchmaker/config.toml"))
         {
             if let Ok(user_partial) = toml::from_str::<PartialConfig>(&user_str) {
                 config.apply(user_partial);

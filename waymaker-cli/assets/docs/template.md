@@ -181,21 +181,21 @@ Use `\s` and `\S` to insert flexible whitespace for alignment.
 
 ## Environment Variables
 
-When Matchmaker executes a command (e.g., via `Execute`, `Become`, or a preview command), it injects several environment variables that you can use in your scripts.
+When Waymaker executes a command (e.g., via `Execute`, `Become`, or a preview command), it injects several environment variables that you can use in your scripts. Both `WM_*` and legacy `MM_*` names are provided:
 
-| Variable             | FZF Equivalent     | Description                                        |
-| -------------------- | ------------------ | -------------------------------------------------- |
-| `MM_LINES`           | `FZF_LINES`        | Height of the terminal                             |
-| `MM_COLUMNS`         | `FZF_COLUMNS`      | Width of the terminal                              |
-| `MM_TOTAL_COUNT`     | `FZF_TOTAL_COUNT`  | Total number of items                              |
-| `MM_MATCH_COUNT`     | `FZF_MATCH_COUNT`  | Number of matched items                            |
-| `MM_SELECT_COUNT`    | `FZF_SELECT_COUNT` | Number of selected items                           |
-| `MM_POS`             | `FZF_POS`          | Current row index (0-indexed cursor position)      |
-| `MM_QUERY`           | `FZF_QUERY`        | Current input query                                |
-| `MM_PREVIEW_COMMAND` |                    | The current preview command                        |
-| `MM_OVERRIDE`        |                    | Path of the last applied override                  |
-| `MM_STORE`           |                    | Current value stored in state (via `Store` action) |
-| `MM_INDEX`           |                    | Index of command being reloaded (in `ReloadNext`)  |
+| Variable / Fallback                   | FZF Equivalent     | Description                                        |
+| ------------------------------------- | ------------------ | -------------------------------------------------- |
+| `WM_LINES` / `MM_LINES`               | `FZF_LINES`        | Height of the terminal                             |
+| `WM_COLUMNS` / `MM_COLUMNS`           | `FZF_COLUMNS`      | Width of the terminal                              |
+| `WM_TOTAL_COUNT` / `MM_TOTAL_COUNT`   | `FZF_TOTAL_COUNT`  | Total number of items                              |
+| `WM_MATCH_COUNT` / `MM_MATCH_COUNT`   | `FZF_MATCH_COUNT`  | Number of matched items                            |
+| `WM_SELECT_COUNT` / `MM_SELECT_COUNT` | `FZF_SELECT_COUNT` | Number of selected items                           |
+| `WM_POS` / `MM_POS`                   | `FZF_POS`          | Current row index (0-indexed cursor position)      |
+| `WM_QUERY` / `MM_QUERY`               | `FZF_QUERY`        | Current input query                                |
+| `WM_PREVIEW_COMMAND` / `MM_PREVIEW_COMMAND` |              | The current preview command                        |
+| `WM_OVERRIDE` / `MM_OVERRIDE`         |                    | Path of the last applied override                  |
+| `WM_STORE` / `MM_STORE`               |                    | Current value stored in state (via `Store` action) |
+| `WM_INDEX` / `MM_INDEX`               |                    | Index of command being reloaded (in `ReloadNext`)  |
 
 The `envs` section of your config is also injected, as well as `$CLIPcmd` and `$PASTEcmd` -- the auto-determined clipboard commands if they are not otherwise set.
 

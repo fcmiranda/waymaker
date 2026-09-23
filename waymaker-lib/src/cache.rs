@@ -134,6 +134,9 @@ impl std::fmt::Debug for DirCacheStore {
 impl DirCacheStore {
     /// Default state path: `~/.local/state/waymaker/dir_cache.redb` (with fallback to `matchmaker/dir_cache.redb` if existing)
     pub fn default_db_path() -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("WM_DIR_CACHE_DB").or_else(|_| std::env::var("MM_DIR_CACHE_DB")) {
+            return Some(PathBuf::from(p));
+        }
         let base = dirs::state_dir().or_else(dirs::data_local_dir)?;
         let wm_path = base.join("waymaker").join("dir_cache.redb");
         if wm_path.exists() {

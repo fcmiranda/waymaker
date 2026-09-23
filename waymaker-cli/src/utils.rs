@@ -19,7 +19,7 @@ pub fn handle_download(cli: &crate::clap::Cli) {
     fs::create_dir_all(&temp_dir).unwrap();
 
     ibog!("Downloading presets from GitHub...");
-    let zip_path = temp_dir.join("matchmaker.zip");
+    let zip_path = temp_dir.join("waymaker.zip");
 
     let mut curl_cmd = Command::new("curl");
     curl_cmd.args([
@@ -67,7 +67,14 @@ pub fn handle_download(cli: &crate::clap::Cli) {
         }
     }
 
-    let source_root = temp_dir.join("matchmaker-main/matchmaker-cli/assets/presets");
+    let source_root = {
+        let wm_path = temp_dir.join("waymaker-main/waymaker-cli/assets/presets");
+        if wm_path.exists() {
+            wm_path
+        } else {
+            temp_dir.join("matchmaker-main/matchmaker-cli/assets/presets")
+        }
+    };
     let mut source = source_root.clone();
     let mut dest = presets_dir.to_path_buf();
 

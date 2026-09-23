@@ -1,10 +1,10 @@
- mm --nav bar:plain color:black --media --icons --symlink-target --color symlink:cyan,preview-title:cyan p.l.percentage=50 p.b.color=blue
+ wm --nav bar:plain color:black --media --icons --symlink-target --color symlink:cyan,preview-title:cyan p.l.percentage=50 p.b.color=blue
 
 
 
-# Matchmaker — Feature Usage Guide
+# Waymaker — Feature Usage Guide
 
-This document covers every feature added in the current fork, with concrete `mm` command
+This document covers every feature added in the current fork, with concrete `wm` command
 examples and the equivalent `config.toml` snippets.  Each section maps to one implemented
 phase so you can cross-reference with `PLAN.md`.
 
@@ -40,16 +40,16 @@ Only operates on piped input; has no effect when `start.command` is used.
 
 ```bash
 # Sort a plain list
-printf 'zebra\napple\nmango\n' | mm --sort
+printf 'zebra\napple\nmango\n' | wm --sort
 
 # Sort with a custom separator (NUL-separated input)
-find . -print0 | mm --sort i '\0'
+find . -print0 | wm --sort i '\0'
 
 # Sort combined with other flags
-printf 'c.txt\na.txt\nb.txt\n' | mm --sort --icons
+printf 'c.txt\na.txt\nb.txt\n' | wm --sort --icons
 ```
 
-### Config (`~/.config/matchmaker/config.toml` or `-o`)
+### Config (`~/.config/waymaker/config.toml` or `-o`)
 
 ```toml
 [start]
@@ -60,9 +60,9 @@ sort = true
 
 ```bash
 # Override key: start.sort
-printf 'z\na\nb\n' | mm start.sort=true
+printf 'z\na\nb\n' | wm start.sort=true
 # or using the short alias:
-printf 'z\na\nb\n' | mm s.sort=true
+printf 'z\na\nb\n' | wm s.sort=true
 ```
 
 ---
@@ -76,13 +76,13 @@ The icon is derived from the file name / extension.  Requires a Nerd Font in you
 
 ```bash
 # File picker with icons
-mm --icons
+wm --icons
 
 # Combine with fd for a fast file picker
-fd --strip-cwd-prefix | mm --icons
+fd --strip-cwd-prefix | wm --icons
 
 # Icons + preview
-mm --icons px 'bat --color=always {1}'
+wm --icons px 'bat --color=always {1}'
 ```
 
 ### Config
@@ -95,9 +95,9 @@ icons = true
 ### CLI override syntax
 
 ```bash
-mm results.icons=true
+wm results.icons=true
 # or short form:
-mm r.icons=true
+wm r.icons=true
 ```
 
 ---
@@ -112,13 +112,13 @@ name.  The arrow and target are styled with `results.symlink_target_style` (defa
 
 ```bash
 # Show symlink targets in a file list
-mm --symlink-target
+wm --symlink-target
 
 # Change the style of the symlink annotation
-mm --symlink-target --color symlink:Cyan
+wm --symlink-target --color symlink:Cyan
 
 # Combine with icons
-mm --icons --symlink-target
+wm --icons --symlink-target
 ```
 
 ### Config
@@ -132,7 +132,7 @@ symlink_target_style.fg = "DarkGray"   # default — change as desired
 ### CLI override syntax
 
 ```bash
-mm results.symlink_target=true results.symlink_target_style.fg=Cyan
+wm results.symlink_target=true results.symlink_target_style.fg=Cyan
 ```
 
 ---
@@ -149,13 +149,13 @@ mm results.symlink_target=true results.symlink_target_style.fg=Cyan
 
 ```bash
 # Dynamic item title with yellow label
-mm p.l.type=Plain --color 'preview-title:Yellow'
+wm p.l.type=Plain --color 'preview-title:Yellow'
 
 # Static title
-mm p.l.type=Plain p.l.title='Preview'
+wm p.l.type=Plain p.l.title='Preview'
 
 # Interpolated title
-mm p.l.type=Plain p.l.title='File: {item}'
+wm p.l.type=Plain p.l.title='File: {item}'
 ```
 
 ### Config
@@ -171,7 +171,7 @@ title = "File: {item}"       # optional; omit for default dynamic item name
 
 ```bash
 # Color the title via --color
-mm p.l.border.type=Plain p.l.title='File: {item}' --color 'preview-title:Yellow'
+wm p.l.border.type=Plain p.l.title='File: {item}' --color 'preview-title:Yellow'
 ```
 
 ---
@@ -185,10 +185,10 @@ of occupying a separate row.  The status count is right-aligned inside the input
 
 ```bash
 # Enable inline status
-mm query.status_inline=true
+wm query.status_inline=true
 
 # Short form via the query alias
-mm q.status_inline=true
+wm q.status_inline=true
 ```
 
 ### Config
@@ -213,10 +213,10 @@ click-and-drag to resize the preview at runtime.
 
 ```bash
 # Set a 2-cell gap for a right-side preview
-mm p.l.gap=2
+wm p.l.gap=2
 
 # Disable the gap (gap == 0 falls back to border-edge detection)
-mm p.l.gap=0
+wm p.l.gap=0
 ```
 
 ### Config
@@ -248,13 +248,13 @@ distinct styles separate from the cursor row.
 
 ```bash
 # Cyan background for selected rows
-mm results.selected_style.bg=Cyan results.selected_style.fg=Black
+wm results.selected_style.bg=Cyan results.selected_style.fg=Black
 
 # Bold yellow prefix for selected rows
-mm results.selected_prefix_style.fg=Yellow results.selected_prefix_style.modifier=BOLD
+wm results.selected_prefix_style.fg=Yellow results.selected_prefix_style.modifier=BOLD
 
 # Use the --color shorthand (see Section 9)
-mm --color 'selected-fg:White,selected-bg:DarkGray,selected-prefix:Yellow'
+wm --color 'selected-fg:White,selected-bg:DarkGray,selected-prefix:Yellow'
 ```
 
 ### Config
@@ -283,10 +283,10 @@ Priority order for the prefix glyph: **yank > selected > default**.
 
 ```bash
 # Via --color flag
-mm --color 'yank:Magenta'
+wm --color 'yank:Magenta'
 
 # Via config override
-mm results.yank_prefix_style.fg=Magenta results.yank_prefix_style.modifier=BOLD
+wm results.yank_prefix_style.fg=Magenta results.yank_prefix_style.modifier=BOLD
 ```
 
 ```toml
@@ -303,7 +303,7 @@ then call `FmSetYankPaths`.
 
 ```bash
 # Mark currently selected files as "yanked" on ctrl-y
-mm b 'ctrl-y=Transform(printf "%s\n" {+1})|||FmSetYankPaths({MM_STORE})'
+wm b 'ctrl-y=Transform(printf "%s\n" {+1})|||FmSetYankPaths({MM_STORE})'
 ```
 
 ```toml
@@ -366,28 +366,28 @@ hex (`#ff5f87`), and 256-palette indices (`200`).
 
 ```bash
 # Catppuccin Mocha palette — single --color call
-mm --color 'fg:#cdd6f4,bg:#1e1e2e,hl-fg:#cba6f7,hl-bg:#313244,\
+wm --color 'fg:#cdd6f4,bg:#1e1e2e,hl-fg:#cba6f7,hl-bg:#313244,\
 border:#6c7086,selected-fg:#cba6f7,selected-prefix:#89b4fa,\
 yank:#f38ba8,symlink:#a6e3a1,preview-border:#45475a'
 
 # Gruvbox accent highlights only
-mm --color 'hl-bg:#3c3836,hl-fg:#ebdbb2,selected-prefix:#fabd2f,yank:#fb4934'
+wm --color 'hl-bg:#3c3836,hl-fg:#ebdbb2,selected-prefix:#fabd2f,yank:#fb4934'
 
 # Minimal tweak: red yanked items, green selected prefix
-mm --color 'yank:Red,selected-prefix:Green'
+wm --color 'yank:Red,selected-prefix:Green'
 
 # Multiple separate --color calls are merged left-to-right
-mm --color 'border:Blue' --color 'hl-bg:DarkGray,selected-fg:White'
+wm --color 'border:Blue' --color 'hl-bg:DarkGray,selected-fg:White'
 
 # Icons + symlink annotation with custom colour
-mm --icons --symlink-target --color 'symlink:Cyan'
+wm --icons --symlink-target --color 'symlink:Cyan'
 ```
 
 ---
 
 ## 10. User Config Overlay
 
-**What it does:** At startup, if `~/.config/matchmaker/config.toml` exists it is loaded
+**What it does:** At startup, if `~/.config/waymaker/config.toml` exists it is loaded
 as a `PartialConfig` and merged on top of the built-in defaults — before any CLI overrides
 are applied.  This gives you persistent personal defaults without touching the embedded
 config.
@@ -398,7 +398,7 @@ full config.
 ### Personal config file
 
 ```toml
-# ~/.config/matchmaker/config.toml
+# ~/.config/waymaker/config.toml
 
 [results]
 icons = true
@@ -419,13 +419,13 @@ are resolved against the built-in `presets/` directory.
 
 ```bash
 # Load the built-in git/status preset
-mm -o git/status
+wm -o git/status
 
 # Layer your own override file on top of your personal config
-mm -o ~/dotfiles/mm-work.toml
+wm -o ~/dotfiles/wm-work.toml
 
 # Stack multiple overrides (applied left-to-right)
-mm -o git/status -o ~/mm-dark-theme.toml
+wm -o git/status -o ~/wm-dark-theme.toml
 ```
 
 ---
@@ -444,13 +444,13 @@ Two default key bindings were updated in this fork:
 
 ```bash
 # Restore ctrl-p to scroll-up-10
-mm b 'ctrl-p=Up(10)'
+wm b 'ctrl-p=Up(10)'
 
 # Remap help to alt-h (already bound by default) and free ?
-mm b '?=SwitchPreview' b 'alt-h=Help'
+wm b '?=SwitchPreview' b 'alt-h=Help'
 
 # Bind ? to cycle all preview layouts
-mm b '?=CyclePreview'
+wm b '?=CyclePreview'
 ```
 
 ```toml
@@ -477,7 +477,7 @@ This is a behaviour change with no config knob; it is always active.
 # No extra flags needed.
 
 # If you prefer the old toggle-in-place behaviour, rebind:
-mm b 'tab=Toggle' b 'shift-backtab=Toggle'
+wm b 'tab=Toggle' b 'shift-backtab=Toggle'
 ```
 
 ---
@@ -510,43 +510,43 @@ Supported named spinner styles:
 
 ```bash
 # Style unselected items with a custom prefix marker
-mm results.unselected_prefix="-" --color unselected-prefix:DarkGray
+wm results.unselected_prefix="-" --color unselected-prefix:DarkGray
 
-# Direct matchmaker equivalent of:
+# Direct waymaker equivalent of:
 # printf '@Building…\nReady item' | bfzf --spinner-prefix '@'
-printf '@Building…\nReady item' | mm results.spinner_prefix='@' preview.show=false
+printf '@Building…\nReady item' | wm results.spinner_prefix='@' preview.show=false
 
 # Use the earth (globe) spinner colored Cyan
 printf '@Building…\nReady item' | \
-  mm results.spinner_prefix='@' \
+  wm results.spinner_prefix='@' \
      results.spinner=globe \
      preview.show=false \
      --color spinner:Cyan
 
 # Use the moon phases spinner colored Yellow
 printf '@Building…\nReady item' | \
-  mm results.spinner_prefix='@' \
+  wm results.spinner_prefix='@' \
      results.spinner=moon \
      preview.show=false \
      --color spinner:Yellow
 
 # Use the meter loading bar spinner colored Green
 printf '@Building…\nReady item' | \
-  mm results.spinner_prefix='@' \
+  wm results.spinner_prefix='@' \
      results.spinner=meter \
      preview.show=false \
      --color spinner:Green
 
 # Use the shy monkey emoji spinner colored Magenta
 printf '@Building…\nReady item' | \
-  mm results.spinner_prefix='@' \
+  wm results.spinner_prefix='@' \
      results.spinner=monkey \
      preview.show=false \
      --color spinner:Magenta
 
 # Use the arc spinner styled Bold Blue
 printf '@Building…\nReady item' | \
-  mm results.spinner_prefix='@' \
+  wm results.spinner_prefix='@' \
      results.spinner=arc \
      preview.show=false \
      results.spinner_style.fg=Blue \
@@ -573,7 +573,7 @@ spinner_style.modifier = "BOLD"
 ### File manager-style picker
 
 ```bash
-mm \
+wm \
   --icons \
   --symlink-target \
   --sort \
@@ -590,7 +590,7 @@ mm \
 ### Catppuccin Mocha theme with all new options
 
 ```bash
-mm \
+wm \
   --icons --symlink-target --sort \
   --color 'fg:#cdd6f4,bg:#1e1e2e,hl-fg:#cba6f7,hl-bg:#313244,border:#6c7086,\
 label:#cba6f7,preview-border:#45475a,preview-label:#89dceb,\
@@ -603,7 +603,7 @@ yank:#f38ba8,symlink:#a6e3a1' \
 Persist as your user config:
 
 ```toml
-# ~/.config/matchmaker/config.toml
+# ~/.config/waymaker/config.toml
 [results]
 icons            = true
 symlink_target   = true
@@ -651,14 +651,14 @@ gap = 1
 ```
 
 ```bash
-mm -o ./git-status-yank.toml --icons
+wm -o ./git-status-yank.toml --icons
 ```
 
 ### Sort + status inline + icons for a log browser
 
 ```bash
 journalctl --no-pager -n 500 | \
-  mm --sort \
+  wm --sort \
      query.status_inline=true \
      results.icons=false \
      px 'echo {}' \
@@ -669,9 +669,9 @@ journalctl --no-pager -n 500 | \
 
 ## 15. Media Previews (`--media` / `preview.media`)
 
-**What it does:** Renders images, video thumbnails, and PDF previews directly inside the Matchmaker preview panel.
+**What it does:** Renders images, video thumbnails, and PDF previews directly inside the Waymaker preview panel.
 
-Matchmaker automatically queries your terminal capabilities using `from_query_stdio()` to determine the best rendering protocol (supporting Kitty graphics, Sixel, and iTerm2).
+Waymaker automatically queries your terminal capabilities using `from_query_stdio()` to determine the best rendering protocol (supporting Kitty graphics, Sixel, and iTerm2).
 
 - **Images**: Decoded natively (no external tools required) via the `image` crate. Supports `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`, `.tiff`.
 - **Videos**: Spawns `ffmpegthumbnailer` to extract a high-quality frame buffer (requires `ffmpegthumbnailer` installed). Supports `.mp4`, `.mkv`, `.avi`, `.mov`.
@@ -680,13 +680,13 @@ Matchmaker automatically queries your terminal capabilities using `from_query_st
 ### CLI
 
 ```bash
-# Start Matchmaker with native media previews enabled
-mm --media
+# Start Waymaker with native media previews enabled
+wm --media
 
 # Alternatively, override the media key directly on the CLI
-mm preview.media=true
+wm preview.media=true
 # or using short alias:
-mm p.media=true
+wm p.media=true
 ```
 
 ### Config
@@ -711,10 +711,10 @@ media = true # Enable terminal image protocols for media previews
 
 ```bash
 # Define group headers using the '#' prefix
-printf "# Languages\nPython\nRust\nGo\n# Frameworks\nDjango\nAxum\nGin" | mm --group-prefix '#'
+printf "# Languages\nPython\nRust\nGo\n# Frameworks\nDjango\nAxum\nGin" | wm --group-prefix '#'
 
 # Define group headers using a custom prefix (e.g. '---')
-printf "--- Group A\nItem 1\nItem 2\n--- Group B\nItem 3" | mm --group-prefix '---'
+printf "--- Group A\nItem 1\nItem 2\n--- Group B\nItem 3" | wm --group-prefix '---'
 ```
 
 ---
@@ -732,7 +732,7 @@ printf "--- Group A\nItem 1\nItem 2\n--- Group B\nItem 3" | mm --group-prefix '-
 | `--group-prefix` | — | — |
 | `--color key:val,...` | *(see table in §9)* | — |
 
-### Config-only keys (use `mm key=value` to override on the CLI)
+### Config-only keys (use `wm key=value` to override on the CLI)
 
 | Config path | Type | Default |
 |---|---|---|
@@ -768,19 +768,19 @@ header-border  header-label
 nav  selected-fg  selected-bg  selected-prefix  unselected-prefix  spinner  yank  symlink
 ```
 
-### Frecency & Navigation Subcommands (`mm <subcommand>`)
+### Frecency & Navigation Subcommands (`wm <subcommand>`)
 
-- `mm add <path>`: Record an access event in the `redb` frecency database.
-- `mm rank <path>`: View access score, count, and timestamp for a path.
-- `mm list [keywords...]`: Query frecency database sorted by score, filtered by all keywords.
-- `mm init <shell> [--cmd <alias>]`: Output shell integration script (`zsh`, `bash`, `fish`, `nushell`, `powershell`).
-- `mm import zoxide`: Import historical frecency records from `zoxide`.
-- `mm clean` / `mm prune`: Remove non-existent paths from the database.
-- `mm cache [path]`: Fast-index files into warm cache (< 1ms).
+- `wm add <path>`: Record an access event in the `redb` frecency database.
+- `wm rank <path>`: View access score, count, and timestamp for a path.
+- `wm list [keywords...]`: Query frecency database sorted by score, filtered by all keywords.
+- `wm init <shell> [--cmd <alias>]`: Output shell integration script (`zsh`, `bash`, `fish`, `nushell`, `powershell`).
+- `wm import zoxide`: Import historical frecency records from `zoxide`.
+- `wm clean` / `wm prune`: Remove non-existent paths from the database.
+- `wm cache [path]`: Fast-index files into warm cache (< 1ms).
 
 #### Piped & Non-File Text Stream Frecency
 
-Matchmaker's `frecency.rs` store tracks **arbitrary string keys** on STDIN. When piping text into `mm` (`command | mm`), user selection events record frecency scores for any items (Docker container names, git branches, SSH hosts, tmux sessions, or command history lines), automatically ranking frequently selected items at the top of future runs.
+Waymaker's `frecency.rs` store tracks **arbitrary string keys** on STDIN. When piping text into `wm` (`command | wm`), user selection events record frecency scores for any items (Docker container names, git branches, SSH hosts, tmux sessions, or command history lines), automatically ranking frequently selected items at the top of future runs.
 
 ### Preset: `jump.toml` (Directory Jumping Optimization)
 
@@ -806,10 +806,10 @@ directory_path_style.fg = "dark_gray"
 - **Frecency Ranking:** Ranks results by exponential decay frequency + recency.
 - **Depth Penalty:** Penalizes deeply nested paths (`15`), prioritizing project root folders.
 - **Typo Tolerance:** Allows matching with 1-character typos/substitutions.
-- **Dim Directory Path:** Dims parent paths (`/home/user/dev/`) while highlighting target folder basenames (`matchmaker`).
+- **Dim Directory Path:** Dims parent paths (`/home/user/dev/`) while highlighting target folder basenames (`waymaker`).
 - **Multi-keyword Query:** `j dotfiles main` filters by all keywords and jumps directly to `~/.dotfiles/main`.
 
-### New actions (for use in `[binds]` or `mm b '...'`)
+### New actions (for use in `[binds]` or `wm b '...'`)
 
 | Action | Argument | Description |
 |---|---|---|
@@ -834,15 +834,15 @@ directory_path_style.fg = "dark_gray"
 ### How It Works (Zero Config Required)
 
 1. **Automatic In-Process Scanning & `.gitignore` Rules:**
-   When running `mm` without piped input or custom commands, `matchmaker` uses `matchmaker::walker::AsyncWalker` powered by `ignore` (the same engine as `ripgrep`).
+   When running `wm` without piped input or custom commands, `waymaker` uses `waymaker::walker::AsyncWalker` powered by `ignore` (the same engine as `ripgrep`).
    - **Hidden Files:** Includes hidden files and folders (`.config/`, `.zshrc`, `.dotfiles`, etc.) by default.
    - **Gitignore Respect:** Automatically respects `.gitignore` (local and parent), `.ignore`, `.git/info/exclude`, and global gitignore (`~/.config/git/ignore`).
    - **Internal `.git` Exclusion:** Excludes internal `.git/` repository objects to keep lists clean.
    - **Bypassing `.gitignore`:** If you want to include files ignored by `.gitignore`, set a custom `command` in `config.toml` (e.g. `command = "fd --type f --hidden --no-ignore"` or `command = "rg --files --hidden --no-ignore"`).
 
 2. **Instant Warm Starts, `mtime` Validation & Deterministic Rendering:**
-   On launching `mm` in a previously visited directory, file paths are loaded from `~/.local/state/matchmaker/dir_cache.redb` in **< 5ms** using binary `postcard` encoding.
-   - **Automatic `mtime` Cache Invalidation:** `DirCacheStore` tracks parent directory modification timestamps (`mtime_nanos`). If files/folders are created, deleted, or renamed externally (e.g. via `touch`, `mkdir`, `rm` outside `mm`), the cache automatically invalidates and streams fresh live files on Frame 0.
+   On launching `wm` in a previously visited directory, file paths are loaded from `~/.local/state/waymaker/dir_cache.redb` in **< 5ms** using binary `postcard` encoding.
+   - **Automatic `mtime` Cache Invalidation:** `DirCacheStore` tracks parent directory modification timestamps (`mtime_nanos`). If files/folders are created, deleted, or renamed externally (e.g. via `touch`, `mkdir`, `rm` outside `wm`), the cache automatically invalidates and streams fresh live files on Frame 0.
    - **Frame 0 Shallow-First Order:** Pass 1 scans top-level entries (`max_depth = 1`) in < 1ms, ensuring top-level folders/files always appear immediately on screen. Pass 2 fills in deeper subfolders in background.
    - **Zero-Syscall TUI Render Loop:** Thread-local icon & symlink caches eliminate 100% of disk `stat`/`lstat`/`readlink` system calls per frame.
    - **Template AST Pre-compilation:** Template placeholder strings (`{=}`, `{1}`) are compiled into AST tokens once and cached in thread-local storage, speeding up formatting by 30%.
@@ -850,6 +850,6 @@ directory_path_style.fg = "dark_gray"
 3. **Database Maintenance:**
    ```bash
    # Clean stale entries from both frecency and directory cache databases
-   mm clean
+   wm clean
    ```
 

@@ -22,6 +22,8 @@ mod selector;
 pub use selector::Selector;
 mod matchmaker;
 pub use matchmaker::*;
+pub type Waymaker<T, S = T> = Matchmaker<T, S>;
+pub type WMState<'a, 'b, T, S> = render::WMState<'a, 'b, T, S>;
 pub mod cache;
 pub mod tui;
 pub mod walker;

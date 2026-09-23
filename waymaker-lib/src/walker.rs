@@ -417,8 +417,8 @@ mod tests {
         fs::write(temp_dir.join(".git").join("config"), "git")?;
 
         // Normal files and directories that should be included
-        fs::create_dir_all(temp_dir.join(".config").join("matchmaker"))?;
-        fs::write(temp_dir.join(".config").join("matchmaker").join("config.toml"), "a=1")?;
+        fs::create_dir_all(temp_dir.join(".config").join("waymaker"))?;
+        fs::write(temp_dir.join(".config").join("waymaker").join("config.toml"), "a=1")?;
         fs::create_dir_all(temp_dir.join("src"))?;
         fs::write(temp_dir.join("src").join("main.rs"), "fn main() {}")?;
         fs::write(temp_dir.join(".bashrc"), "# bashrc")?;
@@ -434,7 +434,7 @@ mod tests {
 
         // Normal directories and files MUST be present
         assert!(items.iter().any(|i| i == ".config/" || i == ".config"));
-        assert!(items.iter().any(|i| i == ".config/matchmaker/config.toml"));
+        assert!(items.iter().any(|i| i == ".config/waymaker/config.toml"));
         assert!(items.iter().any(|i| i == "src/" || i == "src"));
         assert!(items.iter().any(|i| i == "src/main.rs"));
         assert!(items.iter().any(|i| i == ".bashrc"));

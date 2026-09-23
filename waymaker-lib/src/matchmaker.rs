@@ -112,6 +112,10 @@ pub type ConfigMatchmaker = Matchmaker<ConfigMMItem, Segmented<Either<Box<str>, 
 pub type ConfigMMInnerItem = Segmented<Either<Box<str>, Text<'static>>>;
 pub type ConfigMMItem = Indexed<ConfigMMInnerItem>;
 
+pub type ConfigWaymaker = ConfigMatchmaker;
+pub type ConfigWMInnerItem = ConfigMMInnerItem;
+pub type ConfigWMItem = ConfigMMItem;
+
 impl ConfigMatchmaker {
     #[allow(unused)]
     /// Creates a new Matchmaker from a config::BaseConfig.
@@ -793,6 +797,7 @@ impl<T: SSS, S: Selection + 'static> Matchmaker<T, S> {
                 let preview_template = state.preview_payload().clone();
                 let preview_cmd = use_formatter(&formatter_1, state, &preview_template, None);
                 let extra = env_vars!(
+                    "WM_PREVIEW_COMMAND" => preview_cmd.clone(),
                     "MM_PREVIEW_COMMAND" => preview_cmd,
                 );
                 vars.extend(extra);
@@ -829,6 +834,7 @@ impl<T: SSS, S: Selection + 'static> Matchmaker<T, S> {
                 let preview_template = state.preview_payload().clone();
                 let preview_cmd = use_formatter(&formatter_2, state, &preview_template, None);
                 let extra = env_vars!(
+                    "WM_PREVIEW_COMMAND" => preview_cmd.clone(),
                     "MM_PREVIEW_COMMAND" => preview_cmd,
                 );
                 vars.extend(extra);
@@ -876,6 +882,7 @@ impl<T: SSS, S: Selection + 'static> Matchmaker<T, S> {
                 let preview_template = state.preview_payload().clone();
                 let preview_cmd = use_formatter(&formatter, state, &preview_template, None);
                 let extra = env_vars!(
+                    "WM_PREVIEW_COMMAND" => preview_cmd.clone(),
                     "MM_PREVIEW_COMMAND" => preview_cmd,
                 );
                 vars.extend(extra);
@@ -1127,6 +1134,7 @@ impl<T: SSS, S: Selection + 'static> Matchmaker<T, S> {
                 let preview_template = state.preview_payload().clone();
                 let preview_cmd = use_formatter(&formatter, state, &preview_template, None);
                 let extra = env_vars!(
+                    "WM_PREVIEW_COMMAND" => preview_cmd.clone(),
                     "MM_PREVIEW_COMMAND" => preview_cmd,
                 );
                 vars.extend(extra);
@@ -1147,6 +1155,7 @@ impl<T: SSS, S: Selection + 'static> Matchmaker<T, S> {
                 let preview_template = state.preview_payload().clone();
                 let preview_cmd = use_formatter(&formatter_2, state, &preview_template, None);
                 let extra = env_vars!(
+                    "WM_PREVIEW_COMMAND" => preview_cmd.clone(),
                     "MM_PREVIEW_COMMAND" => preview_cmd,
                 );
                 vars.extend(extra);

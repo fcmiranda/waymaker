@@ -31,3 +31,4 @@ complete -c wm -l nav-hints -d 'Show keybinding hints in footer/status when Resu
 complete -c wm -l parent-peek -d 'Show a 3rd pane on the left displaying parent directory contents'
 complete -c wm -l status-inline -d 'Display match status counter inline on the right side of the filter input bar'
 complete -c wm -s h -l help -d 'Print help'
+complete -c wm -s V -l version -d 'Print version'

@@ -1,7 +1,7 @@
 import sys
 import re
 
-with open("matchmaker-lib/src/ui/results.rs", "r") as f:
+with open("waymaker-lib/src/ui/results.rs", "r") as f:
     content = f.read()
 
 # 1. Replace nav_bar_span and dynamic_multi_prefix with closures
@@ -133,7 +133,7 @@ new_call_3 = """            let is_first = rows.is_empty();
 content = content.replace(old_call_3, new_call_3)
 
 # Write back
-with open("matchmaker-lib/src/ui/results.rs", "w") as f:
+with open("waymaker-lib/src/ui/results.rs", "w") as f:
     f.write(content)
 
 print("Done")

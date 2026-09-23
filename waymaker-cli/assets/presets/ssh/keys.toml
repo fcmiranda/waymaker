@@ -1,0 +1,51 @@
+# browse public keys
+
+[start.command]
+command = "ls *.pub 2>/dev/null"
+
+[start]
+directory = "~/.ssh"
+# --- Preview ---
+[preview]
+show = true
+
+[[preview.layout]]
+command = '''
+bat --wrap=never --color=always -pp {1}
+echo
+ssh-keygen -lf {1} -E sha256
+'''
+border = { title = "Key Fingerprint" }
+
+# --- UI ---
+[query]
+prompt = "keys> "
+
+[binds]
+"@accept" = ["#copy", "Copy(cat {})", "Accept"]
+"@Accept" = ["#copy path", "Copy(realpath {})", "Accept"]
+"@open_2" = '''Execute(priv={}; priv="${priv%%.pub}"; [[ -f $priv ]] && $EDITOR "$priv")'''
+"@next" = "BecomeSilent(wm -o ssh/known)"
+"@prev" = "BecomeSilent(wm -o ssh/hosts)"
+"@rm" = [
+    '''ExecuteOrConfirm(
+pub_key={1}
+priv_key="${pub_key%.pub}"
+
+echo "  - $priv_key"
+echo "  - $pub_key"
+printf "Are you sure you want to permanently delete these files? (y/N): "
+read -r confirm
+
+case "$confirm" in
+    [yY]|[yY][eE][sS])
+        rm -vf "$priv_key" "$pub_key"
+        ;;
+    *)
+        echo "Deletion cancelled."
+        exit 0
+        ;;
+esac
+)''',
+    "Reload",
+]

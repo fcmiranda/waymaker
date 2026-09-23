@@ -1,12 +1,12 @@
 #!/bin/sh
 #
-# matchmaker installation script
+# waymaker installation script
 #
 
 set -e
 
 REPO="Squirreljetpack/matchmaker"
-BINARY_BASE_NAME="mm"
+BINARY_BASE_NAME="wm"
 INSTALL_DIR_CARGO="$HOME/.cargo/bin"
 INSTALL_DIR_LOCAL="$HOME/.local/bin"
 
@@ -51,7 +51,7 @@ get_install_dir() {
 		_win_appdata="${LOCALAPPDATA:-}"
 		[ -z "$_win_appdata" ] && error "LOCALAPPDATA not set"
 
-		_win_path="$_win_appdata/Programs/matchmaker"
+		_win_path="$_win_appdata/Programs/waymaker"
 		mkdir -p "$_win_path" || error "Could not create $_win_path"
 
 		echo "$_win_path"
@@ -76,27 +76,27 @@ main() {
     VERSION=$(get_latest_release)
 
     # Asset Naming Logic
-    # Based on 0.0.37 release naming convention: matchmaker-cli-<arch>-<os>.<ext>
+    # Based on release naming convention: waymaker-cli-<arch>-<os>.<ext>
     if [ "$OS" = "windows" ]; then
-        ASSET_NAME="matchmaker-cli-x86_64-pc-windows-msvc.zip"
+        ASSET_NAME="waymaker-cli-x86_64-pc-windows-msvc.zip"
     elif [ "$OS" = "mac" ]; then
         if [ "$ARCH" = "aarch64" ]; then
-            ASSET_NAME="matchmaker-cli-aarch64-apple-darwin.tar.xz"
+            ASSET_NAME="waymaker-cli-aarch64-apple-darwin.tar.xz"
         else
-            ASSET_NAME="matchmaker-cli-x86_64-apple-darwin.tar.xz"
+            ASSET_NAME="waymaker-cli-x86_64-apple-darwin.tar.xz"
         fi
     else
         # Linux: default to musl for portability
         if [ "$ARCH" = "aarch64" ]; then
-            ASSET_NAME="matchmaker-cli-aarch64-unknown-linux-musl.tar.xz"
+            ASSET_NAME="waymaker-cli-aarch64-unknown-linux-musl.tar.xz"
         else
-            ASSET_NAME="matchmaker-cli-x86_64-unknown-linux-musl.tar.xz"
+            ASSET_NAME="waymaker-cli-x86_64-unknown-linux-musl.tar.xz"
         fi
     fi
 
     DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET_NAME"
 
-    TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mm')
+    TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'wm')
     trap 'rm -rf "$TEMP_DIR"' 0  # POSIX trap on exit 0
 
     info "Downloading $ASSET_NAME..."

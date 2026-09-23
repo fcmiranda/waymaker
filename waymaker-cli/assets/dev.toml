@@ -1,0 +1,171 @@
+# picker configuration file
+
+[tui]
+percentage = 60
+min = 10
+max = 120
+
+[ui]
+# border    = { color = "blue", bg = "#282828" }
+tick_rate = 30
+
+[query]
+style.fg = "White"
+cursor = "default"
+prompt = ">"
+
+# [header]
+# content = "test"
+# header_lines = 2
+# interactions = [[[0, "test"]], [[1, "test"], [3, "open"], [4, ""]]]
+
+
+[results]
+scroll_padding = 2
+
+# border           = { type = "Rounded", sides = "", padding = 0 }
+style.fg = "White"
+current.bg = "Black"
+current.modifier = "BOLD"
+match.fg = "Green"
+
+# reverse = auto
+wrap = true
+
+scroll_wrap = true
+
+[status]
+style.fg = "Green"
+style.modifier = "ITALIC"
+
+[previewer]
+try_lossy = false
+delay_clear = false
+max_procs = 4
+always_trigger = true
+
+[preview]
+# border      = { type = "Rounded", color = "Blue" }
+scroll_wrap = true
+show = true
+wrap = true
+markdown = true
+
+[[preview.layout]]
+command = '''p={1}; p="${p/#\~/$HOME}"; if [ -d "$p" ]; then wm tree "$p" 2>/dev/null || eza --tree --level=2 --icons=always --git-ignore --color=always "$p" 2>/dev/null || ls -la "$p"; elif [[ "$p" =~ \.(md|markdown|mdown|mkd)$ ]]; then wm md "$p" 2>/dev/null || bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; elif [[ "$p" =~ \.(mmd|mermaid)$ ]]; then wm mermaid "$p" 2>/dev/null || bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; else mime=$(file -b --mime-type "$p" 2>/dev/null); if [[ "$mime" == image/* ]]; then if command -v chafa >/dev/null 2>&1; then chafa --format=symbols --size=80x35 "$p" 2>/dev/null; elif command -v img2txt >/dev/null 2>&1; then img2txt -f ansi -W 60 "$p" 2>/dev/null; fi; echo ""; identify "$p" 2>/dev/null || file "$p"; else bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; fi; fi'''
+
+side = "right"
+percentage = 40
+min = 30
+max = 120
+
+[[preview.layout]]
+side = "top"
+percentage = 40
+min = 30
+max = 120
+
+[binds]
+# Essentia
+"ctrl-c" = "Quit"
+"esc" = "Quit"
+"enter" = "@accept"
+"ctrl-enter" = "@accept_2"
+"ctrl-a" = "CycleAll"
+"tab" = ["Select", "Down"]
+"shift-backtab" = ["Toggle", "Up"]
+
+# Edit
+"right" = "ForwardChar"
+"left" = "BackwardChar"
+"ctrl-right" = "ForwardWord"
+"ctrl-left" = "BackwardWord"
+"backspace" = "DeleteChar"
+"ctrl-h" = "DeleteWord"
+"ctrl-u" = "Cancel"
+
+# Navigation
+"up" = "Up"
+"down" = "Down"
+"pageup" = "HalfPageDown"
+"pagedown" = "HalfPageUp"
+"ctrl-p" = "Up(10)"
+"ctrl-n" = "Down(10)"
+"shift-up" = "PreviewUp"
+"shift-down" = "PreviewDown"
+"ctrl-shift-up" = "PreviewHalfPageUp"
+"ctrl-shift-down" = "PreviewHalfPageDown"
+"shift-right" = "HScroll(1)"
+"shift-left" = "HScroll(-1)"
+
+"shift+scrollup" = "PreviewUp"
+"shift+scrolldown" = "PreviewDown"
+"alt-h" = "Help"
+"?" = "SwitchPreview(0)"
+"shift-?" = "SwitchPreview(0)"
+"ctrl-/" = "CyclePreview"
+"ctrl-shift-/" = "CyclePreview" # ctrl-shift-/
+
+# Columns
+"ctrl-." = "NextColumn"
+
+"alt-enter" = "Print({1})"
+
+# Programmable
+"ctrl-l" = "@look" # "maximize" the preview
+"ctrl-o" = "@open"
+"alt-o" = "@open_2"
+"ctrl-r" = "@reload"
+"ctrl-shift-n" = "@next"
+
+"@accept" = "Accept"
+"@accept_2" = "Accept"
+"@look" = "Execute(eval $MM_PREVIEW_COMMAND | $PAGER)"
+"@open" = "Execute($EDITOR {})"
+"@open_2" = "Become($EDITOR {})"
+"@reload" = "Reload"
+"@next" = "ReloadNext"
+"@prev" = "ReloadPrev"
+"@cycle" = "ReloadNext"
+"*" = "@bookmark"
+
+# Printing
+"alt-p" = "@print"
+"alt-shift-p" = "@print_2"
+"ctrl-y" = "@copy"
+"ctrl-shift-y" = "@copy_all"
+"alt-y" = "@copy_col"
+
+"@print" = "Print({-})"
+"@print_2" = "Print({-!})"
+"@copy" = "CopyAsync(printf '%s\n' {+1})"
+"@copy_all" = "CopyAsync(printf {})"
+"@copy_col" = "CopyAsync(printf '%s\n' {+!})"
+
+# test
+"ctrl-t" = "Become(set -e; false; echo hi;)"
+"alt-t" = "@test"
+"@test" = "Execute(echo ----; read v; echo $v; echo ----)"
+
+[matcher]
+trim = true
+
+[matcher.sort]
+threshold = 1
+
+[columns]
+split = '\s+'
+max = 8
+
+[start.command]
+cmd = '''
+    if command -v fd >/dev/null 2>&1; then
+        fd --strip-cwd-prefix --print0
+    else
+        find . -print0
+    fi
+    '''
+separator = "\\0"
+
+[exit]
+select_1 = false

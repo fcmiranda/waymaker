@@ -1,0 +1,314 @@
+# interactive git status
+source = 'base.toml'
+
+[start]
+[start.command]
+command = '''
+git status --no-rename --ignore-submodules=dirty -sz |
+while IFS= read -r -d '' entry; do
+  st_staged="${entry:0:1}"
+  st_worktree="${entry:1:1}"
+  st=""
+  file="${entry:3}"
+
+  RED=$'\033[31m'
+  GREEN=$'\033[32m'
+  RESET=$'\033[m'
+
+  case "$st_staged" in
+    " "|\?) st="" ;;
+    *) st="${GREEN}${st_staged}${RESET}"
+  esac
+
+  case "$st_worktree" in
+    " ") st+=" " ;;
+    \?)  st+="${RED}??${RESET}" ;;
+    *) st+="${RED}${st_worktree}${RESET}" ;;
+  esac
+
+  printf '%s\0%s\n' "$file" "$st"
+done
+'''
+output = "{=1}"
+
+[columns]
+split = "\\x00"
+max = 2
+default = 1
+
+[matcher]
+ansi = true
+sort.threshold = 40
+
+# --- UI ---
+# [tui]
+# percentage = 100
+
+[query]
+prompt = "status> "
+
+# --- Preview ---
+[previewer]
+always_trigger = false
+
+[[preview.layout]]
+command = '''
+git diff --color=always --exit-code -- {1} && if [ -e {1} ]; then $PAGER {1}; else git show HEAD:{1}; fi
+'''
+border = { type = "LightDoubleDashed", color = "DarkGray", title = "Diff (Unstaged)" }
+side = "top"
+percentage = 50
+min = 5
+padding = 0
+
+[[preview.layout]]
+command = '''
+git diff --cached --color=always --exit-code -- {1} && echo "no staged changes"
+'''
+border = { type = "LightDoubleDashed", color = "DarkGray", title = "Staged Diff" }
+side = "top"
+percentage = 50
+min = 5
+padding = 0
+
+[[preview.layout]]
+# alternate history: git -c color.ui=always log --decorate --stat --summary -p -- {1}
+command = '''
+git -c  color.ui=always log --ext-diff -D -p -- {1}
+'''
+border = { title = "File History" }
+
+# --- Binds ---
+[binds]
+"@accept" = ["#stage", "@stage", "Reload"]
+"@Accept" = "Accept"
+"@next" = "BecomeSilent(wm -o git/restore)"
+"@prev" = "BecomeSilent(wm -o git/grep)"
+"@reload" = "Reload"
+
+"ctrl-1" = "@summary"
+"ctrl-u" = ["@unstage", "Reload"]
+# "ctrl-c" = "@commit"
+"@show" = "@commit"
+"alt-c" = [
+    "ExecuteOrConfirm(git add . && echo 'All changes staged' || echo 'git add . failed')",
+    "@commit",
+]
+"ctrl-shift-c" = ["@commit_ai", "Reload"]
+"alt-r" = ["@restore", "Reload"]
+"ctrl-t" = ["@stash", "Reload"]
+"alt-t" = ["@stash_unstaged", "Reload"]
+"@rm" = ["#untrack", "@untrack", "Reload"]
+"ctrl-shift-d" = [
+    "#delete",
+    "ExecuteOrConfirm(git add -- {+1}; git rm -rf -- {+1})",
+    "Reload",
+]
+"alt-d" = ["#delete from disk", "ExecuteOrConfirm(rm -rf -- {+1})", "Reload"]
+"alt-i" = ["@ignore", "Reload"]
+"ctrl-i" = ["#edit gitignore", "Execute($EDITOR .gitignore)", "Reload"]
+"ctrl-b" = "@save-staged"
+
+# --- Scripts ---
+"@summary" = "RunPreview(git -c color.ui=always status -sbu && echo && git --no-pager diff --color=always --compact-summary && false)"
+
+"@rename" = '''ExecuteOrConfirm(
+set -- {+1}
+echo "Rename $1 to: "
+read -r new_name
+[ -n "$new_name" ] || exit
+mkdir -p "$(dirname "$new_name")"
+git mv "$1" "$new_name"
+)
+'''
+
+"@stage" = '''
+ExecuteAsync(
+set -e
+
+if [[ "$MM_TOTAL_COUNT" != "$MM_SELECT_COUNT" ]]; then
+  set -- {+1}
+else
+  set -- .
+fi
+
+f={1}
+ac=true
+ad=true
+
+# stage if cursor is not fully staged
+if [ -n "$(git ls-files --others --exclude-standard -- "$f")" ]; then
+    ac=false
+elif git diff --quiet -- "$f"; then
+    ad=false
+else
+    ac=false
+fi
+
+if $ac; then git reset -q -- "$@"; else git add -- "$@"; fi
+# git update-index --refresh
+)
+'''
+
+"@unstage" = '''
+ExecuteAsync(
+set -e
+
+if ((MM_SELECT_COUNT)); then
+  set -- {+1}
+else
+  set -- .
+fi
+
+ac=true
+
+# only stage if every selected is fully unstaged
+for f; do
+  git diff --cached --quiet -- "$f" || { ac=false; break; }
+done
+
+if $ac; then
+  git add -- "$@"
+else
+  git reset -q -- "$@"
+fi
+)
+'''
+
+"@restore" = '''
+ExecuteOrConfirm(
+set -e
+set -- {+1}
+if (( $# == 1 )); then
+  file="$1"
+  if git diff --cached --quiet -- "$file" 2>/dev/null; then
+    printf "Restore %s to HEAD? [Y/n] " "$file"
+  else
+    printf "Restore %s to HEAD? [Y/n/s(taging)] " "$file"
+  fi
+  read -r ans
+  case "${ans%% *}" in
+    [Yy]*|'') git restore --source=HEAD --staged --worktree -- "$file" ;;
+    [sS]*) git restore -- "$file" ;;
+  esac
+else
+  printf "Restore %d files? [Y/n/s(taging)] " "$#"
+  read -r ans
+  case "${ans%% *}" in
+    [Yy]*|'') git restore --source=HEAD --staged --worktree -- "$@" ;;
+    [sS]*) git restore -- "$@" ;;
+  esac
+fi
+)
+'''
+
+"@stash" = '''
+ExecuteOrConfirm(
+set -e
+printf "Stash message (optional): "
+read -r msg
+if [ -n "$msg" ]; then
+  git stash push -u -m "$msg" -- {+1}
+else
+  git stash push -- {+1}
+fi
+)
+'''
+
+"@stash_unstaged" = "ExecuteOrConfirm(git stash --keep-index --include-untracked)"
+
+"@untrack" = '''
+ExecuteOrConfirm(
+set -e
+
+git ls-files -z --cached --exclude-standard -- {+1} |
+while IFS= read -r -d '' file; do
+  files+=("$file")
+done
+
+[ ${#files[@]} -eq 0 ] && echo "No tracked files selected" && exit 1
+
+if git rm --cached -n -- "${files[@]}" >/dev/null; then
+  git rm --cached -- "${files[@]}"
+else
+  printf "Force untrack ${#files} files? [y/N] "
+  read -r ans
+  case "$ans" in
+    [yY]*) git rm --cached -f -- "${files[@]}" ;;
+  esac
+fi
+)
+'''
+
+"@ignore" = '''
+ExecuteOrConfirm(
+set -e
+for f in {+1}; do
+  git rm -r --cached "$f" 2>/dev/null &&
+  echo "$f" >> .gitignore
+done
+)
+'''
+
+"@commit" = '''
+BecomeOrConfirm(
+set -e
+if git diff --cached --quiet; then
+  git add .
+fi
+git --no-pager diff --color=always --cached --compact-summary
+echo
+echo "Commit message (\ -> continue): "
+msg=""
+while IFS= read -r line; do
+  if [[ "$line" == *'\' ]]; then
+    msg+="${line%?}"$'\n'
+    printf "> "
+  else
+    msg+="$line"
+    break
+  fi
+done
+
+if [ -n "$msg" ]; then
+  git commit -m "$msg"
+else
+  git commit
+fi
+)
+'''
+
+"@save_staged" = '''BecomeOrConfirm(
+set -e
+
+# Get the current branch name and short hash
+cur=$(git symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
+cur_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+default_name="$cur-save"
+printf "Branch name [%s]: " "$default_name"
+read -r name
+name="${name:-$default_name}"
+msg="Saved changes ($cur_hash)"
+
+if git diff --cached --quiet; then
+  git branch "$name" &&
+  echo "No staged changes. Created branch '$name'..."
+else
+  # 1. Package the index into a tree
+  tree=$(git write-tree)
+
+  # 2. Create a standalone commit from that tree attached to HEAD
+  commit=$(echo "$msg" | git commit-tree "$tree" -p HEAD)
+
+  # 3. Point the new branch at the newly created commit
+  git branch "$name" "$commit"
+
+  echo "Staged changes successfully saved to '$name'."
+  exit 1
+fi
+)'''
+
+# "@commit_ai" = '''
+# Execute(:)
+# '''

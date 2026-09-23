@@ -1,0 +1,22 @@
+[package]
+name = "waymaker-partial-macros"
+version = "0.0.30"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/Squirreljetpack/matchmaker"
+description = "Derive macros for the waymaker-partial crate"
+
+[features]
+default = ["partial"]
+partial = []
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.106"
+quote = "1.0.44"
+syn = { version = "2.0.115", features = ["full"] }
+
+[lints]
+workspace = true

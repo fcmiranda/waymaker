@@ -70,19 +70,19 @@
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
         # Build the main package
-        matchmaker = craneLib.buildPackage (commonArgs // {
+        waymaker = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
-          pname = "matchmaker";
-          cargoExtraArgs = "-p matchmaker-cli";
+          pname = "waymaker";
+          cargoExtraArgs = "-p waymaker-cli";
         });
       in
       {
-        packages.default = matchmaker;
-        packages.matchmaker = matchmaker;
+        packages.default = waymaker;
+        packages.waymaker = waymaker;
 
         apps.default = flake-utils.lib.mkApp {
-          drv = matchmaker;
-          name = "mm";
+          drv = waymaker;
+          name = "wm";
         };
 
         devShells.default = craneLib.devShell {
@@ -94,12 +94,12 @@
 
         # Integration with `nix flake check`
         checks = {
-          inherit matchmaker;
-          matchmaker-clippy = craneLib.cargoClippy (commonArgs // {
+          inherit waymaker;
+          waymaker-clippy = craneLib.cargoClippy (commonArgs // {
             inherit cargoArtifacts;
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
           });
-          matchmaker-fmt = craneLib.cargoFmt {
+          waymaker-fmt = craneLib.cargoFmt {
             inherit src;
           };
         };

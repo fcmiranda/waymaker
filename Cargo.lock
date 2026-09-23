@@ -1713,116 +1713,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "matchmaker-cli"
-version = "0.0.42"
-dependencies = [
- "ansi-to-tui",
- "anyhow",
- "clap",
- "clap_complete",
- "cli_boilerplate_automation",
- "crokey",
- "dirs",
- "easy-ext",
- "env_logger",
- "glob",
- "indexmap",
- "libc",
- "log",
- "matchmaker-lib",
- "matchmaker-partial",
- "matchmaker-partial-macros",
- "mimalloc",
- "ratatui",
- "regex",
- "serde",
- "strum",
- "strum_macros",
- "termimad",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "which 7.0.3",
-]
-
-[[package]]
-name = "matchmaker-lib"
-version = "0.0.42"
-dependencies = [
- "ansi-to-tui",
- "anyhow",
- "arc-swap",
- "arrayvec",
- "atoi",
- "base64",
- "bitflags 2.11.1",
- "bitflags-derive",
- "boxcar",
- "cli_boilerplate_automation",
- "criterion",
- "crokey",
- "crossterm 0.29.0",
- "dirs",
- "easy-ext",
- "env_logger",
- "frizbee",
- "futures",
- "glob",
- "ignore",
- "image",
- "indexmap",
- "log",
- "matchmaker-partial",
- "matchmaker-partial-macros",
- "mermaid-rs-renderer",
- "mermaid-text",
- "mio",
- "nix 0.31.3",
- "nucleo",
- "paste",
- "phf 0.13.1",
- "postcard",
- "pulldown-cmark",
- "ratatui",
- "ratatui-image",
- "redb",
- "regex",
- "resvg",
- "rustc-hash",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "unicode-segmentation",
- "unicode-width 0.2.2",
- "usvg",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "matchmaker-partial"
-version = "0.0.30"
-dependencies = [
- "indexmap",
- "matchmaker-partial-macros",
- "serde",
- "thiserror 2.0.18",
- "toml",
-]
-
-[[package]]
-name = "matchmaker-partial-macros"
-version = "0.0.30"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3678,6 +3568,116 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "semver",
+]
+
+[[package]]
+name = "waymaker-cli"
+version = "0.0.42"
+dependencies = [
+ "ansi-to-tui",
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "cli_boilerplate_automation",
+ "crokey",
+ "dirs",
+ "easy-ext",
+ "env_logger",
+ "glob",
+ "indexmap",
+ "libc",
+ "log",
+ "mimalloc",
+ "ratatui",
+ "regex",
+ "serde",
+ "strum",
+ "strum_macros",
+ "termimad",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "waymaker-lib",
+ "waymaker-partial",
+ "waymaker-partial-macros",
+ "which 7.0.3",
+]
+
+[[package]]
+name = "waymaker-lib"
+version = "0.0.42"
+dependencies = [
+ "ansi-to-tui",
+ "anyhow",
+ "arc-swap",
+ "arrayvec",
+ "atoi",
+ "base64",
+ "bitflags 2.11.1",
+ "bitflags-derive",
+ "boxcar",
+ "cli_boilerplate_automation",
+ "criterion",
+ "crokey",
+ "crossterm 0.29.0",
+ "dirs",
+ "easy-ext",
+ "env_logger",
+ "frizbee",
+ "futures",
+ "glob",
+ "ignore",
+ "image",
+ "indexmap",
+ "log",
+ "mermaid-rs-renderer",
+ "mermaid-text",
+ "mio",
+ "nix 0.31.3",
+ "nucleo",
+ "paste",
+ "phf 0.13.1",
+ "postcard",
+ "pulldown-cmark",
+ "ratatui",
+ "ratatui-image",
+ "redb",
+ "regex",
+ "resvg",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "unicode-segmentation",
+ "unicode-width 0.2.2",
+ "usvg",
+ "waymaker-partial",
+ "waymaker-partial-macros",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "waymaker-partial"
+version = "0.0.30"
+dependencies = [
+ "indexmap",
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+ "waymaker-partial-macros",
+]
+
+[[package]]
+name = "waymaker-partial-macros"
+version = "0.0.30"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

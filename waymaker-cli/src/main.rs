@@ -1,0 +1,1102 @@
+mod action;
+mod clap;
+mod color;
+mod config;
+mod crokey;
+mod fm;
+pub mod formatter;
+mod logger;
+mod parse;
+mod paths;
+mod register;
+mod start;
+mod utils;
+pub mod watch;
+
+use clap::*;
+use config::PartialConfig;
+use logger::*;
+use paths::*;
+use start::*;
+use utils::*;
+
+use std::process::exit;
+
+use cba::{bait::ResultExt, bog::BogOkExt, bring::split::split_on_unescaped_delimiter, ebog};
+
+use waymaker::MatchError;
+use waymaker_partial::Set;
+
+use crate::parse::{get_pairs, try_split_kv};
+
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
+async fn main() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL)
+    };
+
+    let (cli, config_args) = Cli::get_partitioned_args();
+
+    init_logger(
+        [cli.quiet, cli.verbose],
+        &state_dir().join(format!("{BINARY_SHORT}.log")),
+    );
+    log::debug!("{cli:?}, {config_args:?}");
+
+    display_doc(&cli);
+    handle_download(&cli);
+
+    // Warm up the SVG/Mermaid system font database asynchronously in the background.
+    // This moves the 50-650ms `load_system_fonts()` filesystem scan completely off the
+    // interactive path, preventing any cold-start latency freeze when previewing diagrams.
+    waymaker::utils::mermaid::warmup_font_db();
+
+    if let Some(code) = handle_frecency_cli(&config_args).await {
+        exit(code);
+    }
+
+    // get config overrides
+    let partial = get_partial(config_args).__ebog();
+    log::trace!("{partial:?}");
+
+    let no_read = cli.no_read;
+    let group_prefix = cli.group_prefix.clone();
+    let filter_query = cli.filter.clone();
+    // get config
+    let config = enter(cli, partial).__ebog();
+
+    if let Some(query) = filter_query {
+        let code = start_filter(config, &query, no_read, group_prefix).await;
+        exit(code);
+    }
+
+    // begin
+    match start(config, no_read, group_prefix).await {
+        Ok(_) => {
+            log::debug!("Execution Complete");
+        }
+        Err(err) => match err {
+            MatchError::Abort(i) => {
+                exit(i);
+            }
+            MatchError::EventLoopClosed => {
+                exit(127);
+            }
+            MatchError::TUIError(e) => {
+                ebog!("TUI"; "{e}")
+            }
+            MatchError::NoMatch => {
+                ebog!("NoMatch");
+                exit(404);
+            }
+            _ => unreachable!(),
+        },
+    };
+}
+
+fn get_partial(config_args: Vec<String>) -> anyhow::Result<PartialConfig> {
+    let split = get_pairs(config_args)?;
+    log::trace!("{split:?}");
+    let mut partial = PartialConfig::default();
+    for (path, val) in split {
+        if !path.is_empty() && (path[0] == "env" || path[0] == "envs") {
+            cba::wbog!(
+                "Ignoring manual override of environment variables via CLI: {}",
+                path.join(".")
+            );
+            continue;
+        }
+
+        let parts = {
+            let mut parts = if val.contains("|||") {
+                split_on_unescaped_delimiter(&val, "|||")
+            } else {
+                vec![val.clone()]
+            };
+            let is_binds = path.len() == 1 && ["binds", "b"].contains(&path[0].as_ref());
+            try_split_kv(&mut parts, is_binds)?;
+            parts
+        };
+
+        partial
+            .set(path.as_slice(), &parts)
+            .prefix(format!("Invalid value for {}", path.join(".")))?;
+    }
+
+    Ok(partial)
+}
+
+fn display_doc(cli: &Cli) {
+    use termimad::MadSkin;
+    use termimad::crossterm::style::Color;
+
+    let mut md = String::new();
+    if let Some(doc) = &cli.doc {
+        match doc {
+            Doc::Options => md.push_str(include_str!("../assets/docs/options.md")),
+            Doc::Binds => md.push_str(include_str!("../assets/docs/binds.md")),
+            Doc::Template => md.push_str(include_str!("../assets/docs/template.md")),
+            Doc::Performance => md.push_str(include_str!("../assets/docs/performance.md")),
+            Doc::Frecency => md.push_str(include_str!("../assets/docs/frecency.md")),
+            Doc::Jump => md.push_str(include_str!("../assets/docs/jump.md")),
+            Doc::Other => md.push_str(include_str!("../assets/docs/other.md")),
+        }
+    }
+
+    if !md.is_empty() {
+        let mut skin = MadSkin::default();
+        skin.bold.set_fg(Color::Yellow);
+        skin.print_text(&md);
+        exit(0)
+    }
+}
+
+fn parse_preview_width_from_args(args: &[String]) -> Option<usize> {
+    for i in 0..args.len() {
+        if args[i] == "--width" || args[i] == "-W" {
+            if let Some(w) = args.get(i + 1).and_then(|s| s.parse::<usize>().ok()) {
+                return Some(w);
+            }
+        } else if let Some(w) = args[i]
+            .strip_prefix("--width=")
+            .or_else(|| args[i].strip_prefix("-W="))
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            return Some(w);
+        }
+    }
+    ratatui::crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
+        .ok()
+        .filter(|&w| w > 0)
+        .or_else(|| {
+            std::env::var("COLUMNS")
+                .ok()
+                .and_then(|c| c.parse::<usize>().ok())
+                .filter(|&w| w > 0)
+        })
+}
+
+fn parse_subcommand_path_arg(args: &[String]) -> Option<&str> {
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--" {
+            return args.get(i + 1).map(|s| s.as_str());
+        }
+        if arg == "--width"
+            || arg == "-W"
+            || arg == "-t"
+            || arg == "--theme"
+            || arg == "--bg"
+            || arg == "--background"
+        {
+            i += 2;
+            continue;
+        }
+        if arg.starts_with("--width=")
+            || arg.starts_with("-W=")
+            || arg.starts_with("--theme=")
+            || arg.starts_with("--bg=")
+            || arg.starts_with("--background=")
+            || arg == "-w"
+            || arg == "--watch"
+            || arg == "--ascii"
+            || arg == "--text"
+            || arg == "--no-mermaid"
+            || arg == "--no-diagrams"
+            || arg == "--no-images"
+            || arg == "--dark"
+            || arg == "--light"
+            || arg == "--transparent"
+            || arg == "--solid"
+        {
+            i += 1;
+            continue;
+        }
+        if arg == "-" || !arg.starts_with('-') {
+            return Some(arg.as_str());
+        }
+        i += 1;
+    }
+    None
+}
+
+fn parse_theme_from_args(args: &[String]) -> waymaker::config::DiagramTheme {
+    for (i, arg) in args.iter().enumerate() {
+        if (arg == "-t" || arg == "--theme") && i + 1 < args.len() {
+            if let Ok(theme) = args[i + 1].parse() {
+                return theme;
+            }
+        } else if let Some(val) = arg.strip_prefix("--theme=") {
+            if let Ok(theme) = val.parse() {
+                return theme;
+            }
+        } else if arg == "--dark" {
+            return waymaker::config::DiagramTheme::Dark;
+        } else if arg == "--light" {
+            return waymaker::config::DiagramTheme::Light;
+        }
+    }
+    waymaker::config::DiagramTheme::Auto
+}
+
+fn parse_bg_from_args(args: &[String]) -> waymaker::config::DiagramBackground {
+    for (i, arg) in args.iter().enumerate() {
+        if (arg == "--background" || arg == "--bg") && i + 1 < args.len() {
+            if let Ok(bg) = args[i + 1].parse() {
+                return bg;
+            }
+        } else if let Some(val) = arg.strip_prefix("--background=") {
+            if let Ok(bg) = val.parse() {
+                return bg;
+            }
+        } else if let Some(val) = arg.strip_prefix("--bg=") {
+            if let Ok(bg) = val.parse() {
+                return bg;
+            }
+        } else if arg == "--transparent" {
+            return waymaker::config::DiagramBackground::Transparent;
+        } else if arg == "--solid" {
+            return waymaker::config::DiagramBackground::Solid;
+        }
+    }
+    waymaker::config::DiagramBackground::Transparent
+}
+
+pub async fn handle_frecency_cli(args: &[String]) -> Option<i32> {
+    if args.is_empty() {
+        return None;
+    }
+    let mut normalized_args;
+    let args = if (args[0] == "-w" || args[0] == "--watch") && args.len() > 1 {
+        normalized_args = args.to_vec();
+        let flag = normalized_args.remove(0);
+        normalized_args.push(flag);
+        &normalized_args[..]
+    } else {
+        args
+    };
+    match args[0].as_str() {
+        "tree" | "preview-tree" => {
+            let path_str = args.get(1).map(|s| s.as_str()).unwrap_or(".");
+            let path = std::path::Path::new(path_str);
+            let opts = waymaker::utils::tree::TreeOptions::default();
+            let ansi_output = waymaker::utils::tree::render_dir_tree_ansi(path, &opts);
+            if ansi_output.ends_with('\n') {
+                print!("{ansi_output}");
+            } else {
+                println!("{ansi_output}");
+            }
+            Some(0)
+        }
+        "md" | "markdown" | "preview-md" | "preview-markdown" => {
+            let watch = args.iter().any(|a| a == "-w" || a == "--watch");
+            let text_only = args.iter().any(|a| a == "--text");
+            let ascii = args.iter().any(|a| a == "--ascii");
+            let no_mermaid = args.iter().any(|a| a == "--no-mermaid" || a == "--no-diagrams");
+            let no_images = args.iter().any(|a| a == "--no-images");
+            let width = parse_preview_width_from_args(args);
+            let theme = parse_theme_from_args(args);
+            let bg = parse_bg_from_args(args);
+            let path_arg = parse_subcommand_path_arg(args);
+
+            if watch {
+                if path_arg.is_none() || path_arg == Some("-") {
+                    eprintln!("Error: --watch requires a file path on disk, stdin cannot be watched");
+                    return Some(1);
+                }
+                let p = path_arg.unwrap();
+                let target_path = std::path::Path::new(p);
+                if !target_path.exists() {
+                    eprintln!("Error: file '{}' not found", p);
+                    return Some(1);
+                }
+                if target_path.is_dir() {
+                    eprintln!("Error: '{}' is a directory, not a markdown file", p);
+                    return Some(1);
+                }
+                let abs_target = if target_path.is_absolute() {
+                    target_path.to_path_buf()
+                } else {
+                    std::env::current_dir()
+                        .map(|c| c.join(target_path))
+                        .unwrap_or_else(|_| target_path.to_path_buf())
+                };
+                let dynamic_width = width.is_none();
+                let opts = waymaker::utils::markdown::MarkdownOptions {
+                    max_width: width,
+                    base_path: Some(abs_target),
+                    render_mermaid: !no_mermaid,
+                    mermaid_ascii: ascii,
+                    show_line_numbers: false,
+                    mermaid_image: !ascii && !text_only && !no_mermaid,
+                    inline_diagrams: !ascii && !text_only && !no_mermaid,
+                    inline_images: !ascii && !text_only && !no_images,
+                    diagram_theme: theme,
+                    diagram_background: bg,
+                };
+                if let Err(e) = crate::watch::watch_markdown(target_path, opts, dynamic_width).await {
+                    eprintln!("Error during watch: {e}");
+                    return Some(1);
+                }
+                return Some(0);
+            }
+
+            let content = if let Some(p) = path_arg {
+                if p == "-" {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    let target_path = std::path::Path::new(p);
+                    if !target_path.exists() {
+                        eprintln!("Error: file '{}' not found", p);
+                        return Some(1);
+                    }
+                    if target_path.is_dir() {
+                        eprintln!("Error: '{}' is a directory, not a markdown file", p);
+                        return Some(1);
+                    }
+                    std::fs::read_to_string(p).unwrap_or_else(|e| format!("Error reading {p}: {e}"))
+                }
+            } else {
+                use std::io::IsTerminal;
+                if !std::io::stdin().is_terminal() {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    eprintln!("Usage: wm md <file.md> [-w|--watch] [--width <N>] [--text] [--ascii] [--no-mermaid] [--no-images] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
+                    return Some(1);
+                }
+            };
+            let opts = waymaker::utils::markdown::MarkdownOptions {
+                max_width: width,
+                base_path: path_arg.filter(|p| *p != "-").map(|p| {
+                    let path = std::path::Path::new(p);
+                    if path.is_absolute() {
+                        path.to_path_buf()
+                    } else {
+                        std::env::current_dir()
+                            .map(|c| c.join(path))
+                            .unwrap_or_else(|_| path.to_path_buf())
+                    }
+                }),
+                render_mermaid: !no_mermaid,
+                mermaid_ascii: ascii,
+                show_line_numbers: false,
+                mermaid_image: !ascii && !text_only && !no_mermaid,
+                inline_diagrams: !ascii && !text_only && !no_mermaid,
+                inline_images: !ascii && !text_only && !no_images,
+                diagram_theme: theme,
+                diagram_background: bg,
+            };
+            let ansi_output = waymaker::utils::markdown::render_markdown_ansi(&content, &opts);
+            use std::io::IsTerminal;
+            if std::io::stdout().is_terminal() {
+                let (sync_start, sync_end) = crate::watch::get_sync_update_delimiters();
+                print!("{sync_start}");
+                if ansi_output.ends_with('\n') {
+                    print!("{ansi_output}");
+                } else {
+                    println!("{ansi_output}");
+                }
+                print!("{sync_end}");
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+            } else {
+                if ansi_output.ends_with('\n') {
+                    print!("{ansi_output}");
+                } else {
+                    println!("{ansi_output}");
+                }
+            }
+            Some(0)
+        }
+        "mermaid" | "preview-mermaid" | "mmd" => {
+            let text_only = args.iter().any(|a| a == "--text");
+            let ascii = args.iter().any(|a| a == "--ascii");
+            let width = parse_preview_width_from_args(args);
+            let theme = parse_theme_from_args(args);
+            let bg = parse_bg_from_args(args);
+            let path_arg = parse_subcommand_path_arg(args);
+            let content = if let Some(p) = path_arg {
+                if p == "-" {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    std::fs::read_to_string(p).unwrap_or_else(|e| format!("Error reading {p}: {e}"))
+                }
+            } else {
+                use std::io::IsTerminal;
+                if !std::io::stdin().is_terminal() {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                } else {
+                    eprintln!("Usage: wm mermaid <file.mmd> [--width <N>] [--text] [--ascii] [--theme <auto|dark|light>] [--bg <transparent|solid>]");
+                    return Some(1);
+                }
+            };
+            if !ascii && !text_only && waymaker::utils::mermaid::is_kitty_supported() {
+                if let Some(diag) =
+                    waymaker::utils::mermaid::render_mermaid_to_unicode_placeholders_with_options(
+                        &content, width, theme, bg,
+                    )
+                {
+                    print!("{}", diag.transmission);
+                    let mut lines = Vec::with_capacity(diag.lines.len() + 2);
+                    lines.push(ratatui::text::Line::default());
+                    lines.extend(diag.lines);
+                    lines.push(ratatui::text::Line::default());
+                    let text = ratatui::text::Text::from(lines);
+                    let ansi_output = waymaker::utils::text::text_to_ansi(&text);
+                    if ansi_output.ends_with('\n') {
+                        print!("{ansi_output}");
+                    } else {
+                        println!("{ansi_output}");
+                    }
+                    return Some(0);
+                }
+            }
+            let opts = waymaker::utils::mermaid::MermaidOptions {
+                max_width: width,
+                ascii,
+                show_box: true,
+                title: Some("Mermaid Diagram".to_string()),
+                inline_diagrams: false,
+                theme,
+                background: bg,
+            };
+            let ansi_output = waymaker::utils::mermaid::render_mermaid_ansi(&content, &opts);
+            if ansi_output.ends_with('\n') {
+                print!("{ansi_output}");
+            } else {
+                println!("{ansi_output}");
+            }
+            Some(0)
+        }
+
+        "add" => {
+            let path = args.get(1).cloned().unwrap_or_else(|| {
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            });
+            let store = waymaker::frecency::FrecencyStore::open();
+            match store.add(&path) {
+                Ok(score) => {
+                    log::info!("Recorded access for '{path}' (frecency score: {score})");
+                }
+                Err(err) => {
+                    log::error!("Failed to record frecency for '{path}': {err}");
+                }
+            }
+            Some(0)
+        }
+        "remove" | "rm" => {
+            if let Some(path) = args.get(1) {
+                let store = waymaker::frecency::FrecencyStore::open();
+                match store.remove(path) {
+                    Ok(true) => {
+                        println!("Removed '{path}' from frecency database.");
+                    }
+                    Ok(false) => {
+                        println!("Path '{path}' not found in frecency database.");
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to remove '{path}' from frecency database: {err}");
+                    }
+                }
+            } else {
+                eprintln!("Usage: wm remove <path>");
+                return Some(1);
+            }
+            Some(0)
+        }
+        "rank" => {
+            let path = args.get(1).cloned().unwrap_or_else(|| {
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            });
+            let store = waymaker::frecency::FrecencyStore::open();
+            if let Some(record) = store.rank(&path) {
+                let score = store.get_bonus(&path);
+                println!(
+                    "Path: {}\nScore: {}\nCount: {}\nLast Accessed: {}",
+                    record.path, score, record.count, record.last_accessed
+                );
+            } else {
+                println!("Path '{}' not found in frecency database", path);
+            }
+            Some(0)
+        }
+        "pin" | "bookmark" => {
+            let path_arg = args.get(1).map(|s| s.as_str());
+            if let Some(path_str) = path_arg {
+                if path_str == "list" || path_str == "-l" || path_str == "--list" {
+                    let store = waymaker::frecency::FrecencyStore::open();
+                    for pin in store.list_pins() {
+                        println!("{pin}");
+                    }
+                    return Some(0);
+                }
+                let target = if path_str == "add" {
+                    args.get(2).map(|s| s.as_str()).unwrap_or(".")
+                } else {
+                    path_str
+                };
+                let store = waymaker::frecency::FrecencyStore::open();
+                let is_dir = std::path::Path::new(target).is_dir();
+                let icon = if is_dir { "󰮟" } else { "󱀻" };
+                match store.pin(target) {
+                    Ok(_) => println!("{icon} Bookmarked '{target}'"),
+                    Err(e) => eprintln!("Failed to bookmark '{target}': {e}"),
+                }
+            } else {
+                let store = waymaker::frecency::FrecencyStore::open();
+                for pin in store.list_pins() {
+                    println!("{pin}");
+                }
+            }
+            Some(0)
+        }
+        "unpin" | "unbookmark" => {
+            if let Some(path) = args.get(1) {
+                let store = waymaker::frecency::FrecencyStore::open();
+                match store.unpin(path) {
+                    Ok(true) => println!("󰤭 Unbookmarked '{path}'"),
+                    Ok(false) => println!("Path '{path}' was not bookmarked"),
+                    Err(e) => eprintln!("Failed to unbookmark '{path}': {e}"),
+                }
+            } else {
+                eprintln!("Usage: wm unbookmark <path>");
+                return Some(1);
+            }
+            Some(0)
+        }
+        "pins" | "bookmarks" => {
+            let store = waymaker::frecency::FrecencyStore::open();
+            for pin in store.list_pins() {
+                println!("{pin}");
+            }
+            Some(0)
+        }
+        "import-zoxide" | "sync-zoxide" => {
+            let store = waymaker::frecency::FrecencyStore::open();
+            let count = store.import_from_zoxide();
+            println!("Imported {count} directory records from zoxide.");
+            Some(0)
+        }
+        "list" | "query" => {
+            let dirs_only = args
+                .iter()
+                .any(|a| a == "-d" || a == "--dirs" || a == "--dirs-only");
+            let pins_only = args.iter().any(|a| {
+                a == "-p"
+                    || a == "--pins"
+                    || a == "--pins-only"
+                    || a == "--bookmarks"
+                    || a == "--bookmarks-only"
+            });
+            let keywords: Vec<String> = args
+                .iter()
+                .skip(1)
+                .filter(|a| {
+                    *a != "-l"
+                        && *a != "--list"
+                        && *a != "-d"
+                        && *a != "--dirs"
+                        && *a != "--dirs-only"
+                        && *a != "-p"
+                        && *a != "--pins"
+                        && *a != "--pins-only"
+                        && *a != "--bookmarks"
+                        && *a != "--bookmarks-only"
+                        && !a.starts_with('-')
+                })
+                .map(|a| a.to_lowercase())
+                .collect();
+
+            let full_query = keywords.join(" ");
+            let store = waymaker::frecency::FrecencyStore::open();
+            if !pins_only {
+                store.auto_import_from_zoxide_if_empty();
+                if dirs_only {
+                    if let Ok(cwd) = std::env::current_dir() {
+                        let _ = store.add(&cwd.to_string_lossy());
+                    }
+                }
+            }
+            let pinned_paths = store.list_pins();
+            let pins_set: std::collections::HashSet<String> =
+                pinned_paths.iter().cloned().collect();
+
+            if pins_only {
+                for path in pinned_paths {
+                    let path_obj = std::path::Path::new(&path);
+                    if dirs_only && !path_obj.is_dir() {
+                        continue;
+                    }
+                    let lower_path = path.to_lowercase();
+                    let matches_all = keywords.iter().all(|kw| lower_path.contains(kw));
+                    if matches_all {
+                        println!("{path}");
+                    }
+                }
+                return Some(0);
+            }
+
+            let mut pinned_matches: Vec<(String, usize, bool)> = Vec::new();
+            for path in &pinned_paths {
+                let path_obj = std::path::Path::new(path);
+                if dirs_only && !path_obj.is_dir() {
+                    continue;
+                }
+                let lower_path = path.to_lowercase();
+                let matches_all = keywords.iter().all(|kw| lower_path.contains(kw));
+                if matches_all {
+                    let ends_with_query = !full_query.is_empty()
+                        && (lower_path.ends_with(&full_query)
+                            || keywords.last().map_or(false, |lk| lower_path.ends_with(lk)));
+                    let path_depth = path_obj.components().count();
+                    pinned_matches.push((path.clone(), path_depth, ends_with_query));
+                }
+            }
+
+            pinned_matches.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.1.cmp(&b.1)));
+
+            let snapshot = store.get_snapshot();
+            let mut matches: Vec<(String, u32, usize, bool)> = Vec::new();
+
+            for (path, score) in snapshot.scores {
+                if pins_set.contains(&path) {
+                    continue;
+                }
+                let path_obj = std::path::Path::new(&path);
+                if dirs_only && !path_obj.is_dir() {
+                    continue;
+                }
+
+                let lower_path = path.to_lowercase();
+                let matches_all = keywords.iter().all(|kw| lower_path.contains(kw));
+                if matches_all {
+                    let ends_with_query = !full_query.is_empty()
+                        && (lower_path.ends_with(&full_query)
+                            || keywords.last().map_or(false, |lk| lower_path.ends_with(lk)));
+                    let path_depth = path_obj.components().count();
+                    matches.push((path, score, path_depth, ends_with_query));
+                }
+            }
+
+            // Sort:
+            // 1. Exact/tail match bonus (ends_with_query = true first)
+            // 2. Frecency score descending
+            // 3. Shorter path depth
+            matches.sort_by(|a, b| {
+                b.3.cmp(&a.3)
+                    .then_with(|| b.1.cmp(&a.1))
+                    .then_with(|| a.2.cmp(&b.2))
+            });
+
+            // Output pins first (Tier 0), then frecency matches (Tier 1)
+            for (path, _, _) in pinned_matches {
+                println!("{path}");
+            }
+            for (path, _, _, _) in matches {
+                println!("{path}");
+            }
+            Some(0)
+        }
+        "init" => {
+            let shell = args.get(1).map(|s| s.as_str()).unwrap_or("zsh");
+            let mut cmd_name = "z";
+            for (idx, arg) in args.iter().enumerate() {
+                if arg == "--cmd" {
+                    if let Some(val) = args.get(idx + 1) {
+                        cmd_name = val.as_str();
+                    }
+                } else if let Some(val) = arg.strip_prefix("--cmd=") {
+                    cmd_name = val;
+                }
+            }
+
+            let raw_script = match shell {
+                "zsh" => include_str!("shell/zsh.sh"),
+                "bash" => include_str!("shell/bash.sh"),
+                "fish" => include_str!("shell/fish.fish"),
+                "nushell" | "nu" => include_str!("shell/nu.nu"),
+                "powershell" | "pwsh" => include_str!("shell/pwsh.ps1"),
+                _ => {
+                    eprintln!(
+                        "Unsupported shell '{shell}'. Supported shells: zsh, bash, fish, nushell, powershell"
+                    );
+                    return Some(1);
+                }
+            };
+
+            let mut script = if cmd_name != "z" {
+                raw_script
+                    .replace("z()", &format!("{cmd_name}()"))
+                    .replace("zi()", &format!("{cmd_name}i()"))
+                    .replace("function z\n", &format!("function {cmd_name}\n"))
+                    .replace("function zi\n", &format!("function {cmd_name}i\n"))
+                    .replace("def --env z ", &format!("def --env {cmd_name} "))
+                    .replace("function z ", &format!("function {cmd_name} "))
+            } else {
+                raw_script.to_string()
+            };
+
+            if cmd_name != "z" {
+                script.push_str(&format!(
+                    "\nalias z={cmd_name} 2>/dev/null\nalias zi={cmd_name}i 2>/dev/null\n"
+                ));
+            }
+
+            println!("{script}");
+            Some(0)
+        }
+        "import" => {
+            let target = args.get(1).map(|s| s.as_str()).unwrap_or("zoxide");
+            if target == "zoxide" {
+                import_zoxide();
+            } else {
+                eprintln!("Unknown import target '{target}'. Supported targets: zoxide");
+                return Some(1);
+            }
+            Some(0)
+        }
+        "clean" | "prune" => {
+            let store = waymaker::frecency::FrecencyStore::open();
+            match store.clean_stale() {
+                Ok(count) => {
+                    println!("Cleaned {count} stale entries from frecency database.");
+                }
+                Err(err) => {
+                    eprintln!("Failed to clean frecency database: {err}");
+                    return Some(1);
+                }
+            }
+            let dir_cache = waymaker::cache::DirCacheStore::open();
+            if let Ok(count) = dir_cache.clean_stale() {
+                if count > 0 {
+                    println!("Cleaned {count} stale entries from directory cache database.");
+                }
+            }
+            Some(0)
+        }
+        "cache" => {
+            let start = std::time::Instant::now();
+            let root = args
+                .get(1)
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let (count, cache_file) = cache_index(&root);
+            let elapsed = start.elapsed();
+            println!(
+                "Cached {count} entries into {} in {:.2?}",
+                cache_file.display(),
+                elapsed
+            );
+            Some(0)
+        }
+        _ => None,
+    }
+}
+
+fn cache_index(root: &std::path::Path) -> (usize, std::path::PathBuf) {
+    let cache_dir = state_dir();
+    let _ = std::fs::create_dir_all(&cache_dir);
+    let cache_file = cache_dir.join("index_cache.txt");
+
+    let mut count = 0;
+    if let Ok(mut file) = std::fs::File::create(&cache_file) {
+        use std::io::Write;
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let path_str = path.display().to_string();
+                    let _ = writeln!(file, "{path_str}");
+                    count += 1;
+                    if path.is_dir()
+                        && !path_str.contains("/.")
+                        && !path_str.contains("node_modules")
+                        && !path_str.contains("/target/")
+                    {
+                        stack.push(path);
+                    }
+                }
+            }
+        }
+    }
+    (count, cache_file)
+}
+
+fn import_zoxide() {
+    let store = waymaker::frecency::FrecencyStore::open();
+    let mut imported_count = 0;
+
+    if let Ok(output) = std::process::Command::new("zoxide")
+        .args(["query", "-l", "-s"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(score) = parts[0].parse::<f64>() {
+                        let path = parts[1..].join(" ");
+                        let weight = score.round() as u64;
+                        if store.import_entry(&path, weight).is_ok() {
+                            imported_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if imported_count == 0 {
+        let zoxide_db_path = dirs::data_local_dir()
+            .map(|d| d.join("zoxide").join("db.zo"))
+            .or_else(|| dirs::home_dir().map(|h| h.join(".local/share/zoxide/db.zo")));
+
+        if let Some(db_path) = zoxide_db_path {
+            if db_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&db_path) {
+                    for line in content.lines() {
+                        let trimmed = line.trim();
+                        if !trimmed.is_empty() && std::path::Path::new(trimmed).exists() {
+                            if store.import_entry(trimmed, 1).is_ok() {
+                                imported_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if imported_count > 0 {
+        println!(
+            "Successfully imported {imported_count} entries from zoxide into waymaker frecency database."
+        );
+    } else {
+        println!("No zoxide entries found to import.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use waymaker::action::Action;
+    use waymaker::binds::Trigger;
+
+    #[test]
+    fn test_get_partial_binds_override() {
+        let args = vec![
+            "binds.Synced=Pos(2)|||Unbind(Synced)".to_string(),
+            "results.icons=true".to_string(),
+        ];
+        let partial = get_partial(args).expect("get_partial should succeed");
+        assert_eq!(
+            partial.render.results.icons,
+            Some(true),
+            "icons should be true"
+        );
+
+        let trigger: Trigger = "Synced".parse().unwrap();
+        let actions = partial
+            .binds
+            .get(&trigger)
+            .expect("Synced trigger should be present in binds");
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0], Action::Pos(2));
+        assert_eq!(
+            actions[1],
+            Action::Custom(crate::action::MMAction::Unbind("Synced".to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_subcommand() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let md_path = temp_dir.join("test.md");
+        std::fs::write(
+            &md_path,
+            "# CLI Test\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n- [x] Done",
+        )
+        .unwrap();
+
+        let args = vec![
+            "md".to_string(),
+            md_path.to_str().unwrap().to_string(),
+            "--width=60".to_string(),
+        ];
+        assert_eq!(handle_frecency_cli(&args).await, Some(0));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_cli_mermaid_subcommand() {
+        let temp_dir = std::env::temp_dir().join("mm_test_mermaid");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let mmd_path = temp_dir.join("test.mmd");
+        std::fs::write(&mmd_path, "graph TD\n  Start --> Stop").unwrap();
+
+        let args = vec![
+            "mermaid".to_string(),
+            mmd_path.to_str().unwrap().to_string(),
+            "--ascii".to_string(),
+        ];
+        assert_eq!(handle_frecency_cli(&args).await, Some(0));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_subcommand_no_images() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md_no_img");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let md_path = temp_dir.join("doc.md");
+        std::fs::write(
+            &md_path,
+            "# Hello\n\n![My Image](non_existent.png)\n",
+        )
+        .unwrap();
+
+        let args = vec![
+            "md".to_string(),
+            md_path.to_str().unwrap().to_string(),
+            "--no-images".to_string(),
+            "--width=50".to_string(),
+        ];
+        assert_eq!(handle_frecency_cli(&args).await, Some(0));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_parse_subcommand_path_arg_watch_variations() {
+        // mm md file.md -w
+        let args1 = vec!["md".into(), "file.md".into(), "-w".into()];
+        assert_eq!(parse_subcommand_path_arg(&args1), Some("file.md"));
+
+        // mm md -w file.md
+        let args2 = vec!["md".into(), "-w".into(), "file.md".into()];
+        assert_eq!(parse_subcommand_path_arg(&args2), Some("file.md"));
+
+        // mm md --watch file.md
+        let args3 = vec!["md".into(), "--watch".into(), "file.md".into()];
+        assert_eq!(parse_subcommand_path_arg(&args3), Some("file.md"));
+
+        // mm md file.md --watch
+        let args4 = vec!["md".into(), "file.md".into(), "--watch".into()];
+        assert_eq!(parse_subcommand_path_arg(&args4), Some("file.md"));
+
+        // mm md -w --width 80 file.md
+        let args5 = vec![
+            "md".into(),
+            "-w".into(),
+            "--width".into(),
+            "80".into(),
+            "file.md".into(),
+        ];
+        assert_eq!(parse_subcommand_path_arg(&args5), Some("file.md"));
+        assert_eq!(parse_preview_width_from_args(&args5), Some(80));
+
+        // mm md --watch -W 80 file.md
+        let args6 = vec![
+            "md".into(),
+            "--watch".into(),
+            "-W".into(),
+            "80".into(),
+            "file.md".into(),
+        ];
+        assert_eq!(parse_subcommand_path_arg(&args6), Some("file.md"));
+        assert_eq!(parse_preview_width_from_args(&args6), Some(80));
+
+        // mm md -w -
+        let args7 = vec!["md".into(), "-w".into(), "-".into()];
+        assert_eq!(parse_subcommand_path_arg(&args7), Some("-"));
+
+        // mm md -w
+        let args8 = vec!["md".into(), "-w".into()];
+        assert_eq!(parse_subcommand_path_arg(&args8), None);
+
+        // mm md -w -- file.md
+        let args9 = vec!["md".into(), "-w".into(), "--".into(), "file.md".into()];
+        assert_eq!(parse_subcommand_path_arg(&args9), Some("file.md"));
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_watch_stdin_rejected() {
+        let args1 = vec!["md".to_string(), "-w".to_string(), "-".to_string()];
+        assert_eq!(handle_frecency_cli(&args1).await, Some(1));
+
+        let args2 = vec!["md".to_string(), "--watch".to_string()];
+        assert_eq!(handle_frecency_cli(&args2).await, Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_watch_nonexistent_file_rejected() {
+        let args = vec![
+            "md".to_string(),
+            "-w".to_string(),
+            "/tmp/non_existent_md_test_file_987654321.md".to_string(),
+        ];
+        assert_eq!(handle_frecency_cli(&args).await, Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_watch_directory_rejected() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md_dir_rejected");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let args = vec![
+            "md".to_string(),
+            "-w".to_string(),
+            temp_dir.to_str().unwrap().to_string(),
+        ];
+        assert_eq!(handle_frecency_cli(&args).await, Some(1));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_cli_markdown_subcommand_aliases() {
+        let temp_dir = std::env::temp_dir().join("mm_test_md_aliases");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let md_path = temp_dir.join("alias.md");
+        std::fs::write(&md_path, "# Alias test\n").unwrap();
+
+        for alias in &["markdown", "preview-md", "preview-markdown"] {
+            let args = vec![
+                alias.to_string(),
+                md_path.to_str().unwrap().to_string(),
+                "--width=40".to_string(),
+            ];
+            assert_eq!(handle_frecency_cli(&args).await, Some(0));
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+}

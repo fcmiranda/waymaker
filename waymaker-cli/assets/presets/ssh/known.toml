@@ -1,0 +1,49 @@
+# Browse known hosts
+
+[start.command]
+command = "grep -v '^[[:space:]]*$' ~/.ssh/known_hosts | sort"
+
+[columns]
+split = ' '
+max = 4
+default = 1
+names = [
+    "host",
+    "type",
+    "key",
+    { name = "comment", hidden = true },
+]
+
+# --- Preview ---
+[preview]
+show = true
+
+[[preview.layout]]
+command = "echo {} | ssh-keygen -lf -"
+border = { title = "Key Fingerprint" }
+
+[[preview.layout]]
+command = "ssh-keyscan {host}"
+border = { title = "Host Keys" }
+
+# --- UI ---
+[header]
+content = ["host", "type", "key"]
+
+[query]
+prompt = "known> "
+
+[binds]
+"@show" = "ExecuteOrConfirm(ssh -vT {host} 2>&1)"
+"@open" = "ExecuteOrConfirm($EDITOR ~/.ssh/known_hosts)"
+"@next" = '''BecomeSilent(
+if tailscale status --peers=false > /dev/null 2>&1; then
+    wm -o ssh/tailscale
+else
+    wm -o ssh/hosts
+fi
+)'''
+"@prev" = "BecomeSilent(wm -o ssh/keys)"
+
+# --- Scripts ---
+"@rm" = ["Execute(ssh-keygen -R {host})", "Reload"]

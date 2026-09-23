@@ -1,0 +1,93 @@
+# grep for a line of change
+source = 'base.toml'
+
+[start.command]
+# use x1f because awk cannot print null
+command = '''
+git log -Dp |
+awk '
+/^commit [0-9a-f]/ {
+    commit = substr($2, 1, 7)
+}
+/^diff --git / {
+    idx = index($0, " b/")
+    if (idx > 0) {
+        file = substr($0, idx + 3)
+    }
+}
+/^[+-]/ && !/^(---|\+\+\+) / {
+    printf "%s%c%s%c%s\n", commit, 0, file, 0, $0
+}
+'
+'''
+
+[exit]
+abort_empty = false
+
+[columns]
+split = "\\x00"
+max = 3
+default = 3
+
+[matcher]
+sort.threshold = 40
+
+# --- Preview ---
+[previewer]
+always_trigger = false
+
+[results]
+autoscroll.initial_preserved = 1
+
+[preview]
+initial_layout = 2
+show = false
+
+[[preview.layout]]
+command = '''
+git show --color=always --stat --summary {1}
+'''
+border = { title = "Commit Summary" }
+
+# side = "right"
+# percentage = 40
+# min = 30
+# max = 120
+
+[[preview.layout]]
+command = '''
+git diff --color=always {1}\^ {1} -- {2} ||
+git show --color=always {1} -- {2}
+'''
+border = { title = "File Diff" }
+
+# side = "top"
+# percentage = 50
+# min = 5
+# max = 50
+
+[[preview.layout]]
+command = '''
+git show --ext-diff --color=always {1} -- {2}
+'''
+border = { title = "File Contents" }
+
+# --- UI ---
+[tui]
+percentage = 100
+
+[query]
+prompt = "grep> "
+
+[binds]
+"@reload" = []
+"@reload_2" = []
+"@next" = '''BecomeSilent(
+if [ -z "$(git status --porcelain)" ]; then
+    wm -o git/restore
+else
+    wm -o git/status -F
+fi)'''
+"@prev" = "BecomeSilent(wm -o git/switch)"
+
+# --- Scripts ---

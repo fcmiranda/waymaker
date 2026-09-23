@@ -1,0 +1,243 @@
+# Templating Rules
+
+Matchmaker uses a template system for formatting output and executing commands.
+Templates use `{}` placeholders with various modifiers to inject item data.
+
+>[!NOTE]
+> Only valid keys are replaced, invalid keys are left alone. If you need it, you can also escape `{` like `\{`.
+
+## Modifiers
+
+| Modifier | Description                                        |
+| -------- | -------------------------------------------------- |
+| `{}`     | Current item (shell-quoted)                        |
+| `{=}`    | Current item (no quotes)                           |
+| `{+}`    | All selected items (shell-quoted, space-separated) |
+| `{-}`    | All selected items (no quotes, space-separated)    |
+
+*Note: This outputs the original line (after possible trimming and ansi processing), and is not the same as {..} below.*
+
+## Column Specifics
+
+You can specify a column by its name or by its index (starting from 1).
+
+Note that the default column names (when `columns.names` is unspecified) are `1` … `columns.max`.
+
+**Note: Column names must be alphanumeric.**
+
+| Placeholder | Description                                       |
+| ----------- | ------------------------------------------------- |
+| `{col}`     | Column `col` of current item (shell-quoted)       |
+| `{=col}`    | Column `col` of current item (raw)                |
+| `{+col}`    | Column `col` of all selected items (shell-quoted) |
+| `{-col}`    | Column `col` of all selected items (raw)          |
+
+## Special
+
+`!` refers to the active column.
+`#` refers to the active index.
+
+See examples for more information.
+
+## Command Line Arguments
+
+If you passed trailing arguments to `wm` (after `--`), you can access them in your templates.
+
+| Placeholder | Description                                   |
+| ----------- | --------------------------------------------- |
+| `{$0}`      | All arguments (shell-quoted, space-separated) |
+| `{$1}`      | The first argument (shell-quoted)             |
+| `{$n}`      | The n-th argument                             |
+
+## Ranges
+
+Column ranges can be specified.
+
+| Placeholder    | Description                                                |
+| -------------- | ---------------------------------------------------------- |
+| `{col1..col2}` | Columns from `col1` to `col2` (exclusive), space-separated |
+| `{col..}`      | From column `col` to the end                               |
+| `{..col}`      | From the first column to `col` (exclusive)                 |
+| `{..}`         | All visible columns                                        |
+
+Modifiers (`=`, `+`, `-`) also apply to ranges.
+
+## Examples
+
+### Configuration (`config.toml`)
+
+#### Custom Preview Command
+
+Use `{}` to pass the current item to a previewer like `bat` or `eza`.
+
+```toml
+[[preview.layout]]
+command = "bat --color=always {} || eza -T {}"
+```
+
+#### Keybindings with Shell Execution
+
+You can bind keys to run shell commands.
+
+```toml
+[binds]
+"ctrl-o" = "Execute($EDITOR {})" # Open in editor and return to waymaker
+"alt-o" = "Become($EDITOR {})" # Open in editor and exit waymaker
+"ctrl-y" = "Execute(echo -n {} | xclip -sel clip)" # Copy to clipboard
+```
+
+#### Output Formatting
+
+Change how the selected item is printed to stdout when you press enter.
+
+```toml
+[start]
+output_template = "Selected: {}"
+```
+
+### Command Line (CLI)
+
+Output the shell-quoted result.
+
+```
+find . | wm o "{}"
+```
+
+#### Multi-Column Preview
+
+If your input has columns (e.g., from `ls -l`), you can preview a specific column.
+
+```bash
+ls -l | wm d " +" m.max_columns=9 px "echo 'File: {=9}'" h.header_lines 1 m.default_column 9 h.content="|||"
+```
+
+*Note: `{=9}` uses the unquoted value of the 9th column (index 9).*
+
+#### Active Column
+
+The `{!}` placeholder refers to the column currently under focus (specified by `%column_name` in your query).
+
+```bash
+wm px "echo 'You are currently filtering on: {!}'"
+```
+
+#### Index
+
+The `{#}` placeholder resolves to the absolute index of the item.
+
+```bash
+wm px "echo 'You are currently selecting items: #{+#}'"
+```
+
+#### Ranges
+
+Join multiple columns together. `{2..}` joins the 2nd column to the end.
+
+```bash
+ls -l | wm d " +" h.h 1 px "echo 'Metadata: {=2..}'"
+```
+
+*Note: `h.h` is short for `header.header_lines`.*
+
+#### Action on Selection
+
+Execute a command with all selected items when pressing a custom key.
+
+```bash
+touch a b
+wm b.ctrl-x "ExecuteSilent(rm {+}) Reload" x ls # Delete items then reload
+```
+
+## Status Line and Input Prompt Templates
+
+The status line supports dynamic variables, and alignment.
+With the `SetStyledStatus` action, it, along with the input prompt (by `SetStyledPrompt`), also supports styling.
+
+### Styling
+
+You can style parts of the status line and input prompt using the `{fg,bg,..modifiers:text}` syntax.
+
+- `{red:Error:}` renders "Error:" in red.
+- `{,blue:Matchmaker}` renders "Matchmaker" in a blue background.
+- `{red,bold,italic:Caution}` renders "Caution" in red, with bold and italic modifiers.
+
+### Variables
+
+The following variables are available and must be prefixed with a backslash (`\`):
+
+| Variable | Description                                   |
+| -------- | --------------------------------------------- |
+| `\r`     | Current row index (0-indexed cursor position) |
+| `\m`     | Number of matched items                       |
+| `\t`     | Total number of items                         |
+
+### Alignment
+
+Use `\s` and `\S` to insert flexible whitespace for alignment.
+
+- A single `\s` will expand to fill the remaining width of the terminal, pushing subsequent text to the right.
+- If multiple `\s` are used, the available space is distributed equally between them.
+- `\S` increases the distribution denominator without adding any whitespace.
+
+## Environment Variables
+
+When Matchmaker executes a command (e.g., via `Execute`, `Become`, or a preview command), it injects several environment variables that you can use in your scripts.
+
+| Variable             | FZF Equivalent     | Description                                        |
+| -------------------- | ------------------ | -------------------------------------------------- |
+| `MM_LINES`           | `FZF_LINES`        | Height of the terminal                             |
+| `MM_COLUMNS`         | `FZF_COLUMNS`      | Width of the terminal                              |
+| `MM_TOTAL_COUNT`     | `FZF_TOTAL_COUNT`  | Total number of items                              |
+| `MM_MATCH_COUNT`     | `FZF_MATCH_COUNT`  | Number of matched items                            |
+| `MM_SELECT_COUNT`    | `FZF_SELECT_COUNT` | Number of selected items                           |
+| `MM_POS`             | `FZF_POS`          | Current row index (0-indexed cursor position)      |
+| `MM_QUERY`           | `FZF_QUERY`        | Current input query                                |
+| `MM_PREVIEW_COMMAND` |                    | The current preview command                        |
+| `MM_OVERRIDE`        |                    | Path of the last applied override                  |
+| `MM_STORE`           |                    | Current value stored in state (via `Store` action) |
+| `MM_INDEX`           |                    | Index of command being reloaded (in `ReloadNext`)  |
+
+The `envs` section of your config is also injected, as well as `$CLIPcmd` and `$PASTEcmd` -- the auto-determined clipboard commands if they are not otherwise set.
+
+### Preview Environment
+
+In addition to the above, commands executed within the preview window also receive:
+
+| Variable  | Description                |
+| --------- | -------------------------- |
+| `LINES`   | Height of the preview area |
+| `COLUMNS` | Width of the preview area  |
+
+## Interaction Regions
+
+Interaction regions allow you to trigger [semantic actions](binds.md#semantic-triggers) by clicking on specific areas of the `header`, `footer`, or `status` line.
+
+### Configuration
+
+Interactions are defined as a list of `(index, action)` pairs:
+
+- `index`: The 0-based horizontal character offset from the left of the UI component.
+- `action`: The name of the semantic trigger to activate (e.g., `"foo"` for `@foo`).
+
+When a region is clicked, Matchmaker finds the entry with the largest `index` that is less than or equal to the click position and triggers the associated action. An empty action string (`""`) can be used to disable interaction for a specific range.
+
+### Example
+
+In your `config.toml`:
+
+```toml
+[status]
+template = "{red: [X]} {green: [OK]} \s \m/\t"
+interactions = [
+    [1, "quit"],   # Trigger @quit
+    [4, ""],       # Gap (no action)
+    [6, "accept"], # Trigger @accept
+    [11, ""]       # Disable for the rest of the line
+]
+
+[binds]
+"@quit" = "Quit"
+"@accept" = "Accept"
+```
+
+For `header` and `footer`, which can have multiple lines, `interactions` is a list of lists (one for each line).

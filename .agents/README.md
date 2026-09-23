@@ -1,6 +1,6 @@
 # Portable Agent Definitions
 
-This directory holds tool-neutral agent definitions for the matchmaker workspace.
+This directory holds tool-neutral agent definitions for the waymaker workspace.
 
 ## Purpose
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Headless Filter Benchmark Harness: mm -f vs fzf -f
+Headless Filter Benchmark Harness: wm -f vs fzf -f
 Measures latency, throughput, and memory consumption across synthetic corpora.
 """
 
@@ -104,8 +104,8 @@ def main():
                         help="Corpus sizes to benchmark (default: 10000 100000)")
     parser.add_argument("--runs", type=int, default=5,
                         help="Number of iterations per test (default: 5)")
-    parser.add_argument("--mm-bin", type=str, default=None,
-                        help="Path to mm binary (default: searches PATH or target/release/mm)")
+    parser.add_argument("--wm-bin", "--mm-bin", dest="wm_bin", type=str, default=None,
+                        help="Path to wm binary (default: searches PATH or target/release/wm)")
     parser.add_argument("--markdown", action="store_true",
                         help="Output results as Markdown tables")
     parser.add_argument("--use-hyperfine", action="store_true",
@@ -113,17 +113,18 @@ def main():
     args = parser.parse_args()
 
     # Locate binaries
-    mm_bin = args.mm_bin
+    mm_bin = args.wm_bin
     if not mm_bin:
-        # Check target/release/mm first, then ~/.local/bin/mm, then PATH
-        local_rel = os.path.abspath("target/release/mm")
-        if os.path.exists(local_rel) and os.access(local_rel, os.X_OK):
-            mm_bin = local_rel
-        else:
-            mm_bin = shutil.which("mm")
+        for candidate in ["target/release/wm", "target/release/mm"]:
+            local_rel = os.path.abspath(candidate)
+            if os.path.exists(local_rel) and os.access(local_rel, os.X_OK):
+                mm_bin = local_rel
+                break
+        if not mm_bin:
+            mm_bin = shutil.which("wm") or shutil.which("mm")
 
     if not mm_bin:
-        print("Error: Could not locate 'mm' binary. Run `just install` or `cargo build --release` first.", file=sys.stderr)
+        print("Error: Could not locate 'wm' binary. Run `just install` or `cargo build --release` first.", file=sys.stderr)
         sys.exit(1)
 
     fzf_bin = shutil.which("fzf")
@@ -138,13 +139,13 @@ def main():
         ("no_match", "xyz_nonexistent_token_123"),
     ]
 
-    print(f"=== Matchmaker Filter Benchmark Harness ===")
-    print(f"Matchmaker binary: {mm_bin}")
+    print(f"=== Waymaker Filter Benchmark Harness ===")
+    print(f"Waymaker binary:   {mm_bin}")
     print(f"fzf binary:        {fzf_bin or 'Not found (skipping fzf comparison)'}")
     print(f"Runs per query:    {args.runs}")
     print(f"Corpus sizes:      {args.sizes}\n")
 
-    temp_dir = tempfile.mkdtemp(prefix="mm_bench_")
+    temp_dir = tempfile.mkdtemp(prefix="wm_bench_")
     try:
         for size in args.sizes:
             corpus_file = os.path.join(temp_dir, f"corpus_{size}.txt")

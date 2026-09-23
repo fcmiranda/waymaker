@@ -1,3 +1,3 @@
 fn main() {
-    println!("{:?}", "Normal:z".parse::<matchmaker_lib::binds::Trigger>());
+    println!("{:?}", "Normal:z".parse::<waymaker::binds::Trigger>());
 }

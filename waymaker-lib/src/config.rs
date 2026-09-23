@@ -508,6 +508,25 @@ impl Default for TerminalConfig {
     }
 }
 
+/// Navigation profile controlling which default bindings and hints are active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NavProfile {
+    /// Safe list navigation (cursor movements, selection, paging, filter toggle). No file mutations, no directory hopping.
+    #[default]
+    #[serde(alias = "picker", alias = "safe")]
+    List,
+    /// Minimal vertical navigation (j/k, gg/G, J/K, esc, q). Directory hopping silenced.
+    #[serde(alias = "minimal")]
+    Basic,
+    /// Full file-manager navigation (directory hopping with h/l, frecency, bookmarks, and file creation/renaming/deletion actions).
+    #[serde(alias = "filemanager", alias = "file_manager", alias = "jump")]
+    Fm,
+    /// No default bindings injected; strictly uses whatever is defined in `[ui.nav.binds]`.
+    #[serde(alias = "strict", alias = "empty")]
+    None,
+}
+
 ///// Configuration for Navigation mode (`--nav`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -518,6 +537,17 @@ pub struct NavConfig {
     #[partial(alias = "fm")]
     #[serde(alias = "nav_mode", alias = "focus_mode", alias = "mode")]
     pub active: bool,
+
+    /// Navigation profile: "list" (default safe picker), "basic" (minimal vertical),
+    /// "fm" (file manager with create/rename/etc.), or "none" (strict zero-defaults).
+    #[serde(alias = "nav_profile")]
+    #[serde(default)]
+    pub profile: NavProfile,
+
+    /// Opt-in flag to enable file manager actions and directory traversal.
+    /// Equivalent to setting `profile = "fm"`.
+    #[serde(alias = "nav_fm")]
+    pub fm: bool,
 
     /// Navigation-mode indicator colour (set via `--color nav:` or `--nav color:`).
     #[serde(deserialize_with = "camelcase_normalized")]
@@ -596,52 +626,6 @@ pub struct NavConfig {
 
 impl Default for NavConfig {
     fn default() -> Self {
-        let mut binds = HashMap::new();
-        binds.insert("j".to_string(), Actions::from([Action::Down(1)]));
-        binds.insert("k".to_string(), Actions::from([Action::Up(1)]));
-        binds.insert(
-            "l".to_string(),
-            Actions::from([
-                Action::ChDir("{=}".to_string()),
-                Action::Reload("".to_string()),
-                Action::Pos(0),
-            ]),
-        );
-        binds.insert(
-            "h".to_string(),
-            Actions::from([
-                Action::ChDir("..".to_string()),
-                Action::Reload("".to_string()),
-                Action::Pos(0),
-            ]),
-        );
-        binds.insert("J".to_string(), Actions::from([Action::PreviewDown(1)]));
-        binds.insert("K".to_string(), Actions::from([Action::PreviewUp(1)]));
-        binds.insert("gg".to_string(), Actions::from([Action::PreviewUp(0)]));
-        binds.insert("G".to_string(), Actions::from([Action::PreviewDown(0)]));
-        binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
-        binds.insert("\\".to_string(), Actions::from([Action::ToggleParentPeek]));
-        binds.insert("|".to_string(), Actions::from([Action::ToggleParentPeek]));
-        binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
-        binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
-        binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
-        binds.insert(".".to_string(), Actions::from([Action::NextColumn]));
-        binds.insert(">".to_string(), Actions::from([Action::PrevColumn]));
-        binds.insert(
-            "f".to_string(),
-            Actions::from([Action::Semantic("frecency".to_string())]),
-        );
-        binds.insert(
-            "b".to_string(),
-            Actions::from([Action::Semantic("bookmarks".to_string())]),
-        );
-        binds.insert("esc".to_string(), Actions::from([Action::Quit(130)]));
-        binds.insert("q".to_string(), Actions::from([Action::Quit(130)]));
-        binds.insert(
-            "*".to_string(),
-            Actions::from([Action::Semantic("bookmark".to_string())]),
-        );
-
         Self {
             active: false,
             color: Color::Yellow,
@@ -651,10 +635,12 @@ impl Default for NavConfig {
             bar: None,
             marker: "".to_string(),
             prompt: "".to_string(),
-            binds,
+            binds: Self::default_binds_for_profile(NavProfile::List),
             notify: false,
             passthrough: false,
             basic: false,
+            profile: NavProfile::List,
+            fm: false,
             focus_on_start: NavFocus::Filter,
             hints: true,
             hints_columns: 4,
@@ -663,6 +649,84 @@ impl Default for NavConfig {
 }
 
 impl NavConfig {
+    /// Resolves the effective navigation profile considering `profile`, `fm`, and `basic`.
+    pub fn effective_profile(&self) -> NavProfile {
+        if self.fm {
+            NavProfile::Fm
+        } else if self.basic && self.profile == NavProfile::List {
+            NavProfile::Basic
+        } else {
+            self.profile
+        }
+    }
+
+    /// Returns the default keybindings corresponding to the specified navigation profile.
+    pub fn default_binds_for_profile(
+        profile: NavProfile,
+    ) -> HashMap<String, Actions<NullActionExt>> {
+        let mut binds = HashMap::new();
+        if profile == NavProfile::None {
+            return binds;
+        }
+
+        // Shared navigation binds (Basic, List, Fm)
+        binds.insert("j".to_string(), Actions::from([Action::Down(1)]));
+        binds.insert("k".to_string(), Actions::from([Action::Up(1)]));
+        binds.insert("J".to_string(), Actions::from([Action::PreviewDown(1)]));
+        binds.insert("K".to_string(), Actions::from([Action::PreviewUp(1)]));
+        binds.insert("gg".to_string(), Actions::from([Action::PreviewUp(0)]));
+        binds.insert("G".to_string(), Actions::from([Action::PreviewDown(0)]));
+        binds.insert("/".to_string(), Actions::from([Action::FocusFilter]));
+        binds.insert("esc".to_string(), Actions::from([Action::Quit(130)]));
+        binds.insert("q".to_string(), Actions::from([Action::Quit(130)]));
+
+        if profile == NavProfile::Basic {
+            return binds;
+        }
+
+        // List and Fm navigation binds
+        binds.insert("gb".to_string(), Actions::from([Action::Pos(-1)]));
+        binds.insert("gt".to_string(), Actions::from([Action::Pos(0)]));
+        binds.insert(" ".to_string(), Actions::from([Action::Toggle]));
+        binds.insert("\\".to_string(), Actions::from([Action::ToggleParentPeek]));
+        binds.insert("|".to_string(), Actions::from([Action::ToggleParentPeek]));
+        binds.insert(",".to_string(), Actions::from([Action::SortMenu]));
+        binds.insert(".".to_string(), Actions::from([Action::NextColumn]));
+        binds.insert(">".to_string(), Actions::from([Action::PrevColumn]));
+
+        if profile == NavProfile::Fm {
+            binds.insert(
+                "l".to_string(),
+                Actions::from([
+                    Action::ChDir("{=}".to_string()),
+                    Action::Reload("".to_string()),
+                    Action::Pos(0),
+                ]),
+            );
+            binds.insert(
+                "h".to_string(),
+                Actions::from([
+                    Action::ChDir("..".to_string()),
+                    Action::Reload("".to_string()),
+                    Action::Pos(0),
+                ]),
+            );
+            binds.insert(
+                "f".to_string(),
+                Actions::from([Action::Semantic("frecency".to_string())]),
+            );
+            binds.insert(
+                "b".to_string(),
+                Actions::from([Action::Semantic("bookmarks".to_string())]),
+            );
+            binds.insert(
+                "*".to_string(),
+                Actions::from([Action::Semantic("bookmark".to_string())]),
+            );
+        }
+
+        binds
+    }
     /// Calculate the required height in rows for the navigation hints footer.
     pub fn hints_height(&self, item_count: usize) -> u16 {
         if !self.hints {
@@ -2706,5 +2770,81 @@ mod tests {
             ui.resolve_sort_for_dir(Path::new("/media/storage/videos")),
             Some(SortOrder::SizeReverse)
         );
+    }
+
+    #[test]
+    fn test_nav_profile_deserialization_and_effective_profile() {
+        // Default
+        let default_nav: NavConfig = toml::from_str("").unwrap();
+        assert_eq!(default_nav.profile, NavProfile::List);
+        assert_eq!(default_nav.effective_profile(), NavProfile::List);
+
+        // Explicit list
+        let nav_list: NavConfig = toml::from_str(r#"profile = "list""#).unwrap();
+        assert_eq!(nav_list.effective_profile(), NavProfile::List);
+
+        // Alias picker
+        let nav_picker: NavConfig = toml::from_str(r#"profile = "picker""#).unwrap();
+        assert_eq!(nav_picker.effective_profile(), NavProfile::List);
+
+        // Basic via profile
+        let nav_basic: NavConfig = toml::from_str(r#"profile = "basic""#).unwrap();
+        assert_eq!(nav_basic.effective_profile(), NavProfile::Basic);
+
+        // Basic via legacy flag
+        let nav_legacy_basic: NavConfig = toml::from_str(r#"basic = true"#).unwrap();
+        assert_eq!(nav_legacy_basic.effective_profile(), NavProfile::Basic);
+
+        // Fm profile
+        let nav_fm: NavConfig = toml::from_str(r#"profile = "fm""#).unwrap();
+        assert_eq!(nav_fm.effective_profile(), NavProfile::Fm);
+
+        // Fm via fm flag
+        let nav_fm_flag: NavConfig = toml::from_str(r#"fm = true"#).unwrap();
+        assert_eq!(nav_fm_flag.effective_profile(), NavProfile::Fm);
+
+        // None / strict profile
+        let nav_none: NavConfig = toml::from_str(r#"profile = "none""#).unwrap();
+        assert_eq!(nav_none.effective_profile(), NavProfile::None);
+
+        let nav_strict: NavConfig = toml::from_str(r#"profile = "strict""#).unwrap();
+        assert_eq!(nav_strict.effective_profile(), NavProfile::None);
+    }
+
+    #[test]
+    fn test_default_binds_for_profile_isolation() {
+        let list_binds = NavConfig::default_binds_for_profile(NavProfile::List);
+        assert!(list_binds.contains_key("j"));
+        assert!(list_binds.contains_key("k"));
+        assert!(list_binds.contains_key(" "));
+        assert!(list_binds.contains_key("/"));
+        // Must NOT contain file-manager binds
+        assert!(!list_binds.contains_key("h"));
+        assert!(!list_binds.contains_key("l"));
+        assert!(!list_binds.contains_key("f"));
+        assert!(!list_binds.contains_key("b"));
+        assert!(!list_binds.contains_key("*"));
+
+        let basic_binds = NavConfig::default_binds_for_profile(NavProfile::Basic);
+        assert!(basic_binds.contains_key("j"));
+        assert!(basic_binds.contains_key("k"));
+        assert!(basic_binds.contains_key("/"));
+        // Basic does not have extra navigation
+        assert!(!basic_binds.contains_key("gb"));
+        assert!(!basic_binds.contains_key("gt"));
+        assert!(!basic_binds.contains_key("h"));
+        assert!(!basic_binds.contains_key("l"));
+
+        let fm_binds = NavConfig::default_binds_for_profile(NavProfile::Fm);
+        assert!(fm_binds.contains_key("j"));
+        assert!(fm_binds.contains_key("k"));
+        assert!(fm_binds.contains_key("h"));
+        assert!(fm_binds.contains_key("l"));
+        assert!(fm_binds.contains_key("f"));
+        assert!(fm_binds.contains_key("b"));
+        assert!(fm_binds.contains_key("*"));
+
+        let none_binds = NavConfig::default_binds_for_profile(NavProfile::None);
+        assert!(none_binds.is_empty());
     }
 }

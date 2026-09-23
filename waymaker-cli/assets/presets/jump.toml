@@ -3,6 +3,7 @@
 
 [ui.nav]
 active = true
+profile = "fm"
 focus_on_start = "picker"
 bar = "Plain"
 color = "Black"

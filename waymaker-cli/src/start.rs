@@ -299,13 +299,30 @@ pub fn enter(cli: Cli, partial: PartialConfig) -> anyhow::Result<Config> {
     }
 
     if config.render.ui.nav.active {
-        let defaults = waymaker::config::UiConfig::default().nav.binds;
+        let profile = config.render.ui.nav.effective_profile();
+        let defaults = waymaker::config::NavConfig::default_binds_for_profile(profile);
         for (k, v) in defaults {
             config.render.ui.nav.binds.entry(k).or_insert(v);
         }
+
+        // In basic mode, ensure directory navigation binds h and l are silenced
+        if profile == waymaker::config::NavProfile::Basic {
+            let empty = waymaker::action::Actions::default();
+            for key in &["h", "l"] {
+                config
+                    .render
+                    .ui
+                    .nav
+                    .binds
+                    .entry(key.to_string())
+                    .or_insert_with(|| empty.clone());
+            }
+        }
     }
 
-    if config.render.ui.nav.active && !config.render.ui.nav.basic {
+    if config.render.ui.nav.active
+        && config.render.ui.nav.effective_profile() == waymaker::config::NavProfile::Fm
+    {
         use waymaker::action::Actions;
         let mut nb = |k: &str, actions: Actions<waymaker::action::NullActionExt>| {
             config
@@ -500,18 +517,16 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                     }
                     "basic" => {
                         config.render.ui.nav.basic = true;
-                        // Silence only the directory-navigation binds (h/l).
-                        // Position-jump binds (gg, G, gb, gt) are kept so
-                        // basic mode still supports full vertical navigation.
-                        let empty = waymaker::action::Actions::default();
-                        for key in &["h", "l"] {
-                            config
-                                .render
-                                .ui
-                                .nav
-                                .binds
-                                .insert(key.to_string(), empty.clone());
-                        }
+                        config.render.ui.nav.profile = waymaker::config::NavProfile::Basic;
+                    }
+                    "list" | "picker" => {
+                        config.render.ui.nav.profile = waymaker::config::NavProfile::List;
+                    }
+                    "fm" | "filemanager" | "jump" => {
+                        config.render.ui.nav.profile = waymaker::config::NavProfile::Fm;
+                    }
+                    "none" | "strict" => {
+                        config.render.ui.nav.profile = waymaker::config::NavProfile::None;
                     }
                     "hints" => config.render.ui.nav.hints = true,
                     "no-hints" => config.render.ui.nav.hints = false,
@@ -522,6 +537,19 @@ fn apply_nav_props(props: &[String], config: &mut Config) {
                     "status-inline" => config.render.query.status_inline = true,
                     "no-status-inline" => config.render.query.status_inline = false,
                     _ => eprintln!("warning: unknown --nav property '{}'", prop),
+                },
+                Some(("profile" | "mode", s)) => match s.trim().to_ascii_lowercase().as_str() {
+                    "fm" | "filemanager" | "jump" => {
+                        config.render.ui.nav.profile = waymaker::config::NavProfile::Fm;
+                    }
+                    "basic" | "minimal" => {
+                        config.render.ui.nav.basic = true;
+                        config.render.ui.nav.profile = waymaker::config::NavProfile::Basic;
+                    }
+                    "none" | "strict" => {
+                        config.render.ui.nav.profile = waymaker::config::NavProfile::None;
+                    }
+                    _ => config.render.ui.nav.profile = waymaker::config::NavProfile::List,
                 },
                 Some(("bar", s)) => {
                     config.render.ui.nav.bar = Some(parse_border_type(s));

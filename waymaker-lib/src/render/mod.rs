@@ -2381,10 +2381,11 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     } else if footer_ui.show {
                         footer_ui.height()
                     } else if show_nav_hints {
-                        let count = if ui.config.nav.basic {
-                            BASIC_NAV_HINTS.len()
-                        } else {
-                            NAV_HINTS.len()
+                        let count = match ui.config.nav.effective_profile() {
+                            crate::config::NavProfile::Fm => NAV_HINTS.len(),
+                            crate::config::NavProfile::List => LIST_NAV_HINTS.len(),
+                            crate::config::NavProfile::Basic => BASIC_NAV_HINTS.len(),
+                            crate::config::NavProfile::None => 0,
                         };
                         ui.config.nav_hints_height(count)
                     } else {
@@ -2718,7 +2719,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             render_nav_hints(
                                 frame,
                                 footer,
-                                false,
+                                ui.config.nav.effective_profile(),
                                 ui.config.nav.hints_columns,
                                 true,
                                 zoom_pct,
@@ -2732,7 +2733,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             render_nav_hints(
                                 frame,
                                 footer,
-                                ui.config.nav.basic,
+                                ui.config.nav.effective_profile(),
                                 ui.config.nav.hints_columns,
                                 false,
                                 None,
@@ -3320,12 +3321,23 @@ fn render_sort_menu(frame: &mut Frame, area: Rect, cfg: &crate::config::SortMenu
 pub const BASIC_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[/]", "Filter", ratatui::style::Color::Cyan),
     ("[j/k]", "Move", ratatui::style::Color::Yellow),
-    ("[h/l]", "Up/Dir", ratatui::style::Color::Yellow),
-    ("[C-h/l]", "Trav", ratatui::style::Color::Green),
-    ("[C-p]", "Preview", ratatui::style::Color::Blue),
     ("[J/K]", "Scroll", ratatui::style::Color::Blue),
+    ("[gg/G]", "Top/End", ratatui::style::Color::Yellow),
+    ("[C-p]", "Preview", ratatui::style::Color::Blue),
     ("[,]", "Sort", ratatui::style::Color::Yellow),
     ("[\\]", "Pane", ratatui::style::Color::Cyan),
+    ("[q/Esc]", "Back", ratatui::style::Color::Red),
+];
+
+pub const LIST_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
+    ("[/]", "Filter", ratatui::style::Color::Cyan),
+    ("[j/k]", "Move", ratatui::style::Color::Yellow),
+    ("[Space]", "Select", ratatui::style::Color::Yellow),
+    ("[,]", "Sort", ratatui::style::Color::Yellow),
+    ("[J/K]", "Scroll", ratatui::style::Color::Blue),
+    ("[C-p]", "Preview", ratatui::style::Color::Blue),
+    ("[\\]", "Pane", ratatui::style::Color::Cyan),
+    ("[q/Esc]", "Back", ratatui::style::Color::Red),
 ];
 
 pub const NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
@@ -3362,7 +3374,7 @@ pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
 fn render_nav_hints(
     frame: &mut Frame,
     area: Rect,
-    is_basic: bool,
+    profile: crate::config::NavProfile,
     columns: usize,
     preview_fullscreen: bool,
     zoom_pct: Option<u32>,
@@ -3373,11 +3385,18 @@ fn render_nav_hints(
 
     let hints: &[(&str, &str, Color)] = if preview_fullscreen {
         PREVIEW_NAV_HINTS
-    } else if is_basic {
-        BASIC_NAV_HINTS
     } else {
-        NAV_HINTS
+        match profile {
+            crate::config::NavProfile::Fm => NAV_HINTS,
+            crate::config::NavProfile::List => LIST_NAV_HINTS,
+            crate::config::NavProfile::Basic => BASIC_NAV_HINTS,
+            crate::config::NavProfile::None => &[],
+        }
     };
+
+    if hints.is_empty() {
+        return;
+    }
 
     let cols = if columns == 0 { 4 } else { columns };
 

@@ -455,4 +455,35 @@ mod tests {
         assert!(eff2.contains(&"build".to_string()));
         assert!(eff2.contains(&".cache".to_string()));
     }
+
+    #[test]
+    fn test_nav_profile_config_application() {
+        use waymaker_partial::Apply;
+
+        let toml_list = r#"
+            [ui.nav]
+            active = true
+            profile = "list"
+        "#;
+        let p_list: PartialConfig = toml::from_str(toml_list).unwrap();
+        let mut cfg_list = Config::default();
+        cfg_list.apply(p_list);
+        assert_eq!(
+            cfg_list.render.ui.nav.effective_profile(),
+            waymaker::config::NavProfile::List
+        );
+
+        let toml_fm = r#"
+            [ui.nav]
+            active = true
+            profile = "fm"
+        "#;
+        let p_fm: PartialConfig = toml::from_str(toml_fm).unwrap();
+        let mut cfg_fm = Config::default();
+        cfg_fm.apply(p_fm);
+        assert_eq!(
+            cfg_fm.render.ui.nav.effective_profile(),
+            waymaker::config::NavProfile::Fm
+        );
+    }
 }

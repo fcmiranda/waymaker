@@ -657,14 +657,16 @@ impl<T: SSS> Worker<T> {
                 return a.tier.cmp(&b.tier);
             }
 
-            if a.tier < 2 {
+            if is_query_empty && a.tier < 2 {
                 let cmp = cmp_ascii_case_insensitive(a.clean(), b.clean());
                 if cmp != std::cmp::Ordering::Equal {
                     return cmp;
                 }
             }
 
-            b.score.cmp(&a.score)
+            b.score
+                .cmp(&a.score)
+                .then_with(|| cmp_ascii_case_insensitive(a.clean(), b.clean()))
         });
 
         Some(decorated)
@@ -1028,13 +1030,9 @@ impl<T: SSS> Worker<T> {
             if a.tier != b.tier {
                 return a.tier.cmp(&b.tier);
             }
-            if a.tier < 2 {
-                let cmp = cmp_ascii_case_insensitive(&a.raw_path, &b.raw_path);
-                if cmp != std::cmp::Ordering::Equal {
-                    return cmp;
-                }
-            }
-            b.score.cmp(&a.score)
+            b.score
+                .cmp(&a.score)
+                .then_with(|| cmp_ascii_case_insensitive(&a.raw_path, &b.raw_path))
         });
 
         cache.query = query_str.to_string();
@@ -1471,14 +1469,16 @@ impl<T: SSS> Worker<T> {
                     return a.tier.cmp(&b.tier);
                 }
 
-                if a.tier < 2 {
+                if is_query_empty && a.tier < 2 {
                     let cmp = cmp_ascii_case_insensitive(a.clean(), b.clean());
                     if cmp != std::cmp::Ordering::Equal {
                         return cmp;
                     }
                 }
 
-                b.score.cmp(&a.score)
+                b.score
+                    .cmp(&a.score)
+                    .then_with(|| cmp_ascii_case_insensitive(a.clean(), b.clean()))
             });
 
             let range_start = start.min(total) as usize;
@@ -2967,6 +2967,70 @@ mod tests {
         assert_eq!(*results[0].2, "docs/");
         assert_eq!(*results[1].2, "src/");
         assert_eq!(*results[2].2, "Cargo.toml");
+    }
+
+    #[test]
+    fn test_active_query_ranks_by_relevance_within_tier_over_alphabetical() {
+        let mut worker = Worker::<String>::new_single_column();
+        worker.dir_first = true;
+
+        let items = vec![
+            "CHANGELOG.md".to_string(),
+            "oi.md".to_string(),
+            "HELLO.md".to_string(),
+        ];
+
+        let injector = worker.nucleo.injector();
+        for item in &items {
+            injector.push(item.clone(), |val, cols| {
+                cols[0] = val.clone().into();
+            });
+        }
+
+        while worker.nucleo.snapshot().item_count() < items.len() as u32 {
+            worker.nucleo.tick(10);
+        }
+
+        // When query is empty: Tier 1 items are sorted alphabetically
+        let all_empty = worker.get_all_sorted();
+        assert_eq!(all_empty, vec!["CHANGELOG.md", "HELLO.md", "oi.md"]);
+
+        // When query is "oi.md": exact match oi.md must rank 1st
+        worker.find("oi.md");
+        while worker.nucleo.tick(10).running {}
+
+        let all_filtered = worker.get_all_sorted();
+        assert_eq!(*all_filtered[0], "oi.md");
+    }
+
+    #[test]
+    #[cfg(feature = "frizbee")]
+    fn test_frizbee_active_query_ranks_exact_match_first() {
+        let mut worker = Worker::<String>::new_single_column();
+        worker.engine = crate::config::MatcherEngineType::Frizbee;
+        worker.dir_first = true;
+        worker.typo_tolerance = true;
+
+        let items = vec![
+            "CHANGELOG.md".to_string(),
+            "oi.md".to_string(),
+            "HELLO.md".to_string(),
+        ];
+
+        let injector = worker.nucleo.injector();
+        for item in &items {
+            injector.push(item.clone(), |val, cols| {
+                cols[0] = val.clone().into();
+            });
+        }
+
+        while worker.nucleo.snapshot().item_count() < items.len() as u32 {
+            worker.nucleo.tick(10);
+        }
+
+        worker.find("oi.md");
+        let all_filtered = worker.get_all_sorted();
+        assert_eq!(*all_filtered[0], "oi.md");
     }
 }
 

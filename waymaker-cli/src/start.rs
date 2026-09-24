@@ -904,7 +904,6 @@ pub async fn start(
 
     if let Ok(cwd) = std::env::current_dir() {
         let store = waymaker::frecency::FrecencyStore::open();
-        store.auto_import_from_zoxide_if_empty();
         let _ = store.add(&cwd.to_string_lossy());
     }
 
@@ -1441,7 +1440,6 @@ pub async fn start(
 
             state.picker_ui.selector.clear();
             let store = waymaker::frecency::FrecencyStore::open();
-            store.auto_import_from_zoxide_if_empty();
             if let Ok(cwd) = std::env::current_dir() {
                 let _ = store.add(&cwd.to_string_lossy());
             }

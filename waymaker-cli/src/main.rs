@@ -630,7 +630,6 @@ pub async fn handle_frecency_cli(args: &[String]) -> Option<i32> {
             let full_query = keywords.join(" ");
             let store = waymaker::frecency::FrecencyStore::open();
             if !pins_only {
-                store.auto_import_from_zoxide_if_empty();
                 if dirs_only {
                     if let Ok(cwd) = std::env::current_dir() {
                         let _ = store.add(&cwd.to_string_lossy());

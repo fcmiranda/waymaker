@@ -1858,6 +1858,53 @@ impl Default for StatusConfig {
 
 impl StatusConfig {}
 
+pub fn deserialize_horizontal_separator<'de, D>(
+    deserializer: D,
+) -> Result<HorizontalSeparator, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum SeparatorHelper {
+        Bool(bool),
+        String(String),
+    }
+
+    match SeparatorHelper::deserialize(deserializer)? {
+        SeparatorHelper::Bool(b) => Ok(if b {
+            HorizontalSeparator::Light
+        } else {
+            HorizontalSeparator::None
+        }),
+        SeparatorHelper::String(s) => match s.to_lowercase().replace(['-', '_', ' '], "").as_str() {
+            "none" | "false" | "" => Ok(HorizontalSeparator::None),
+            "empty" => Ok(HorizontalSeparator::Empty),
+            "light" | "normal" | "true" => Ok(HorizontalSeparator::Light),
+            "heavy" | "thick" | "bold" => Ok(HorizontalSeparator::Heavy),
+            "dashed" => Ok(HorizontalSeparator::Dashed),
+            "top" | "upper" | "upperblock" => Ok(HorizontalSeparator::Top),
+            "bottom" | "lower" | "lowerblock" => Ok(HorizontalSeparator::Bottom),
+            "underline" | "underlined" => Ok(HorizontalSeparator::Underline),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &[
+                    "none",
+                    "light",
+                    "normal",
+                    "heavy",
+                    "dashed",
+                    "top",
+                    "bottom",
+                    "underline",
+                    "true",
+                    "false",
+                ],
+            )),
+        },
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[partial(path, derive(Debug, Clone, PartialEq, Deserialize, Serialize))]
@@ -1895,6 +1942,20 @@ pub struct DisplayConfig {
     pub header_lines: usize,
 
     pub interactions: Vec<InteractionRegionSetting>,
+
+    /// Horizontal separator line drawn above the footer (e.g. separating list and preview from footer).
+    /// Can be "light", "normal", "heavy", "dashed", "top", "bottom", "none", or a boolean (true = "light").
+    #[serde(alias = "hr")]
+    #[serde(alias = "divider")]
+    #[serde(alias = "separator_line")]
+    #[serde(deserialize_with = "deserialize_horizontal_separator", default)]
+    pub separator: HorizontalSeparator,
+
+    /// Custom style override for the footer horizontal separator line and junction.
+    #[partial(recurse)]
+    #[serde(alias = "separator_style")]
+    #[serde(default)]
+    pub separator_style: StyleSetting,
 }
 
 pub type InteractionRegionSetting = Vec<(u8, String)>;
@@ -1914,6 +1975,8 @@ impl Default for DisplayConfig {
             header_lines: 0,
 
             interactions: Default::default(),
+            separator: HorizontalSeparator::None,
+            separator_style: StyleSetting::default(),
         }
     }
 }
@@ -2846,5 +2909,31 @@ mod tests {
 
         let none_binds = NavConfig::default_binds_for_profile(NavProfile::None);
         assert!(none_binds.is_empty());
+    }
+
+    #[test]
+    fn test_display_config_separator_deserialization() {
+        // String variant
+        let toml_str = r#"
+            separator = "light"
+        "#;
+        let cfg: DisplayConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.separator, HorizontalSeparator::Light);
+
+        // Boolean variant (true)
+        let toml_bool: DisplayConfig = toml::from_str("separator = true").unwrap();
+        assert_eq!(toml_bool.separator, HorizontalSeparator::Light);
+
+        // Boolean variant (false)
+        let toml_false: DisplayConfig = toml::from_str("separator = false").unwrap();
+        assert_eq!(toml_false.separator, HorizontalSeparator::None);
+
+        // Alias hr
+        let toml_hr: DisplayConfig = toml::from_str(r#"hr = "heavy""#).unwrap();
+        assert_eq!(toml_hr.separator, HorizontalSeparator::Heavy);
+
+        // Default
+        let toml_def: DisplayConfig = toml::from_str("").unwrap();
+        assert_eq!(toml_def.separator, HorizontalSeparator::None);
     }
 }

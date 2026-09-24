@@ -280,6 +280,8 @@ All colors and modifiers come from ratatui:
 - `match_indent`: (bool) Indent content to match the results table.
 - `wrap`: (bool) Enable line wrapping.
 - `row_connection`: Controls the effective width of the displayed content. See [Results Table](#results-table-results-r) for variants.
+- `separator`: (string or bool) Horizontal separator line drawn above the footer (e.g., `light`, `heavy`, `dashed`, `none`, or `true`/`false`). When preview is active, automatically draws a junction (`┴`) aligned with the preview divider.
+- `separator_style`: [Style Settings](#style-settings) Custom style override for the separator line.
 - `t`, `header_lines`: (number, header only) Number of lines to read from input for the header.
 - `interactions`: ([[index, action]]) Define interactive regions per line. See [Interactions](template.md#interaction-regions).
 - `border`: [Border Settings](#border-settings).

@@ -71,6 +71,9 @@ impl DisplayUI {
         }
         let mut height = self.height;
         height += self.config.border.height();
+        if self.config.separator != crate::config::HorizontalSeparator::None {
+            height += 1;
+        }
 
         height
     }

@@ -26,7 +26,7 @@ use crate::ui::{DisplayUI, OverlayUI, PickerUI, PreviewUI, QueryUI, ResultsUI, U
 use crate::{ActionAliaser, ActionExtHandler, Initializer, MatchError, SSS, Selection};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 
 fn action_from_null<A: ActionExt>(action: Action<NullActionExt>) -> Option<Action<A>> {
     Some(match action {
@@ -2372,7 +2372,10 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         ui.config.nav.active && ui.config.nav.hints
                     };
 
-                    let effective_footer_height = if state.preview_fullscreen {
+                    let has_footer_separator =
+                        footer_ui.config.separator != crate::config::HorizontalSeparator::None;
+
+                    let base_footer_height = if state.preview_fullscreen {
                         ui.config.nav_hints_height(PREVIEW_NAV_HINTS.len()).max(1)
                     } else if show_sort_menu {
                         ui.config.sort_menu.height(SORT_MENU_ITEMS.len())
@@ -2392,6 +2395,15 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         footer_ui.height()
                     } else {
                         0
+                    };
+
+                    let effective_footer_height = if base_footer_height > 0
+                        && has_footer_separator
+                        && (show_nav_hints || state.preview_fullscreen || show_sort_menu)
+                    {
+                        base_footer_height + 1
+                    } else {
+                        base_footer_height
                     };
 
                     let is_full_footer = full_width_footer || show_nav_hints || show_sort_menu;
@@ -2714,34 +2726,130 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                     }
 
-                    if state.preview_fullscreen {
-                        if footer.height > 0 {
-                            let zoom_pct =
-                                preview_ui.as_ref().map(|p| (p.zoom * 100.0).round() as u32);
-                            render_nav_hints(
+                    if footer.height > 0 {
+                        let (separator_rect, content_rect) =
+                            if has_footer_separator && footer.height > 1 {
+                                (
+                                    Rect {
+                                        x: footer.x,
+                                        y: footer.y,
+                                        width: footer.width,
+                                        height: 1,
+                                    },
+                                    Rect {
+                                        x: footer.x,
+                                        y: footer.y + 1,
+                                        width: footer.width,
+                                        height: footer.height.saturating_sub(1),
+                                    },
+                                )
+                            } else if has_footer_separator && footer.height == 1 {
+                                (footer, Rect::default())
+                            } else {
+                                (Rect::default(), footer)
+                            };
+
+                        if separator_rect.height > 0 {
+                            let preview_junction_x = if state.preview_fullscreen
+                                || preview_ui.as_ref().is_none_or(|p| !p.visible())
+                            {
+                                None
+                            } else if preview.width > 0 && picker_area.width > 0 {
+                                if preview.x > picker_area.x {
+                                    Some(preview.x)
+                                } else {
+                                    let has_right_border = preview_ui
+                                        .as_ref()
+                                        .and_then(|p| p.active_border())
+                                        .is_some_and(|b| b.sides().contains(Borders::RIGHT));
+                                    if has_right_border {
+                                        Some(preview.x + preview.width.saturating_sub(1))
+                                    } else {
+                                        Some(preview.x + preview.width)
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+
+                            let mut footer_junctions = Vec::new();
+                            if parent_peek_rect.width > 0 && ui.config.parent_peek.border.show {
+                                footer_junctions.push(
+                                    parent_peek_rect.x + parent_peek_rect.width.saturating_sub(1),
+                                );
+                            }
+                            if let Some(jx) = preview_junction_x {
+                                footer_junctions.push(jx);
+                            }
+
+                            let preview_border_color = preview_ui
+                                .as_ref()
+                                .and_then(|p| p.setting())
+                                .and_then(|s| s.border.as_ref())
+                                .map(|b| b.color)
+                                .filter(|c| *c != ratatui::style::Color::Reset);
+
+                            let preview_border_type = preview_ui
+                                .as_ref()
+                                .and_then(|p| p.setting())
+                                .and_then(|s| s.border.as_ref())
+                                .and_then(|b| b.r#type);
+
+                            let sep_fg = footer_ui
+                                .config
+                                .separator_style
+                                .fg
+                                .or(preview_border_color)
+                                .unwrap_or(Color::DarkGray);
+
+                            let sep_style = Style::from(footer_ui.config.separator_style.clone())
+                                .fg(sep_fg);
+
+                            render_footer_separator(
                                 frame,
-                                footer,
-                                ui.config.nav.effective_profile(),
-                                ui.config.nav.hints_columns,
-                                true,
-                                zoom_pct,
-                                false,
+                                separator_rect,
+                                footer_ui.config.separator,
+                                &footer_junctions,
+                                preview_border_type,
+                                sep_style,
                             );
                         }
-                    } else if show_sort_menu && footer.height > 0 {
-                        render_sort_menu(frame, footer, &ui.config.sort_menu);
-                    } else if show_nav_hints && footer.height > 0 {
-                        render_nav_hints(
-                            frame,
-                            footer,
-                            ui.config.nav.effective_profile(),
-                            ui.config.nav.hints_columns,
-                            false,
-                            None,
-                            is_filter_mode,
-                        );
-                    } else if footer_ui.show && footer.height > 0 {
-                        render_display(frame, footer, &mut footer_ui, &picker_ui.results);
+
+                        if content_rect.height > 0 {
+                            if state.preview_fullscreen {
+                                let zoom_pct = preview_ui
+                                    .as_ref()
+                                    .map(|p| (p.zoom * 100.0).round() as u32);
+                                render_nav_hints(
+                                    frame,
+                                    content_rect,
+                                    ui.config.nav.effective_profile(),
+                                    ui.config.nav.hints_columns,
+                                    true,
+                                    zoom_pct,
+                                    false,
+                                );
+                            } else if show_sort_menu {
+                                render_sort_menu(frame, content_rect, &ui.config.sort_menu);
+                            } else if show_nav_hints {
+                                render_nav_hints(
+                                    frame,
+                                    content_rect,
+                                    ui.config.nav.effective_profile(),
+                                    ui.config.nav.hints_columns,
+                                    false,
+                                    None,
+                                    is_filter_mode,
+                                );
+                            } else if footer_ui.show {
+                                render_display(
+                                    frame,
+                                    content_rect,
+                                    &mut footer_ui,
+                                    &picker_ui.results,
+                                );
+                            }
+                        }
                     }
                     if let Some(preview_ui) = preview_ui.as_mut() {
                         state.update_preview_visible(preview_ui);
@@ -3497,6 +3605,69 @@ fn render_nav_hints(
     }
 }
 
+fn render_footer_separator(
+    frame: &mut Frame,
+    area: Rect,
+    separator: crate::config::HorizontalSeparator,
+    junctions: &[u16],
+    preview_border_type: Option<BorderType>,
+    style: Style,
+) {
+    if area.height == 0
+        || area.width == 0
+        || separator == crate::config::HorizontalSeparator::None
+    {
+        return;
+    }
+
+    let line_char = match separator {
+        crate::config::HorizontalSeparator::None => return,
+        crate::config::HorizontalSeparator::Empty => ' ',
+        crate::config::HorizontalSeparator::Light
+        | crate::config::HorizontalSeparator::Normal
+        | crate::config::HorizontalSeparator::Underline => '─',
+        crate::config::HorizontalSeparator::Heavy => '━',
+        crate::config::HorizontalSeparator::Dashed => '╌',
+        crate::config::HorizontalSeparator::Top => '▔',
+        crate::config::HorizontalSeparator::Bottom => ' ',
+    };
+
+    let junction_char = match separator {
+        crate::config::HorizontalSeparator::None => return,
+        crate::config::HorizontalSeparator::Empty => ' ',
+        crate::config::HorizontalSeparator::Heavy => match preview_border_type {
+            Some(BorderType::Thick) => '┻',
+            Some(BorderType::Double) => '╩',
+            _ => '┷',
+        },
+        crate::config::HorizontalSeparator::Light
+        | crate::config::HorizontalSeparator::Normal
+        | crate::config::HorizontalSeparator::Dashed
+        | crate::config::HorizontalSeparator::Top
+        | crate::config::HorizontalSeparator::Bottom
+        | crate::config::HorizontalSeparator::Underline => match preview_border_type {
+            Some(BorderType::Thick) => '┸',
+            Some(BorderType::Double) => '╨',
+            _ => '┴',
+        },
+    };
+
+    let mut line_chars = Vec::with_capacity(area.width as usize);
+
+    for col in 0..area.width {
+        let x = area.x + col;
+        if junctions.contains(&x) {
+            line_chars.push(junction_char);
+        } else {
+            line_chars.push(line_char);
+        }
+    }
+
+    let line_str: String = line_chars.into_iter().collect();
+    let span = Span::styled(line_str, style);
+    frame.render_widget(Paragraph::new(Line::from(span)), area);
+}
+
 fn render_parent_peek(
     frame: &mut Frame,
     area: Rect,
@@ -4190,6 +4361,39 @@ mod test {
         // If nav_hints disabled -> 0 rows
         ui.nav.hints = false;
         assert_eq!(ui.nav_hints_height(NAV_HINTS.len()), 0);
+    }
+
+    #[test]
+    fn test_footer_separator_render_with_junction() {
+        let backend = ratatui::backend::TestBackend::new(20, 1);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                let area = ratatui::layout::Rect::new(0, 0, 20, 1);
+                // Junction at column 8
+                render_footer_separator(
+                    frame,
+                    area,
+                    crate::config::HorizontalSeparator::Light,
+                    &[8],
+                    Some(BorderType::Plain),
+                    Style::default(),
+                );
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        // Columns 0..7 should be '─'
+        for x in 0..8 {
+            assert_eq!(buffer.cell((x, 0)).unwrap().symbol(), "─");
+        }
+        // Column 8 should be '┴'
+        assert_eq!(buffer.cell((8, 0)).unwrap().symbol(), "┴");
+        // Columns 9..19 should be '─'
+        for x in 9..20 {
+            assert_eq!(buffer.cell((x, 0)).unwrap().symbol(), "─");
+        }
     }
 
     #[test]

@@ -799,9 +799,9 @@ async fn run_interactive_session_picker() -> i32 {
 
     let input_data = items.join("\n");
 
-    // Launch Waymaker TUI with piped input and sesh-picker preset
+    // Launch Waymaker TUI with piped input and session-picker preset
     let mut child = match Command::new(std::env::current_exe().unwrap_or_else(|_| "wm".into()))
-        .args(["-o", "sesh-picker"])
+        .args(["-o", "session-picker"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()

@@ -1,0 +1,72 @@
+[ui.nav]
+active = true
+basic = true
+bar = "Plain"
+color = "Black"
+prompt = ""
+
+[start]
+sort = false
+ansi = true
+
+[start.command]
+command = "wm session list --icons"
+
+[tui]
+percentage = 100
+max = 9999
+
+[matcher.sort]
+threshold = false
+
+[ui.border]
+sides = ""
+
+[query]
+prompt = " "
+status_inline = true
+
+[footer]
+content = " {cyan,bold:[Enter]} {darkgray:Connect}  •  {red,bold:[d]} {darkgray:Kill}  •  {yellow,bold:[a]} {darkgray:All}  •  {magenta,bold:[t]} {darkgray:Tmux}  •  {blue,bold:[x]} {darkgray:Frecency}"
+row_connection = "Full"
+match_indent = false
+
+[results]
+spinner_inline = true
+current_prefix = " "
+unselected_prefix = "  "
+row_connection = "Disjoint"
+column_spacing = 1
+
+[results.border]
+sides = ""
+
+[previewer]
+debounce_ms = 20
+delay_clear = true
+
+[preview]
+wrap = false
+
+[preview.border]
+sides = "LEFT"
+color = "Gray"
+
+[[preview.layout]]
+command = 'wm session preview {=}'
+side = "right"
+percentage = 55
+
+[binds]
+"ctrl-a" = [ "SetPrompt(⚡  )", "Reload(wm session list --icons)" ]
+"ctrl-t" = [ "SetPrompt(🪟  )", "Reload(wm session list -t --icons)" ]
+"ctrl-g" = [ "SetPrompt(⚙️  )", "Reload(wm session list -c --icons)" ]
+"ctrl-x" = [ "SetPrompt(📁  )", "Reload(wm list --dirs)" ]
+"ctrl-f" = [ "SetPrompt(🔎  )", "Reload(fd -H -d 2 -t d -E .Trash . ~)" ]
+"ctrl-d" = [ 'ExecuteAsync(sess="{=}"; sess="${sess#* }"; tmux kill-session -t "$sess")', "SetPrompt(⚡  )", "SetQuery()", "Reload(wm session list --icons)" ]
+"nav^^a" = [ "SetPrompt(⚡  )", "Reload(wm session list --icons)" ]
+"nav^^t" = [ "SetPrompt(🪟  )", "Reload(wm session list -t --icons)" ]
+"nav^^g" = [ "SetPrompt(⚙️  )", "Reload(wm session list -c --icons)" ]
+"nav^^x" = [ "SetPrompt(📁  )", "Reload(wm list --dirs)" ]
+"nav^^f" = [ "SetPrompt(🔎  )", "Reload(fd -H -d 2 -t d -E .Trash . ~)" ]
+"nav^^d" = [ 'ExecuteAsync(sess="{=}"; sess="${sess#* }"; tmux kill-session -t "$sess")', "SetPrompt(⚡  )", "SetQuery()", "Reload(wm session list --icons)" ]

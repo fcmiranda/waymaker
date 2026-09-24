@@ -1,4 +1,4 @@
-name: Release mm
+name: Release waymaker
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
       - name: Build and Upload Binary Assets
         uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: mm
+          bin: wm
           target: ${{ matrix.target }}
           archive: $bin-$tag-$target
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -2371,15 +2371,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         ui.config.nav.active
                             && ui.config.nav.hints
                             && state.focus == Focus::Results
-                            && !footer_ui.show
                     };
 
                     let effective_footer_height = if state.preview_fullscreen {
                         ui.config.nav_hints_height(PREVIEW_NAV_HINTS.len()).max(1)
                     } else if show_sort_menu {
                         ui.config.sort_menu.height(SORT_MENU_ITEMS.len())
-                    } else if footer_ui.show {
-                        footer_ui.height()
                     } else if show_nav_hints {
                         let count = match ui.config.nav.effective_profile() {
                             crate::config::NavProfile::Fm => NAV_HINTS.len(),
@@ -2388,6 +2385,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             crate::config::NavProfile::None => 0,
                         };
                         ui.config.nav_hints_height(count)
+                    } else if footer_ui.show {
+                        footer_ui.height()
                     } else {
                         0
                     };
@@ -2727,18 +2726,17 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                     } else if show_sort_menu && footer.height > 0 {
                         render_sort_menu(frame, footer, &ui.config.sort_menu);
-                    } else {
+                    } else if show_nav_hints && footer.height > 0 {
+                        render_nav_hints(
+                            frame,
+                            footer,
+                            ui.config.nav.effective_profile(),
+                            ui.config.nav.hints_columns,
+                            false,
+                            None,
+                        );
+                    } else if footer_ui.show && footer.height > 0 {
                         render_display(frame, footer, &mut footer_ui, &picker_ui.results);
-                        if show_nav_hints && footer.height > 0 {
-                            render_nav_hints(
-                                frame,
-                                footer,
-                                ui.config.nav.effective_profile(),
-                                ui.config.nav.hints_columns,
-                                false,
-                                None,
-                            );
-                        }
                     }
                     if let Some(preview_ui) = preview_ui.as_mut() {
                         state.update_preview_visible(preview_ui);

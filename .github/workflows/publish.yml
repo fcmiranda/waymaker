@@ -55,7 +55,7 @@ jobs:
 #          files: ${{ matrix.asset_name }}
 
   publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    if: ${{ github.repository == 'Squirreljetpack/matchmaker' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: ubuntu-latest
 
     steps:

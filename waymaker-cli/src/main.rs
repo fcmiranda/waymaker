@@ -12,6 +12,7 @@ mod register;
 mod start;
 mod utils;
 pub mod watch;
+pub mod session;
 
 use clap::*;
 use config::PartialConfig;
@@ -41,6 +42,17 @@ async fn main() {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL)
     };
 
+    // Fast-path: Check if invoked via `sesh` symlink
+    let prog_name = std::env::args().next().unwrap_or_default();
+    if std::path::Path::new(&prog_name)
+        .file_name()
+        .map(|f| f.to_string_lossy() == "sesh")
+        .unwrap_or(false)
+    {
+        let code = session::handle_sesh_cli().await;
+        exit(code);
+    }
+
     let (cli, config_args) = Cli::get_partitioned_args();
 
     init_logger(
@@ -51,6 +63,11 @@ async fn main() {
 
     display_doc(&cli);
     handle_download(&cli);
+
+    // Handle native session management subcommands (wm session, wm connect, wm last)
+    if let Some(code) = session::handle_session_cli(&config_args).await {
+        exit(code);
+    }
 
     // Warm up the SVG/Mermaid system font database asynchronously in the background.
     // This moves the 50-650ms `load_system_fonts()` filesystem scan completely off the

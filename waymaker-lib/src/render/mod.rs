@@ -2782,18 +2782,13 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 footer_junctions.push(jx);
                             }
 
-                            let preview_border_color = preview_ui
-                                .as_ref()
-                                .and_then(|p| p.setting())
-                                .and_then(|s| s.border.as_ref())
+                            let preview_border = preview_ui.as_ref().map(|p| p.border());
+
+                            let preview_border_color = preview_border
                                 .map(|b| b.color)
                                 .filter(|c| *c != ratatui::style::Color::Reset);
 
-                            let preview_border_type = preview_ui
-                                .as_ref()
-                                .and_then(|p| p.setting())
-                                .and_then(|s| s.border.as_ref())
-                                .and_then(|b| b.r#type);
+                            let preview_border_type = preview_border.and_then(|b| b.r#type);
 
                             let sep_fg = footer_ui
                                 .config
@@ -4394,6 +4389,22 @@ mod test {
         for x in 9..20 {
             assert_eq!(buffer.cell((x, 0)).unwrap().symbol(), "─");
         }
+    }
+
+    #[test]
+    fn test_preview_border_resolution_from_config() {
+        use crate::preview::previewer::Previewer;
+        let (previewer, _tx) = Previewer::new(Default::default());
+        let mut config = crate::config::PreviewConfig::default();
+        config.border.color = Color::DarkGray;
+        config.layout.push(crate::config::PreviewSetting {
+            border: None,
+            ..Default::default()
+        });
+        let preview_ui = PreviewUI::new(previewer.view(), config, [80, 25]);
+
+        // p.border() should fall back to config.border when layout has no border override
+        assert_eq!(preview_ui.border().color, Color::DarkGray);
     }
 
     #[test]

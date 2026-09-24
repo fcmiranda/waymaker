@@ -229,10 +229,11 @@ pub fn last() -> anyhow::Result<()> {
 
 /// List sessions and frecency directories with icons and filtering.
 pub fn list(icons: bool, tmux_only: bool, dirs_only: bool) -> anyhow::Result<()> {
+    let show_all = (tmux_only && dirs_only) || (!tmux_only && !dirs_only);
     let home = dirs::home_dir();
 
     // 1. Output active Tmux sessions
-    if !dirs_only {
+    if show_all || tmux_only {
         let sessions = get_tmux_sessions();
         for sess in sessions {
             if icons {
@@ -244,7 +245,7 @@ pub fn list(icons: bool, tmux_only: bool, dirs_only: bool) -> anyhow::Result<()>
     }
 
     // 2. Output frecency directories
-    if !tmux_only {
+    if show_all || dirs_only {
         let dirs = get_frecency_dirs(None);
         for d in dirs {
             let display_path = if let Some(ref h) = home {
@@ -363,11 +364,22 @@ pub async fn handle_sesh_cli() -> i32 {
             let mut dirs_only = false;
 
             for arg in &args[1..] {
-                match arg.as_str() {
-                    "-i" | "--icons" => icons = true,
-                    "-t" | "--tmux" => tmux_only = true,
-                    "-z" | "--zoxide" | "--dirs" => dirs_only = true,
-                    _ => {}
+                if arg.starts_with("--") {
+                    match arg.as_str() {
+                        "--icons" => icons = true,
+                        "--tmux" => tmux_only = true,
+                        "--dirs" | "--zoxide" => dirs_only = true,
+                        _ => {}
+                    }
+                } else if arg.starts_with('-') {
+                    for c in arg[1..].chars() {
+                        match c {
+                            'i' => icons = true,
+                            't' => tmux_only = true,
+                            'z' => dirs_only = true,
+                            _ => {}
+                        }
+                    }
                 }
             }
 
@@ -433,12 +445,30 @@ pub async fn handle_session_cli(config_args: &[String]) -> Option<i32> {
             let sub = config_args[1].as_str();
             match sub {
                 "list" => {
-                    let icons = config_args.iter().any(|a| a == "--icons" || a == "-i")
-                        || std::env::args().any(|a| a == "--icons" || a == "-i");
-                    let tmux_only = config_args.iter().any(|a| a == "--tmux" || a == "-t")
-                        || std::env::args().any(|a| a == "--tmux" || a == "-t");
-                    let dirs_only = config_args.iter().any(|a| a == "--dirs" || a == "-z")
-                        || std::env::args().any(|a| a == "--dirs" || a == "-z");
+                    let mut icons = false;
+                    let mut tmux_only = false;
+                    let mut dirs_only = false;
+
+                    for arg in &config_args[2..] {
+                        if arg.starts_with("--") {
+                            match arg.as_str() {
+                                "--icons" => icons = true,
+                                "--tmux" => tmux_only = true,
+                                "--dirs" | "--zoxide" => dirs_only = true,
+                                _ => {}
+                            }
+                        } else if arg.starts_with('-') {
+                            for c in arg[1..].chars() {
+                                match c {
+                                    'i' => icons = true,
+                                    't' => tmux_only = true,
+                                    'z' => dirs_only = true,
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+
                     let _ = list(icons, tmux_only, dirs_only);
                     Some(0)
                 }

@@ -53,6 +53,16 @@ async fn main() {
         exit(code);
     }
 
+    // Fast-path: Check if invoked with native session subcommands (`wm session`, `wm connect`, `wm last`)
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(first_arg) = raw_args.first() {
+        if matches!(first_arg.as_str(), "session" | "sessions" | "connect" | "last") {
+            if let Some(code) = session::handle_session_cli(&raw_args).await {
+                exit(code);
+            }
+        }
+    }
+
     let (cli, config_args) = Cli::get_partitioned_args();
 
     init_logger(
@@ -63,11 +73,6 @@ async fn main() {
 
     display_doc(&cli);
     handle_download(&cli);
-
-    // Handle native session management subcommands (wm session, wm connect, wm last)
-    if let Some(code) = session::handle_session_cli(&config_args).await {
-        exit(code);
-    }
 
     // Warm up the SVG/Mermaid system font database asynchronously in the background.
     // This moves the 50-650ms `load_system_fonts()` filesystem scan completely off the

@@ -2364,13 +2364,12 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                         }
                     }
 
+                    let is_filter_mode = state.focus == Focus::Input;
                     let show_sort_menu = state.sort_menu_active;
                     let show_nav_hints = if state.preview_fullscreen {
                         true
                     } else {
-                        ui.config.nav.active
-                            && ui.config.nav.hints
-                            && state.focus == Focus::Results
+                        ui.config.nav.active && ui.config.nav.hints
                     };
 
                     let effective_footer_height = if state.preview_fullscreen {
@@ -2378,11 +2377,15 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                     } else if show_sort_menu {
                         ui.config.sort_menu.height(SORT_MENU_ITEMS.len())
                     } else if show_nav_hints {
-                        let count = match ui.config.nav.effective_profile() {
-                            crate::config::NavProfile::Fm => NAV_HINTS.len(),
-                            crate::config::NavProfile::List => LIST_NAV_HINTS.len(),
-                            crate::config::NavProfile::Basic => BASIC_NAV_HINTS.len(),
-                            crate::config::NavProfile::None => 0,
+                        let count = if is_filter_mode {
+                            FILTER_NAV_HINTS.len()
+                        } else {
+                            match ui.config.nav.effective_profile() {
+                                crate::config::NavProfile::Fm => NAV_HINTS.len(),
+                                crate::config::NavProfile::List => LIST_NAV_HINTS.len(),
+                                crate::config::NavProfile::Basic => BASIC_NAV_HINTS.len(),
+                                crate::config::NavProfile::None => 0,
+                            }
                         };
                         ui.config.nav_hints_height(count)
                     } else if footer_ui.show {
@@ -2722,6 +2725,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 ui.config.nav.hints_columns,
                                 true,
                                 zoom_pct,
+                                false,
                             );
                         }
                     } else if show_sort_menu && footer.height > 0 {
@@ -2734,6 +2738,7 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                             ui.config.nav.hints_columns,
                             false,
                             None,
+                            is_filter_mode,
                         );
                     } else if footer_ui.show && footer.height > 0 {
                         render_display(frame, footer, &mut footer_ui, &picker_ui.results);
@@ -3369,6 +3374,21 @@ pub const PREVIEW_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
     ("[esc/enter]", "Back", ratatui::style::Color::Red),
 ];
 
+pub const FILTER_NAV_HINTS: &[(&str, &str, ratatui::style::Color)] = &[
+    ("[Esc]", "Nav", ratatui::style::Color::Red),
+    ("[Tab]", "Cycle", ratatui::style::Color::Magenta),
+    ("[C-j/k]", "Move", ratatui::style::Color::Yellow),
+    ("[C-h/l]", "Dir", ratatui::style::Color::Cyan),
+    ("[C-u]", "Parents", ratatui::style::Color::Blue),
+    ("[C-d]", "Delete", ratatui::style::Color::Red),
+    ("[C-v]", "Insert", ratatui::style::Color::Green),
+    ("[C-e]", "Edit", ratatui::style::Color::Green),
+    ("[C-y]", "Copy", ratatui::style::Color::Magenta),
+    ("[C-p]", "Preview", ratatui::style::Color::Blue),
+    ("[Enter]", "Accept", ratatui::style::Color::Cyan),
+    ("[C-c]", "Quit", ratatui::style::Color::Red),
+];
+
 fn render_nav_hints(
     frame: &mut Frame,
     area: Rect,
@@ -3376,6 +3396,7 @@ fn render_nav_hints(
     columns: usize,
     preview_fullscreen: bool,
     zoom_pct: Option<u32>,
+    is_filter_mode: bool,
 ) {
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
@@ -3383,6 +3404,8 @@ fn render_nav_hints(
 
     let hints: &[(&str, &str, Color)] = if preview_fullscreen {
         PREVIEW_NAV_HINTS
+    } else if is_filter_mode {
+        FILTER_NAV_HINTS
     } else {
         match profile {
             crate::config::NavProfile::Fm => NAV_HINTS,

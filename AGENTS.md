@@ -17,7 +17,7 @@ Prefer linking to existing docs instead of restating them:
 
 ## Working Rules
 
-- After every change, run `just install` before finalizing. It builds the release workspace and updates `$HOME/.local/bin/wm`; targeted tests complement this build but do not replace it.
+- **Mandatory Global Build**: Always run `just install` after ANY new feature, bug fix, refactor, or alteration before finalizing. It builds the release workspace and updates the global binary at `$HOME/.local/bin/wm`. Targeted tests complement this build but do not replace it.
 - Prefer narrow validation first: `cargo test -p <crate>` before `cargo test --workspace` when a change is crate-local.
 - Use `just preview -- --help` or `cargo run -p waymaker-cli -F experimental -- <args>` when validating CLI behavior.
 - Use `dprint fmt` or `dprint check` for Markdown and TOML edits.
@@ -27,7 +27,7 @@ Prefer linking to existing docs instead of restating them:
 
 ## Commit Policy
 
-- After implementing a feature, create a git commit for that feature.
+- After implementing a feature, fix, or alteration, ensure the global build (`just install`) succeeds, then create a git commit for that change.
 - Do not amend commits unless explicitly requested.
 - If unrelated worktree changes make a clean feature commit ambiguous, stop and ask before committing.
 

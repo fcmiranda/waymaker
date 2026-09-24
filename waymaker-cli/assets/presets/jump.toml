@@ -90,9 +90,9 @@ active = true
 size = 1280
 
 [preview.border]
-title_fg = "cyan"
-color = "blue"
-type = "Rounded"
+sides = "LEFT"
+color = "Darkgray"
+title_fg = "Cyan"
 
 [[preview.layout]]
 command = '''p={1}; p="${p/#\~/$HOME}"; if [ -d "$p" ]; then wm tree "$p" 2>/dev/null || eza --tree --level=2 --icons=always --git-ignore --color=always "$p" 2>/dev/null || ls -la "$p"; elif [[ "$p" =~ \.(md|markdown|mdown|mkd)$ ]]; then wm md "$p" 2>/dev/null || bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; elif [[ "$p" =~ \.(mmd|mermaid)$ ]]; then wm mermaid "$p" 2>/dev/null || bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; else mime=$(file -b --mime-type "$p" 2>/dev/null); if [[ "$mime" == image/* ]]; then if command -v chafa >/dev/null 2>&1; then chafa --probe=off --format=symbols --size=80x35 "$p" 2>/dev/null; elif command -v img2txt >/dev/null 2>&1; then img2txt -f ansi -W 60 "$p" 2>/dev/null; fi; echo ""; identify "$p" 2>/dev/null || file "$p"; else bat --style=numbers --color=always --line-range=:300 "$p" 2>/dev/null || cat "$p"; fi; fi'''

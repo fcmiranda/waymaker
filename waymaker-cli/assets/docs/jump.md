@@ -120,9 +120,9 @@ delay_clear = true
 active = true
 
 [preview.border]
-title_fg = "cyan"
-color = "blue"
-type = "Rounded"
+sides = "LEFT"
+color = "Darkgray"
+title_fg = "Cyan"
 
 [[preview.layout]]
 command = "p={1}; p=\"${p/#\\~/$HOME}\"; if [ -d \"$p\" ]; then eza --tree --level=2 --icons --git-ignore --color=always \"$p\"; else bat --style=numbers --color=always --line-range=:300 \"$p\"; fi"

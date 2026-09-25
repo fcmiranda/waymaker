@@ -1226,14 +1226,25 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                         }
                                     }
                                     state.dragging = Some(pos);
+                                    state.needs_redraw = true;
                                 }
                             }
                         }
                         MouseEventKind::Up(MouseButton::Left) => {
-                            state.dragging = None;
+                            if state.dragging.is_some() {
+                                state.dragging = None;
+                                state.needs_redraw = true;
+                            }
                         }
                         MouseEventKind::Moved => {
+                            let prev_hover = mouse_hover;
                             mouse_hover = Some(pos);
+                            let gap_rect = layout.gap;
+                            let was_over_gap = prev_hover.is_some_and(|p| gap_rect.contains(p));
+                            let is_over_gap = gap_rect.contains(pos);
+                            if was_over_gap != is_over_gap {
+                                state.needs_redraw = true;
+                            }
                         }
                         _ => {}
                     }
@@ -2797,8 +2808,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 .or(preview_border_color)
                                 .unwrap_or(Color::DarkGray);
 
-                            let sep_style = Style::from(footer_ui.config.separator_style.clone())
-                                .fg(sep_fg);
+                            let sep_style =
+                                Style::from(footer_ui.config.separator_style.clone()).fg(sep_fg);
 
                             render_footer_separator(
                                 frame,
@@ -2812,9 +2823,8 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
 
                         if content_rect.height > 0 {
                             if state.preview_fullscreen {
-                                let zoom_pct = preview_ui
-                                    .as_ref()
-                                    .map(|p| (p.zoom * 100.0).round() as u32);
+                                let zoom_pct =
+                                    preview_ui.as_ref().map(|p| (p.zoom * 100.0).round() as u32);
                                 render_nav_hints(
                                     frame,
                                     content_rect,
@@ -2862,9 +2872,16 @@ pub(crate) async fn render_loop<'a, W: Write, T: SSS, S: Selection, A: ActionExt
                                 let is_hovered = mouse_hover.is_some_and(|p| gap_area.contains(p));
                                 let is_dragging = state.dragging.is_some();
                                 if is_hovered || is_dragging {
-                                    let gap_block = Block::default()
-                                        .style(Style::default().bg(Color::DarkGray));
-                                    frame.render_widget(gap_block, gap_area);
+                                    let buf = frame.buffer_mut();
+                                    let shadow_style = Style::default().bg(Color::DarkGray);
+                                    for y in gap_area.top()..gap_area.bottom() {
+                                        for x in gap_area.left()..gap_area.right() {
+                                            if let Some(cell) = buf.cell_mut((x, y)) {
+                                                cell.set_char(' ');
+                                                cell.set_style(shadow_style);
+                                            }
+                                        }
+                                    }
                                 }
 
                                 // Counter bar: render cut / yank / selected counts.
@@ -3608,9 +3625,7 @@ fn render_footer_separator(
     preview_border_type: Option<BorderType>,
     style: Style,
 ) {
-    if area.height == 0
-        || area.width == 0
-        || separator == crate::config::HorizontalSeparator::None
+    if area.height == 0 || area.width == 0 || separator == crate::config::HorizontalSeparator::None
     {
         return;
     }
@@ -4405,6 +4420,106 @@ mod test {
 
         // p.border() should fall back to config.border when layout has no border override
         assert_eq!(preview_ui.border().color, Color::DarkGray);
+    }
+
+    #[test]
+    fn test_preview_layout_gap_alignment_with_border_edge() {
+        use crate::config::{Percentage, PreviewLayout, Side};
+        let area = Rect::new(0, 0, 80, 24);
+
+        // Side::Right with gap = 1: preview.x must equal gap.x (no phantom offset column!)
+        let mut layout = PreviewLayout {
+            side: Side::Right,
+            percentage: Percentage::new(50),
+            gap: 1,
+            ..Default::default()
+        };
+        let [preview, picker, gap] = layout.split(area, None);
+        assert_eq!(preview.x, 40);
+        assert_eq!(picker.width, 40);
+        assert_eq!(gap.x, 40);
+        assert_eq!(gap.width, 1);
+        assert_eq!(gap.height, 24);
+
+        // Side::Left with gap = 1: gap.x must align with preview's rightmost border column
+        layout.side = Side::Left;
+        let [preview, picker, gap] = layout.split(area, None);
+        assert_eq!(preview.x, 0);
+        assert_eq!(preview.width, 40);
+        assert_eq!(picker.x, 40);
+        assert_eq!(gap.x, 39);
+        assert_eq!(gap.width, 1);
+
+        // Side::Top with gap = 1: gap.y must align with preview's bottom border row
+        layout.side = Side::Top;
+        let [preview, picker, gap] = layout.split(area, None);
+        assert_eq!(preview.y, 0);
+        assert_eq!(preview.height, 12);
+        assert_eq!(picker.y, 12);
+        assert_eq!(gap.y, 11);
+        assert_eq!(gap.height, 1);
+
+        // Side::Bottom with gap = 1: gap.y must align with preview's top border row
+        layout.side = Side::Bottom;
+        let [preview, picker, gap] = layout.split(area, None);
+        assert_eq!(picker.height, 12);
+        assert_eq!(preview.y, 12);
+        assert_eq!(gap.y, 12);
+        assert_eq!(gap.height, 1);
+
+        // gap > 1: widened slot for counter badges is carved between the panes
+        layout.side = Side::Right;
+        layout.gap = 5;
+        let [preview, picker, gap] = layout.split(area, None);
+        assert_eq!(picker.width, 35);
+        assert_eq!(gap.x, 35);
+        assert_eq!(gap.width, 5);
+        assert_eq!(preview.x, 40);
+    }
+
+    #[test]
+    fn test_preview_hover_shadow_overlays_vertical_border() {
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+        let area = Rect::new(0, 0, 80, 24);
+        let layout = crate::config::PreviewLayout {
+            side: crate::config::Side::Right,
+            percentage: crate::config::Percentage::new(50),
+            gap: 1,
+            ..Default::default()
+        };
+        let [preview_area, _picker_area, gap_area] = layout.split(area, None);
+
+        // Pre-render a vertical line at preview_area.x (representing the preview left border)
+        terminal
+            .draw(|frame| {
+                let border_block = ratatui::widgets::Block::default()
+                    .borders(ratatui::widgets::Borders::LEFT)
+                    .border_style(ratatui::style::Style::default().fg(Color::DarkGray));
+                frame.render_widget(border_block, preview_area);
+
+                // Simulate hover shadow rendering over gap_area
+                let buf = frame.buffer_mut();
+                let shadow_style = Style::default().bg(Color::DarkGray);
+                for y in gap_area.top()..gap_area.bottom() {
+                    for x in gap_area.left()..gap_area.right() {
+                        if let Some(cell) = buf.cell_mut((x, y)) {
+                            cell.set_char(' ');
+                            cell.set_style(shadow_style);
+                        }
+                    }
+                }
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        // Column 40 (preview left border / gap) should have ' ' with bg(DarkGray)
+        for y in 0..24 {
+            let cell = buffer.cell((40, y)).unwrap();
+            assert_eq!(cell.symbol(), " ");
+            assert_eq!(cell.bg, Color::DarkGray);
+        }
     }
 
     #[test]

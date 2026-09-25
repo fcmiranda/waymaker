@@ -324,10 +324,13 @@ impl PreviewLayout {
 
         let gap = self.gap;
 
-        // Build ratatui constraints with an optional gap slot between the panes.
+        // Build ratatui constraints. When gap > 1 (e.g. selection counter badges or
+        // explicit multi-cell spacing), a dedicated slot is carved between the panes.
+        // When gap <= 1, no extra separator column is carved out; the drag/divider
+        // area coincides directly with the preview boundary border line (like lazygitrs).
         let chunks = if side_first {
-            // preview | gap | picker
-            let constraints = if gap > 0 {
+            // preview | (gap) | picker
+            let constraints = if gap > 1 {
                 vec![
                     Constraint::Length(side_size),
                     Constraint::Length(gap),
@@ -341,8 +344,8 @@ impl PreviewLayout {
                 .constraints(constraints)
                 .split(area)
         } else {
-            // picker | gap | preview
-            let constraints = if gap > 0 {
+            // picker | (gap) | preview
+            let constraints = if gap > 1 {
                 vec![
                     Constraint::Min(0),
                     Constraint::Length(gap),
@@ -357,13 +360,54 @@ impl PreviewLayout {
                 .split(area)
         };
 
-        let mut ret = if gap > 0 {
+        let mut ret = if gap > 1 {
             if side_first {
                 // chunks: [preview, gap, picker]
                 [chunks[0], chunks[2], chunks[1]]
             } else {
                 // chunks: [picker, gap, preview]
                 [chunks[2], chunks[0], chunks[1]]
+            }
+        } else if gap == 1 {
+            let gap_rect = if side_first {
+                // preview is chunks[0], picker is chunks[1]
+                match self.side {
+                    Side::Left => Rect {
+                        x: chunks[0].right().saturating_sub(1),
+                        y: chunks[0].y,
+                        width: 1,
+                        height: chunks[0].height,
+                    },
+                    Side::Top => Rect {
+                        x: chunks[0].x,
+                        y: chunks[0].bottom().saturating_sub(1),
+                        width: chunks[0].width,
+                        height: 1,
+                    },
+                    _ => Rect::default(),
+                }
+            } else {
+                // picker is chunks[0], preview is chunks[1]
+                match self.side {
+                    Side::Right => Rect {
+                        x: chunks[1].x,
+                        y: chunks[1].y,
+                        width: 1,
+                        height: chunks[1].height,
+                    },
+                    Side::Bottom => Rect {
+                        x: chunks[1].x,
+                        y: chunks[1].y,
+                        width: chunks[1].width,
+                        height: 1,
+                    },
+                    _ => Rect::default(),
+                }
+            };
+            if side_first {
+                [chunks[0], chunks[1], gap_rect]
+            } else {
+                [chunks[1], chunks[0], gap_rect]
             }
         } else {
             // No gap: same layout as before, gap rect is default.
@@ -379,12 +423,15 @@ impl PreviewLayout {
                 let max_u = self.max as u16;
                 if max_u < ret[0].height {
                     ret[0].height = max_u;
+                    ret[2].height = max_u;
                 }
             }
             if self.min > 0 {
                 let min_u = self.min as u16;
                 if min_u > ret[0].height {
-                    ret[0].height = min_u.min(area.height);
+                    let clamped = min_u.min(area.height);
+                    ret[0].height = clamped;
+                    ret[2].height = clamped;
                 }
             }
         }

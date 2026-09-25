@@ -31,6 +31,28 @@ Prefer linking to existing docs instead of restating them:
 - Do not amend commits unless explicitly requested.
 - If unrelated worktree changes make a clean feature commit ambiguous, stop and ask before committing.
 
+## Release Policy & Workflow
+
+Releasing is the explicit "ship it" step, intentionally decoupled from coding tasks, feature implementations, and bug fixes. See the [Release Skill](.agents/skills/release/SKILL.md) for the complete procedure.
+
+- **Strict User Mandate**: Agents must **NEVER** cut, tag, or publish a release without an explicit user instruction (e.g. "corte a release v0.1.1", "cut a patch release"). Implementing a feature or making CI green never authorizes an automatic release.
+- **Hybrid Release Architecture**:
+  - **Manual Trigger**: The human developer decides *when* accumulated changes on `main` justify a new public version, avoiding release churn.
+  - **100% Automated Execution**: Once a release tag (`v*`) is pushed, GitHub Actions (`.github/workflows/release.yml`) builds the 5-target multi-arch cross-compilation matrix (Linux musl x86/ARM, macOS Silicon/Intel, Windows MSVC), generates SHA256 checksums, and attaches binary assets automatically.
+- **SemVer Classification**:
+  - **Patch (`x.y.Z`)**: Bug fixes, performance tweaks, UI refinements, test coverage expansions.
+  - **Minor (`x.Y.0`)**: Backwards-compatible features, new CLI options, or presets.
+  - **Major (`X.0.0`)**: Breaking changes in CLI flags, config schemas, public APIs, or serialization.
+- **Pre-Release Checklist**:
+  1. Working tree is clean and `just install` + tests pass (`cargo test --workspace`).
+  2. Bump `version` in workspace manifests (`waymaker-cli/Cargo.toml`, `waymaker-lib/Cargo.toml`, etc.).
+  3. Promote `CHANGELOG.md` `## [Unreleased]` section to `## [X.Y.Z] - YYYY-MM-DD` so `taiki-e/create-gh-release-action` automatically populates the GitHub release notes.
+  4. Commit release metadata: `git commit -am "chore(release): bump version to X.Y.Z"`.
+  5. Push `main` to `origin`.
+  6. Create annotated tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z: <summary>"`.
+  7. Push tag: `git push origin vX.Y.Z`.
+
+
 ## Navigation Hints
 
 - Start in `waymaker-cli/src/config.rs` and `waymaker-lib/src/config.rs` for config shape questions.

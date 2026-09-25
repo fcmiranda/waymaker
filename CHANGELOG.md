@@ -1,7 +1,26 @@
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-25
+
+### 🐛 Bug Fixes
+
+- Align preview drag divider handle and hover shadow directly over the vertical border, matching the biomechanical ergonomics of lazygitrs
+
+### 🧪 Testing
+
+- Substantially expand unit test coverage across `waymaker-lib` and `waymaker-cli` from 272 to 320 tests, covering `selector`, `color`, `clap`, `action`, `paths`, and matchmaker core logic
+
+### 📚 Documentation & Governance
+
+- Introduce Release Policy & Workflow in `AGENTS.md` and define canonical `release` skill (`.agents/skills/release/SKILL.md`) following the hybrid architecture (manual on-demand trigger + 100% automated CI execution)
+
+## [0.1.0] - 2026-09-24
+
 ### 🚀 Features
 
+- Add native Tmux workspace and session engine with `sesh` drop-in compatibility (`session-picker` preset, `session.toml`, `sesh.toml`)
+- Fast-path native session commands and support combined flags
+- Support horizontal separator bar with preview junction
 - Add `current_nav_bar` and `current_nav_bar_style` for independent focused navbar cell styling
 - Render full solid block (`█`) for `Thick` navbar border and eliminate partial half-height cuts across all rows
 - Add `invert_current_icon` and `uncolor_current_icon` options for fine-grained icon highlights on cursor focus

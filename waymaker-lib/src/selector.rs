@@ -318,3 +318,130 @@ where
         set.last().map(f)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_selector_basic_operations() {
+        let mut selector = Selector::new(|s: &String| (s.len() as u32, s.clone()));
+        assert!(!selector.is_disabled());
+        assert!(selector.is_empty());
+        assert_eq!(selector.len(), 0);
+
+        let apple = "apple".to_string();
+        let banana = "banana".to_string();
+
+        assert_eq!(selector.id(&apple), 5);
+        assert_eq!(selector.eval(&apple), "apple");
+
+        assert!(selector.sel(&apple));
+        assert!(selector.contains(&apple));
+        assert!(!selector.contains(&banana));
+        assert_eq!(selector.len(), 1);
+        assert!(!selector.is_empty());
+
+        // Toggle removes apple
+        selector.toggle(&apple);
+        assert!(!selector.contains(&apple));
+        assert_eq!(selector.len(), 0);
+
+        // Toggle adds banana
+        selector.toggle(&banana);
+        assert!(selector.contains(&banana));
+        assert_eq!(selector.len(), 1);
+
+        // Desel removes banana
+        assert!(selector.desel(&banana));
+        assert!(!selector.contains(&banana));
+        assert_eq!(selector.len(), 0);
+
+        // Clear removes all
+        selector.sel(&apple);
+        selector.sel(&banana);
+        assert_eq!(selector.len(), 2);
+        selector.clear();
+        assert_eq!(selector.len(), 0);
+    }
+
+    #[test]
+    fn test_selector_disabled() {
+        let mut sel = Selector::new(|s: &String| (0u32, s.clone())).disabled();
+        assert!(sel.is_disabled());
+
+        let item = "sample".to_string();
+        assert!(!sel.sel(&item));
+        assert!(!sel.contains(&item));
+        assert!(!sel.desel(&item));
+        sel.toggle(&item);
+        assert_eq!(sel.len(), 0);
+        assert!(sel.is_empty());
+        assert!(sel.output().next().is_none());
+        assert!(sel.map_to_vec(|_, _| ()).is_empty());
+        assert!(sel.map_last(|_| ()).is_none());
+        sel.cycle_all_bg(vec![item]);
+    }
+
+    #[test]
+    fn test_selector_mapping_and_output() {
+        let mut sel = Selector::new(|(id, val): &(u32, String)| (*id, val.clone()));
+        let item1 = (1u32, "first".to_string());
+        let item2 = (2u32, "second".to_string());
+
+        sel.sel(&item1);
+        sel.sel(&item2);
+
+        let mapped: Vec<String> = sel.map_to_vec(|_k, v| v.clone());
+        assert_eq!(mapped, vec!["first", "second"]);
+
+        let last = sel.map_last(|s| s.clone());
+        assert_eq!(last, Some("second".to_string()));
+
+        let identified = sel.identify_to_vec(vec![&item1, &item2]);
+        assert_eq!(identified, vec!["first", "second"]);
+
+        let output_vals: Vec<String> = sel.output().collect();
+        assert_eq!(output_vals, vec!["first", "second"]);
+        assert!(sel.is_empty());
+    }
+
+    #[test]
+    fn test_selector_validator_and_revalidate() {
+        let mut sel = Selector::new(|s: &String| (s.len() as u32, s.clone()))
+            .with_validator(|s| !s.starts_with('_'));
+
+        let valid = "valid.txt".to_string();
+        let invalid = "_hidden.txt".to_string();
+
+        sel.sel(&valid);
+        sel.sel(&invalid);
+        assert_eq!(sel.len(), 2);
+
+        sel.revalidate();
+        assert_eq!(sel.len(), 1);
+        assert!(sel.contains(&valid));
+        assert!(!sel.contains(&invalid));
+    }
+
+    #[test]
+    fn test_selector_cycle_all() {
+        let sel = Selector::new(|(id, s): &(u32, String)| (*id, s.clone()));
+        let items = vec![
+            (1u32, "one".to_string()),
+            (2u32, "two".to_string()),
+            (3u32, "three".to_string()),
+        ];
+
+        // None are selected -> cycle_all selects all
+        sel.cycle_all_bg(&items);
+        assert_eq!(sel.len(), 3);
+        assert!(sel.contains(&items[0]));
+        assert!(sel.contains(&items[1]));
+        assert!(sel.contains(&items[2]));
+
+        // All are selected -> cycle_all deselects all
+        sel.cycle_all_bg(&items);
+        assert_eq!(sel.len(), 0);
+    }
+}

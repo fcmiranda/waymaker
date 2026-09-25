@@ -911,4 +911,67 @@ startup_command = "wm -o jump"
         let cmd = find_startup_command(&other_path, Some("Pictures"), &config);
         assert_eq!(cmd, None);
     }
+
+    #[test]
+    fn test_strip_icon() {
+        assert_eq!(strip_icon(" tmux_sess"), "tmux_sess");
+        assert_eq!(strip_icon(" /some/path"), "/some/path");
+        assert_eq!(strip_icon(" config_item"), "config_item");
+        assert_eq!(strip_icon("⚡ fast"), "fast");
+        assert_eq!(strip_icon(" downloads"), "downloads");
+        assert_eq!(strip_icon(" project"), "project");
+        assert_eq!(strip_icon(" query"), "query");
+        assert_eq!(strip_icon("🚀 launch"), "launch");
+        assert_eq!(strip_icon("regular_session"), "regular_session");
+        assert_eq!(strip_icon("   plain with spaces   "), "plain with spaces");
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        if let Some(home) = dirs::home_dir() {
+            assert_eq!(expand_tilde("~"), home);
+            assert_eq!(expand_tilde("~/workspace/wm"), home.join("workspace/wm"));
+        }
+        assert_eq!(expand_tilde("/var/log"), PathBuf::from("/var/log"));
+        assert_eq!(expand_tilde("relative/dir"), PathBuf::from("relative/dir"));
+    }
+
+    #[test]
+    fn test_derive_session_name() {
+        assert_eq!(derive_session_name(Path::new("/home/user/project")), "project");
+        assert_eq!(derive_session_name(Path::new("/home/user/my.cool.app")), "my_cool_app");
+        assert_eq!(derive_session_name(Path::new("/home/user/app:port")), "app_port");
+    }
+
+    #[test]
+    fn test_find_configured_session() {
+        let toml_str = r#"
+[[session]]
+name = " Downloads"
+path = "~/Downloads"
+"#;
+        let config: SessionConfig = toml::from_str(toml_str).unwrap();
+
+        // Exact match
+        let s = find_configured_session(" Downloads", &config);
+        assert!(s.is_some());
+        assert_eq!(s.unwrap().path, "~/Downloads");
+
+        // Stripped icon match
+        let s2 = find_configured_session("Downloads", &config);
+        assert!(s2.is_some());
+
+        // Path match
+        let s3 = find_configured_session("~/Downloads", &config);
+        assert!(s3.is_some());
+
+        // Non-existent
+        assert!(find_configured_session("NonExistent", &config).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_session_cli_empty_and_unknown() {
+        assert_eq!(handle_session_cli(&[]).await, None);
+        assert_eq!(handle_session_cli(&["unrelated".to_string()]).await, None);
+    }
 }

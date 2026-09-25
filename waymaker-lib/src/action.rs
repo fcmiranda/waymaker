@@ -807,4 +807,203 @@ mod tests {
         assert_eq!(toggle_diag, Action::ToggleDiagram);
         assert_eq!(toggle_diag.to_string(), "ToggleDiagram");
     }
+
+    #[test]
+    fn test_action_units_from_str_and_display() {
+        let cases = [
+            ("Accept", Action::Accept),
+            ("Select", Action::Select),
+            ("Deselect", Action::Deselect),
+            ("DeselectUp", Action::DeselectUp),
+            ("Toggle", Action::Toggle),
+            ("ToggleUp", Action::ToggleUp),
+            ("CycleAll", Action::CycleAll),
+            ("ClearSelections", Action::ClearSelections),
+            ("HalfPageDown", Action::HalfPageDown),
+            ("HalfPageUp", Action::HalfPageUp),
+            ("ToggleWrap", Action::ToggleWrap),
+            ("TogglePreviewWrap", Action::TogglePreviewWrap),
+            ("ToggleActionBox", Action::ToggleActionBox),
+            ("ToggleFocus", Action::ToggleFocus),
+            ("FocusFilter", Action::FocusFilter),
+            ("FocusNav", Action::FocusNav),
+            ("ToggleParentPeek", Action::ToggleParentPeek),
+            ("ToggleFooter", Action::ToggleFooter),
+            ("ToggleHeader", Action::ToggleHeader),
+            ("CyclePreview", Action::CyclePreview),
+            ("PreviewJump", Action::PreviewJump),
+            ("PreviewHalfPageUp", Action::PreviewHalfPageUp),
+            ("PreviewHalfPageDown", Action::PreviewHalfPageDown),
+            ("ForwardChar", Action::ForwardChar),
+            ("BackwardChar", Action::BackwardChar),
+            ("ForwardWord", Action::ForwardWord),
+            ("BackwardWord", Action::BackwardWord),
+            ("DeleteChar", Action::DeleteChar),
+            ("DeleteWord", Action::DeleteWord),
+            ("DeleteNextChar", Action::DeleteNextChar),
+            ("DeleteNextWord", Action::DeleteNextWord),
+            ("DeleteLineStart", Action::DeleteLineStart),
+            ("DeleteLineEnd", Action::DeleteLineEnd),
+            ("Cancel", Action::Cancel),
+            ("Redraw", Action::Redraw),
+            ("NextColumn", Action::NextColumn),
+            ("PrevColumn", Action::PrevColumn),
+            ("PrintKey", Action::PrintKey),
+        ];
+
+        for (name, expected) in cases {
+            let parsed: Action = Action::from_str(name).unwrap();
+            assert_eq!(parsed, expected, "Failed for {name}");
+            assert_eq!(parsed.to_string(), name);
+        }
+    }
+
+    #[test]
+    fn test_action_tuples_from_str_and_display() {
+        let exec: Action = Action::from_str("Execute(echo hi)").unwrap();
+        assert_eq!(exec, Action::Execute("echo hi".into()));
+        assert_eq!(exec.to_string(), "Execute(echo hi)");
+
+        let exec_async: Action = Action::from_str("ExecuteAsync(cargo build)").unwrap();
+        assert_eq!(exec_async, Action::ExecuteAsync("cargo build".into()));
+
+        let exec_then: Action = Action::from_str("ExecuteThen(cargo test)").unwrap();
+        assert_eq!(exec_then, Action::ExecuteThen("cargo test".into()));
+
+        let exec_silent: Action = Action::from_str("ExecuteSilent(touch file)").unwrap();
+        assert_eq!(exec_silent, Action::ExecuteSilent("touch file".into()));
+
+        let become_act: Action = Action::from_str("Become(nvim)").unwrap();
+        assert_eq!(become_act, Action::Become("nvim".into()));
+
+        let become_silent: Action = Action::from_str("BecomeSilent(zsh)").unwrap();
+        assert_eq!(become_silent, Action::BecomeSilent("zsh".into()));
+
+        let preview: Action = Action::from_str("Preview(bat {})").unwrap();
+        assert_eq!(preview, Action::Preview("bat {}".into()));
+
+        let set_query: Action = Action::from_str("SetQuery(abc)").unwrap();
+        assert_eq!(set_query, Action::SetQuery("abc".into()));
+
+        let pos: Action = Action::from_str("Pos(42)").unwrap();
+        assert_eq!(pos, Action::Pos(42));
+
+        let query_pos: Action = Action::from_str("QueryPos(3)").unwrap();
+        assert_eq!(query_pos, Action::QueryPos(3));
+
+        let switch_col: Action = Action::from_str("SwitchColumn(col1)").unwrap();
+        assert_eq!(switch_col, Action::SwitchColumn("col1".into()));
+
+        let store: Action = Action::from_str("Store(key1)").unwrap();
+        assert_eq!(store, Action::Store("key1".into()));
+
+        let set_mode: Action = Action::from_str("SetMode(nav)").unwrap();
+        assert_eq!(set_mode, Action::SetMode("nav".into()));
+
+        let copy: Action = Action::from_str("Copy(clip)").unwrap();
+        assert_eq!(copy, Action::Copy("clip".into()));
+
+        let copy_async: Action = Action::from_str("CopyAsync(clip)").unwrap();
+        assert_eq!(copy_async, Action::CopyAsync("clip".into()));
+
+        let chdir: Action = Action::from_str("ChDir(/tmp)").unwrap();
+        assert_eq!(chdir, Action::ChDir("/tmp".into()));
+    }
+
+    #[test]
+    fn test_action_defaults_and_options() {
+        // Defaults
+        let up_default: Action = Action::from_str("Up").unwrap();
+        assert_eq!(up_default, Action::Up(1));
+        assert_eq!(up_default.to_string(), "Up");
+
+        let up_custom: Action = Action::from_str("Up(5)").unwrap();
+        assert_eq!(up_custom, Action::Up(5));
+        assert_eq!(up_custom.to_string(), "Up(5)");
+
+        let down_default: Action = Action::from_str("Down").unwrap();
+        assert_eq!(down_default, Action::Down(1));
+
+        let quit_default: Action = Action::from_str("Quit").unwrap();
+        assert_eq!(quit_default, Action::Quit(130));
+
+        let quit_custom: Action = Action::from_str("Quit(0)").unwrap();
+        assert_eq!(quit_custom, Action::Quit(0));
+
+        let expand_prev: Action = Action::from_str("ExpandPreview(2)").unwrap();
+        assert_eq!(expand_prev, Action::ExpandPreview(2));
+
+        let shrink_prev: Action = Action::from_str("ShrinkPreview(2)").unwrap();
+        assert_eq!(shrink_prev, Action::ShrinkPreview(2));
+
+        // Options
+        let sw_none: Action = Action::from_str("SwitchPreview").unwrap();
+        assert_eq!(sw_none, Action::SwitchPreview(None));
+        assert_eq!(sw_none.to_string(), "SwitchPreview");
+
+        let sw_some: Action = Action::from_str("SwitchPreview(1)").unwrap();
+        assert_eq!(sw_some, Action::SwitchPreview(Some(1)));
+        assert_eq!(sw_some.to_string(), "SwitchPreview(1)");
+
+        let set_prev_none: Action = Action::from_str("SetPreview").unwrap();
+        assert_eq!(set_prev_none, Action::SetPreview(None));
+
+        let set_prev_some: Action = Action::from_str("SetPreview(2)").unwrap();
+        assert_eq!(set_prev_some, Action::SetPreview(Some(2)));
+
+        let toggle_col_none: Action = Action::from_str("ToggleColumn").unwrap();
+        assert_eq!(toggle_col_none, Action::ToggleColumn(None));
+
+        let toggle_col_some: Action = Action::from_str("ToggleColumn(author)").unwrap();
+        assert_eq!(toggle_col_some, Action::ToggleColumn(Some("author".into())));
+
+        let show_col_none: Action = Action::from_str("ShowColumn").unwrap();
+        assert_eq!(show_col_none, Action::ShowColumn(None));
+
+        let show_col_some: Action = Action::from_str("ShowColumn(author)").unwrap();
+        assert_eq!(show_col_some, Action::ShowColumn(Some("author".into())));
+    }
+
+    #[test]
+    fn test_action_semantics_traces_and_chars() {
+        let sem: Action = Action::from_str("@select_item").unwrap();
+        assert_eq!(sem, Action::Semantic("select_item".into()));
+        assert_eq!(sem.to_string(), "@select_item");
+
+        let trace: Action = Action::from_str("#custom_trace").unwrap();
+        assert_eq!(trace, Action::Trace("custom_trace".into()));
+        assert_eq!(trace.to_string(), "#custom_trace");
+
+        let ch: Action = Action::Char('j');
+        assert_eq!(ch.to_string(), "j");
+
+        assert!(Action::<NullActionExt>::from_str("@invalid*char").is_err());
+        assert!(Action::<NullActionExt>::from_str("@").is_err());
+        assert!(Action::<NullActionExt>::from_str("NonExistentAction123").is_err());
+    }
+
+    #[test]
+    fn test_actions_collection() {
+        let mut actions: Actions = Actions::from_iter(vec![Action::Up(1), Action::Accept]);
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0], Action::Up(1));
+
+        actions.push(Action::Quit(0));
+        assert_eq!(actions.len(), 3);
+
+        let items: Vec<Action> = actions.into_iter().collect();
+        assert_eq!(items.len(), 3);
+
+        #[derive(Deserialize, Serialize, PartialEq, Debug)]
+        struct TestBinding {
+            actions: Actions,
+        }
+
+        let parsed_single: TestBinding = toml::from_str(r#"actions = "Up""#).unwrap();
+        assert_eq!(parsed_single.actions.len(), 1);
+        assert_eq!(parsed_single.actions[0], Action::Up(1));
+
+        let parsed_list: TestBinding = toml::from_str(r#"actions = ["Up", "Accept"]"#).unwrap();
+        assert_eq!(parsed_list.actions.len(), 2);
+    }
 }

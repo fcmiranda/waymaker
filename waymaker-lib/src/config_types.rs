@@ -760,6 +760,117 @@ mod tests {
         assert_eq!(smart1.sort.get_effective_threshold(""), u32::MAX);
         assert_eq!(smart1.sort.get_effective_threshold("   "), u32::MAX);
         assert_eq!(smart1.sort.get_effective_threshold("gpu"), 0);
+
+        let num_threshold: TestSort = toml::from_str("sort = 42").unwrap();
+        assert_eq!(num_threshold.sort.0, 42);
+
+        let str_num_threshold: TestSort = toml::from_str("sort = \"123\"").unwrap();
+        assert_eq!(str_num_threshold.sort.0, 123);
+
+        let err_negative = toml::from_str::<TestSort>("sort = -5");
+        assert!(err_negative.is_err());
+
+        let err_invalid = toml::from_str::<TestSort>("sort = \"invalid\"");
+        assert!(err_invalid.is_err());
+    }
+
+    #[test]
+    fn test_style_setting_methods() {
+        let empty = StyleSetting::default();
+        assert!(empty.is_empty());
+
+        let set = StyleSetting {
+            fg: Some(Color::Red),
+            bg: Some(Color::Black),
+            modifier: Modifier::BOLD,
+        };
+        assert!(!set.is_empty());
+
+        let r_style: Style = set.into();
+        assert_eq!(r_style.fg, Some(Color::Red));
+        assert_eq!(r_style.bg, Some(Color::Black));
+        assert!(r_style.add_modifier.contains(Modifier::BOLD));
+
+        let base = Style::default().fg(Color::Blue);
+        let overridden = set.r#override(base);
+        assert_eq!(overridden.fg, Some(Color::Red));
+        assert_eq!(overridden.bg, Some(Color::Black));
+        assert!(overridden.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn test_horizontal_separator_strings_and_aliases() {
+        assert_eq!(HorizontalSeparator::Empty.as_str(), " ");
+        assert_eq!(HorizontalSeparator::Light.as_str(), "─");
+        assert_eq!(HorizontalSeparator::Normal.as_str(), "─");
+        assert_eq!(HorizontalSeparator::Heavy.as_str(), "━");
+        assert_eq!(HorizontalSeparator::Dashed.as_str(), "╌");
+        assert_eq!(HorizontalSeparator::Top.as_str(), "▔");
+        assert_eq!(HorizontalSeparator::Bottom.as_str(), " ");
+        assert_eq!(HorizontalSeparator::Underline.as_str(), "");
+
+        #[derive(Deserialize)]
+        struct TestSep {
+            sep: HorizontalSeparator,
+        }
+
+        let sep_top: TestSep = toml::from_str("sep = \"upper_block\"").unwrap();
+        assert_eq!(sep_top.sep, HorizontalSeparator::Top);
+
+        let sep_bot: TestSep = toml::from_str("sep = \"lower_block\"").unwrap();
+        assert_eq!(sep_bot.sep, HorizontalSeparator::Bottom);
+
+        let sep_dash: TestSep = toml::from_str("sep = \"dashed\"").unwrap();
+        assert_eq!(sep_dash.sep, HorizontalSeparator::Dashed);
+
+        let sep_heavy: TestSep = toml::from_str("sep = \"heavy\"").unwrap();
+        assert_eq!(sep_heavy.sep, HorizontalSeparator::Heavy);
+    }
+
+    #[test]
+    fn test_blink_rate_ticks() {
+        assert_eq!(BlinkRate::Slow.ticks(), 90);
+        assert_eq!(BlinkRate::Normal.ticks(), 30);
+        assert_eq!(BlinkRate::Rapid.ticks(), 10);
+    }
+
+    #[test]
+    fn test_diagram_theme_parsing_and_display() {
+        use std::str::FromStr;
+        assert_eq!(DiagramTheme::from_str("auto").unwrap(), DiagramTheme::Auto);
+        assert_eq!(DiagramTheme::from_str("system").unwrap(), DiagramTheme::Auto);
+        assert_eq!(DiagramTheme::from_str("dark").unwrap(), DiagramTheme::Dark);
+        assert_eq!(DiagramTheme::from_str("light").unwrap(), DiagramTheme::Light);
+        assert!(DiagramTheme::from_str("unsupported").is_err());
+
+        assert_eq!(format!("{}", DiagramTheme::Auto), "auto");
+        assert_eq!(format!("{}", DiagramTheme::Dark), "dark");
+        assert_eq!(format!("{}", DiagramTheme::Light), "light");
+    }
+
+    #[test]
+    fn test_diagram_background_parsing_and_display() {
+        use std::str::FromStr;
+        assert_eq!(
+            DiagramBackground::from_str("transparent").unwrap(),
+            DiagramBackground::Transparent
+        );
+        assert_eq!(
+            DiagramBackground::from_str("none").unwrap(),
+            DiagramBackground::Transparent
+        );
+        assert_eq!(
+            DiagramBackground::from_str("solid").unwrap(),
+            DiagramBackground::Solid
+        );
+        assert_eq!(
+            DiagramBackground::from_str("opaque").unwrap(),
+            DiagramBackground::Solid
+        );
+        assert!(DiagramBackground::from_str("invalid").is_err());
+
+        assert_eq!(format!("{}", DiagramBackground::Transparent), "transparent");
+        assert_eq!(format!("{}", DiagramBackground::Solid), "solid");
     }
 }
 

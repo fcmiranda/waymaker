@@ -308,4 +308,101 @@ mod tests {
         assert_eq!(clap_args2, vec![OsString::from("--filter=long_query")]);
         assert!(rest2.is_empty());
     }
+
+    #[test]
+    fn test_partition_end_of_options() {
+        let args = vec![
+            "--sort".into(),
+            "--".into(),
+            "file1".into(),
+            "-f".into(),
+            "query".into(),
+        ];
+        let (clap_args, rest) = Cli::partition_clap_args(args);
+        assert_eq!(
+            clap_args,
+            vec![
+                OsString::from("--sort"),
+                OsString::from("--"),
+                OsString::from("file1"),
+                OsString::from("-f"),
+                OsString::from("query"),
+            ]
+        );
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn test_partition_nav_and_media_and_download() {
+        // Nav with multiple values stopped by next flag
+        let args = vec![
+            "--nav".into(),
+            "bar".into(),
+            "action-bar".into(),
+            "--sort".into(),
+            "custom_arg".into(),
+        ];
+        let (clap_args, rest) = Cli::partition_clap_args(args);
+        assert_eq!(
+            clap_args,
+            vec![
+                OsString::from("--nav"),
+                OsString::from("bar"),
+                OsString::from("action-bar"),
+                OsString::from("--sort"),
+            ]
+        );
+        assert_eq!(rest, vec![OsString::from("custom_arg")]);
+
+        // Media with values and nav=
+        let args2 = vec![
+            "--nav=plain".into(),
+            "--media".into(),
+            "size:s".into(),
+            "--download=presets".into(),
+            "rest_item".into(),
+        ];
+        let (clap_args2, rest2) = Cli::partition_clap_args(args2);
+        assert_eq!(
+            clap_args2,
+            vec![
+                OsString::from("--nav=plain"),
+                OsString::from("--media"),
+                OsString::from("size:s"),
+                OsString::from("--download=presets"),
+            ]
+        );
+        assert_eq!(rest2, vec![OsString::from("rest_item")]);
+    }
+
+    #[test]
+    fn test_partition_flags_and_verbosity() {
+        let args = vec![
+            "-vvv".into(),
+            "-qq".into(),
+            "-F".into(),
+            "--sort".into(),
+            "--frecency".into(),
+            "--icons".into(),
+            "--symlink-target".into(),
+            "--parent-peek".into(),
+            "--status-inline".into(),
+            "--dump-config".into(),
+            "plain_arg".into(),
+        ];
+        let (clap_args, rest) = Cli::partition_clap_args(args);
+        assert_eq!(clap_args.len(), 10);
+        assert_eq!(rest, vec![OsString::from("plain_arg")]);
+    }
+
+    #[test]
+    fn test_doc_enum_variants() {
+        assert_eq!(Doc::Options, Doc::Options);
+        assert_eq!(Doc::Binds, Doc::Binds);
+        assert_eq!(Doc::Template, Doc::Template);
+        assert_eq!(Doc::Performance, Doc::Performance);
+        assert_eq!(Doc::Frecency, Doc::Frecency);
+        assert_eq!(Doc::Jump, Doc::Jump);
+        assert_eq!(Doc::Other, Doc::Other);
+    }
 }

@@ -72,3 +72,29 @@ expr_as_path_fn!(
     default_config_path,
     config_dir_impl().unwrap_or_default().join("config.toml")
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paths_resolution() {
+        let state = state_dir();
+        assert!(!state.as_os_str().is_empty());
+        assert!(state.to_string_lossy().contains(LIBRARY_FULL) || state.to_string_lossy().contains("matchmaker"));
+
+        let last_key = last_key_path();
+        assert!(last_key.ends_with("last_key"));
+
+        let presets = presets_path();
+        assert!(presets.ends_with("presets"));
+
+        let default_config = default_config_path();
+        assert!(default_config.ends_with("dev.toml") || default_config.ends_with("config.toml"));
+
+        if dirs::home_dir().is_some() {
+            assert!(state_dir_impl().is_some());
+            assert!(config_dir_impl().is_some());
+        }
+    }
+}

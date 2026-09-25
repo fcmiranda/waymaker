@@ -258,3 +258,50 @@ impl StatusUI {
         Span::styled(text.to_string(), style)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_ui_parse_style() {
+        assert_eq!(StatusUI::parse_style("reset"), Some(Style::default()));
+        assert_eq!(StatusUI::parse_style(""), None);
+        assert_eq!(StatusUI::parse_style("unknown_token"), None);
+
+        let style = StatusUI::parse_style("red,bg=blue,bold,italic").unwrap();
+        assert_eq!(style.fg, Some(Color::Red));
+        assert_eq!(style.bg, Some(Color::Blue));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+        assert!(style.add_modifier.contains(Modifier::ITALIC));
+
+        let style2 = StatusUI::parse_style("fg:green,bg:yellow,dim,underlined").unwrap();
+        assert_eq!(style2.fg, Some(Color::Green));
+        assert_eq!(style2.bg, Some(Color::Yellow));
+        assert!(style2.add_modifier.contains(Modifier::DIM));
+        assert!(style2.add_modifier.contains(Modifier::UNDERLINED));
+
+        let style_blinks = StatusUI::parse_style("slow_blink,rapid_blink,reversed,hidden,crossed_out").unwrap();
+        assert!(style_blinks.add_modifier.contains(Modifier::SLOW_BLINK));
+        assert!(style_blinks.add_modifier.contains(Modifier::RAPID_BLINK));
+        assert!(style_blinks.add_modifier.contains(Modifier::REVERSED));
+        assert!(style_blinks.add_modifier.contains(Modifier::HIDDEN));
+        assert!(style_blinks.add_modifier.contains(Modifier::CROSSED_OUT));
+    }
+
+    #[test]
+    fn test_status_ui_span_from_template() {
+        let span = StatusUI::span_from_template("cyan,bold:Prompt");
+        assert_eq!(span.content, "Prompt");
+        assert_eq!(span.style.fg, Some(Color::Cyan));
+        assert!(span.style.add_modifier.contains(Modifier::BOLD));
+
+        let plain = StatusUI::span_from_template("NoColonHere");
+        assert_eq!(plain.content, "NoColonHere");
+        assert_eq!(plain.style, Style::default());
+
+        let invalid = StatusUI::span_from_template("bad_style:Sample");
+        assert_eq!(invalid.content, "Sample");
+        assert_eq!(invalid.style, Style::default());
+    }
+}

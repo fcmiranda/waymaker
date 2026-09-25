@@ -399,4 +399,66 @@ mod tests {
         assert_eq!(decoded.mtime_nanos, rec.mtime_nanos);
         assert_eq!(decoded.items, rec.items);
     }
+
+    #[test]
+    fn test_zero_copy_edge_cases() {
+        assert!(DirCacheRecord::from_zero_copy_bytes(&[]).is_none());
+        assert!(DirCacheRecord::from_zero_copy_bytes(&[0u8; 23]).is_none());
+
+        // Buffer with invalid magic
+        let mut invalid_magic = vec![0u8; 32];
+        invalid_magic[0..4].copy_from_slice(&0x12345678u32.to_le_bytes());
+        assert!(DirCacheRecord::from_zero_copy_bytes(&invalid_magic).is_none());
+
+        // Valid magic but root_len exceeds buffer
+        let mut overflow_len = vec![0u8; 32];
+        overflow_len[0..4].copy_from_slice(&ZERO_COPY_MAGIC.to_le_bytes());
+        overflow_len[20..24].copy_from_slice(&1000u32.to_le_bytes());
+        assert!(DirCacheRecord::from_zero_copy_bytes(&overflow_len).is_none());
+
+        // Empty items payload
+        let rec = DirCacheRecord {
+            root: "test_root".to_string(),
+            timestamp: 100,
+            mtime_nanos: 200,
+            items: vec![],
+        };
+        let bytes = rec.to_zero_copy_bytes();
+        let decoded = DirCacheRecord::from_zero_copy_bytes(&bytes).unwrap();
+        assert_eq!(decoded.root, "test_root");
+        assert!(decoded.items.is_empty());
+    }
+
+    #[test]
+    fn test_dir_cache_store_clean_stale_and_valid() -> anyhow::Result<()> {
+        let temp_dir = std::env::temp_dir().join("mm_test_dir_cache_clean");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir)?;
+        let db_path = temp_dir.join("cache.redb");
+
+        let store = DirCacheStore::open_at(&db_path)?;
+        let root = temp_dir.to_str().unwrap();
+
+        store.put(root, vec!["file.txt".to_string()])?;
+        assert!(store.get(root).is_some());
+        assert!(store.get_valid(root).is_some());
+
+        // clean_stale on existing directory should remove 0
+        let cleaned = store.clean_stale()?;
+        assert_eq!(cleaned, 0);
+
+        // Put a fake non-existent directory entry
+        store.put("/non/existent/test_path_12345", vec!["x.txt".to_string()])?;
+        assert!(store.get("/non/existent/test_path_12345").is_some());
+
+        let cleaned = store.clean_stale()?;
+        assert_eq!(cleaned, 1);
+        assert!(store.get("/non/existent/test_path_12345").is_none());
+
+        // Remove non-existent returns false
+        assert!(!store.remove("/non/existent/test_path_12345")?);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
 }

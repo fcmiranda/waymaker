@@ -90,3 +90,92 @@ pub fn apply_color_spec(config: &mut Config, spec: &str) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_color_spec_all_keys() {
+        let mut config = Config::default();
+        let spec = [
+            "fg:red",
+            "bg:blue",
+            "hl-fg:yellow",
+            "hl-bg:green",
+            "border:cyan",
+            "label:magenta",
+            "preview-border:white",
+            "preview-label:gray",
+            "list-border:darkgray",
+            "list-label:lightred",
+            "input-border:lightgreen",
+            "input-label:lightyellow",
+            "header-border:lightblue",
+            "header-label:lightmagenta",
+            "group-header:lightcyan",
+            "nav:red",
+            "selected-fg:blue",
+            "selected-bg:yellow",
+            "selected-prefix:green",
+            "unselected-prefix:cyan",
+            "spinner:magenta",
+            "yank:white",
+            "cut:gray",
+            "symlink:darkgray",
+            "tier-separator:lightred",
+        ]
+        .join(",");
+
+        apply_color_spec(&mut config, &spec);
+
+        assert_eq!(config.render.results.style.fg, Some(Color::Red));
+        assert_eq!(config.render.results.style.bg, Some(Color::Blue));
+        assert_eq!(config.render.results.current_style.fg, Some(Color::Yellow));
+        assert_eq!(config.render.results.current_style.bg, Some(Color::Green));
+        assert_eq!(config.render.ui.border.color, Color::Cyan);
+        assert_eq!(config.render.ui.border.title_fg, Color::Magenta);
+        assert_eq!(config.render.preview.border.color, Color::White);
+        assert_eq!(config.render.preview.border.title_fg, Color::Gray);
+        assert_eq!(config.render.results.border.color, Color::DarkGray);
+        assert_eq!(config.render.results.border.title_fg, Color::LightRed);
+        assert_eq!(config.render.query.border.color, Color::LightGreen);
+        assert_eq!(config.render.query.border.title_fg, Color::LightYellow);
+        assert_eq!(config.render.header.border.color, Color::LightBlue);
+        assert_eq!(config.render.header.border.title_fg, Color::LightMagenta);
+        assert_eq!(config.render.results.group_header_style.fg, Some(Color::LightCyan));
+        assert_eq!(config.render.ui.nav.color, Color::Red);
+        assert_eq!(config.render.results.selected_style.fg, Some(Color::Blue));
+        assert_eq!(config.render.results.selected_style.bg, Some(Color::Yellow));
+        assert_eq!(config.render.results.selected_prefix_style.fg, Some(Color::Green));
+        assert_eq!(config.render.results.unselected_prefix_style.fg, Some(Color::Cyan));
+        assert_eq!(config.render.results.spinner_style.fg, Some(Color::Magenta));
+        assert_eq!(config.render.results.yank_prefix_style.fg, Some(Color::White));
+        assert_eq!(config.render.results.cut_prefix_style.fg, Some(Color::Gray));
+        assert_eq!(config.render.results.symlink.style.fg, Some(Color::DarkGray));
+        assert_eq!(config.render.results.tier.style.fg, Some(Color::LightRed));
+    }
+
+    #[test]
+    fn test_apply_color_spec_edge_cases() {
+        let mut config = Config::default();
+
+        // Empty spec or whitespace
+        apply_color_spec(&mut config, "");
+        apply_color_spec(&mut config, "  ,  ,, ");
+
+        // Missing colon, unknown color, unknown key
+        apply_color_spec(&mut config, "not_a_pair,fg:not_a_color,unknown_key:red");
+        assert_eq!(config.render.results.style.fg, None);
+
+        // Aliases
+        apply_color_spec(&mut config, "current-fg:red,current-bg:blue,title:green,preview-title:yellow,list-title:cyan,input-title:magenta,header-title:white");
+        assert_eq!(config.render.results.current_style.fg, Some(Color::Red));
+        assert_eq!(config.render.results.current_style.bg, Some(Color::Blue));
+        assert_eq!(config.render.ui.border.title_fg, Color::Green);
+        assert_eq!(config.render.preview.border.title_fg, Color::Yellow);
+        assert_eq!(config.render.results.border.title_fg, Color::Cyan);
+        assert_eq!(config.render.query.border.title_fg, Color::Magenta);
+        assert_eq!(config.render.header.border.title_fg, Color::White);
+    }
+}

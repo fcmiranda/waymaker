@@ -193,3 +193,58 @@ where
         Self::new(columns, default_index)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_worker_default_format_fn() {
+        let worker = Worker::<String>::new_single_column();
+        let fmt_unquoted = worker.default_format_fn::<false>(|s: &String| Cow::Borrowed(s.as_str()));
+
+        let res = fmt_unquoted(&"alpha".to_string(), "Hello {}!");
+        assert_eq!(res, "Hello alpha!");
+
+        let res_col = fmt_unquoted(&"beta".to_string(), "Column: {_}");
+        assert_eq!(res_col, "Column: beta");
+
+        let res_escaped = fmt_unquoted(&"gamma".to_string(), r"Escaped: \{_}");
+        assert_eq!(res_escaped, "Escaped: {_}");
+
+        let res_unclosed = fmt_unquoted(&"delta".to_string(), "Unclosed: {abc");
+        assert_eq!(res_unclosed, "Unclosed: {abc");
+
+        let fmt_quoted = worker.default_format_fn::<true>(|s: &String| Cow::Borrowed(s.as_str()));
+        let res_q = fmt_quoted(&"quoted_val".to_string(), "Param: {}");
+        assert_eq!(res_q, "Param: 'quoted_val'");
+    }
+
+    #[test]
+    fn test_worker_append_and_indexable() {
+        #[derive(Clone)]
+        struct MultiCol {
+            title: String,
+            desc: String,
+        }
+
+        impl ColumnIndexable for MultiCol {
+            fn get_str(&self, i: usize) -> Cow<'_, str> {
+                match i {
+                    0 => Cow::Borrowed(&self.title),
+                    1 => Cow::Borrowed(&self.desc),
+                    _ => Cow::Borrowed(""),
+                }
+            }
+        }
+
+        let worker = Worker::<MultiCol>::new_indexable(["title", "desc"], Some("desc"));
+        assert_eq!(worker.columns.len(), 2);
+        assert_eq!(&*worker.columns[0].name, "title");
+        assert_eq!(&*worker.columns[1].name, "desc");
+
+        let indexed_worker = Worker::<Indexed<String>>::new_single_column();
+        let next_idx = indexed_worker.append(vec!["item1".to_string(), "item2".to_string()]);
+        assert_eq!(next_idx, 2);
+    }
+}

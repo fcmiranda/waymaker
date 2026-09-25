@@ -61,3 +61,82 @@ where
         None => Ok(None),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TestBounded {
+        #[serde(deserialize_with = "bounded_usize::<_, 5, 20>")]
+        val: usize,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TestEscapedString {
+        #[serde(default, deserialize_with = "escaped_opt_string")]
+        val: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TestEscapedChar {
+        #[serde(default, deserialize_with = "escaped_opt_char")]
+        val: Option<char>,
+    }
+
+    #[test]
+    fn test_bounded_usize_clamping() {
+        let low: TestBounded = toml::from_str("val = 2").unwrap();
+        assert_eq!(low.val, 5);
+
+        let mid: TestBounded = toml::from_str("val = 12").unwrap();
+        assert_eq!(mid.val, 12);
+
+        let high: TestBounded = toml::from_str("val = 50").unwrap();
+        assert_eq!(high.val, 20);
+    }
+
+    #[test]
+    fn test_escaped_opt_string() {
+        let s: TestEscapedString = toml::from_str(r#"val = "hello\nworld""#).unwrap();
+        assert_eq!(s.val.as_deref(), Some("hello\nworld"));
+
+        let none: TestEscapedString = toml::from_str("").unwrap();
+        assert_eq!(none.val, None);
+    }
+
+    #[test]
+    fn test_escaped_opt_char() {
+        let c: TestEscapedChar = toml::from_str(r#"val = "x""#).unwrap();
+        assert_eq!(c.val, Some('x'));
+
+        let tab: TestEscapedChar = toml::from_str(r#"val = "\t""#).unwrap();
+        assert_eq!(tab.val, Some('\t'));
+
+        let none: TestEscapedChar = toml::from_str("").unwrap();
+        assert_eq!(none.val, None);
+
+        let err_empty = toml::from_str::<TestEscapedChar>(r#"val = """#);
+        assert!(err_empty.is_err());
+
+        let err_multiple = toml::from_str::<TestEscapedChar>(r#"val = "abc""#);
+        assert!(err_multiple.is_err());
+    }
+
+    #[test]
+    fn test_string_or_vec() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct TestContainer {
+            sov: StringOrVec,
+        }
+
+        let default_sov = StringOrVec::default();
+        assert_eq!(default_sov, StringOrVec::String(String::new()));
+
+        let s: TestContainer = toml::from_str(r#"sov = "single""#).unwrap();
+        assert_eq!(s.sov, StringOrVec::String("single".to_string()));
+
+        let v: TestContainer = toml::from_str(r#"sov = ["a", "b", "c"]"#).unwrap();
+        assert_eq!(v.sov, StringOrVec::Vec(vec!["a".into(), "b".into(), "c".into()]));
+    }
+}

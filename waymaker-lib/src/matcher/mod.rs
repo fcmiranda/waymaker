@@ -320,4 +320,73 @@ mod tests {
         let indices = engine.highlight_indices("main", "src/main.rs");
         assert_eq!(indices, vec![4, 5, 6, 7]);
     }
+
+    #[test]
+    fn test_nucleo_engine_edge_cases() {
+        let mut engine = NucleoEngine::default();
+        assert_eq!(engine.name(), "nucleo");
+
+        let items = vec!["alpha".into(), "beta".into(), "gamma".into()];
+        let empty_search = engine.search("", &items);
+        assert_eq!(empty_search.len(), 3);
+        assert_eq!(empty_search[0].score, 0);
+
+        let parallel_res = engine.search_parallel("bet", &items, 4);
+        assert_eq!(parallel_res.len(), 1);
+        assert_eq!(parallel_res[0].index, 1);
+
+        assert!(engine.highlight_indices("", "sample").is_empty());
+        assert!(engine.highlight_indices("test", "").is_empty());
+    }
+
+    #[cfg(feature = "frizbee")]
+    #[test]
+    fn test_frizbee_engine_edge_cases() {
+        let mut engine = FrizbeeEngine::default();
+        assert_eq!(engine.name(), "frizbee");
+
+        let items = vec!["alpha".into(), "beta".into(), "gamma".into()];
+        let empty_search = engine.search("", &items);
+        assert_eq!(empty_search.len(), 3);
+
+        let empty_parallel = engine.search_parallel("", &items, 2);
+        assert_eq!(empty_parallel.len(), 3);
+
+        let parallel_res = engine.search_parallel("bet", &items, 2);
+        assert_eq!(parallel_res.len(), 1);
+        assert_eq!(parallel_res[0].index, 1);
+
+        assert!(engine.highlight_indices("", "sample").is_empty());
+        assert!(engine.highlight_indices("test", "").is_empty());
+
+        engine.set_typo_tolerance(false);
+        assert!(engine.search("alpz", &items).is_empty());
+        engine.set_typo_tolerance(true);
+        assert!(!engine.search("alpz", &items).is_empty());
+    }
+
+    #[test]
+    fn test_matcher_backend_dispatch() {
+        let mut backend = MatcherBackend::nucleo();
+        assert_eq!(backend.name(), "nucleo");
+        let items = vec!["foo.rs".into(), "bar.rs".into()];
+        let res = backend.search("foo", &items);
+        assert_eq!(res.len(), 1);
+        let res_par = backend.search_parallel("bar", &items, 2);
+        assert_eq!(res_par.len(), 1);
+        let hl = backend.highlight_indices("bar", "bar.rs");
+        assert_eq!(hl, vec![0, 1, 2]);
+
+        #[cfg(feature = "frizbee")]
+        {
+            let mut friz = MatcherBackend::frizbee();
+            assert_eq!(friz.name(), "frizbee");
+            assert_eq!(friz.search("foo", &items).len(), 1);
+            assert_eq!(friz.search_parallel("bar", &items, 2).len(), 1);
+            assert_eq!(friz.highlight_indices("bar", "bar.rs"), vec![0, 1, 2]);
+
+            let friz_typo = MatcherBackend::frizbee_with_typo(true);
+            assert_eq!(friz_typo.name(), "frizbee");
+        }
+    }
 }

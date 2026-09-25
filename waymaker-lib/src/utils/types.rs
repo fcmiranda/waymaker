@@ -34,3 +34,21 @@ impl Either<Box<str>, Text<'static>> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_either_left_and_right() {
+        let left: Either<Box<str>, Text<'static>> = Either::Left("sample left".into());
+        assert_eq!(left.to_cow(), Cow::Borrowed("sample left"));
+        assert_eq!(left.as_text(), Text::from("sample left"));
+        assert_eq!(left.to_text(), Text::from("sample left"));
+
+        let right: Either<Box<str>, Text<'static>> = Either::Right(Text::from("sample right"));
+        assert_eq!(right.to_cow(), Cow::Borrowed("sample right"));
+        assert_eq!(right.as_text(), Text::from("sample right"));
+        assert_eq!(right.to_text(), Text::from("sample right"));
+    }
+}
